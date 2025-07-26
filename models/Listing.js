@@ -11,6 +11,7 @@ const ListingSchema = new mongoose.Schema({
     ref: 'Product',
     required: [true, 'Product ID is required']
   },
+
   // Pricing information
   pricing: [{
     unit: {
@@ -37,11 +38,13 @@ const ListingSchema = new mongoose.Schema({
       }
     }
   }],
+
   // Quality and grade
   qualityGrade: {
     type: String,
     required: [true, 'Quality grade is required']
   },
+
   // Availability
   availability: {
     quantityAvailable: {
@@ -60,6 +63,7 @@ const ListingSchema = new mongoose.Schema({
       default: true
     }
   },
+
   // Listing specific details
   description: {
     type: String,
@@ -73,6 +77,7 @@ const ListingSchema = new mongoose.Schema({
       default: false
     }
   }],
+
   // Delivery and logistics
   deliveryOptions: {
     selfPickup: {
@@ -94,6 +99,7 @@ const ListingSchema = new mongoose.Schema({
       estimatedTime: String // e.g., "2-4 hours"
     }
   },
+
   // Order requirements
   minimumOrderValue: {
     type: Number,
@@ -105,6 +111,8 @@ const ListingSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Lead time cannot be negative']
   }, // hours needed before delivery/pickup
+
+
   // Special offers
   discount: {
     type: {
@@ -118,6 +126,8 @@ const ListingSchema = new mongoose.Schema({
     validUntil: Date,
     minimumQuantity: Number
   },
+
+
   // Certifications
   certifications: [{
     name: String, // e.g., 'Organic', 'Fair Trade', 'Non-GMO'
@@ -125,6 +135,8 @@ const ListingSchema = new mongoose.Schema({
     validUntil: Date,
     certificateNumber: String
   }],
+
+
   // Status and visibility
   status: {
     type: String,
@@ -135,6 +147,8 @@ const ListingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+
+
   // Statistics
   views: {
     type: Number,
@@ -160,6 +174,8 @@ const ListingSchema = new mongoose.Schema({
       default: 0
     }
   },
+
+  
   // Audit fields
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,

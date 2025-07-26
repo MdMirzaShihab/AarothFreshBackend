@@ -1,19 +1,18 @@
+const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const nodemailer = require('nodemailer');
-const aws = require('aws-sdk');
 
-// configure AWS SDK
-aws.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+// Create SES client
+const sesClient = new SESClient({
   region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
 });
-
-// create SES transporter
-const ses = new aws.SES({ apiVersion: '2010-12-01' });
 
 const sendEmail = async (options) => {
   const transporter = nodemailer.createTransport({
-    SES: { ses, aws },
+    SES: { ses: sesClient, aws: { SendEmailCommand } },
   });
 
   const message = {

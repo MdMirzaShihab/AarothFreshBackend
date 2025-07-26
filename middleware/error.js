@@ -22,9 +22,6 @@ class ErrorResponse extends Error {
     let error = { ...err };
     error.message = err.message;
   
-    // Log error
-    console.error(err);
-  
     // Mongoose bad ObjectId
     if (err.name === 'CastError') {
       const message = 'Resource not found';
@@ -58,7 +55,7 @@ class ErrorResponse extends Error {
     res.status(error.statusCode || 500).json({
       success: false,
       error: error.message || 'Server Error',
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack || 'No stack trace' })
     });
   };
   
