@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Vendor = require('../models/Vendor');
 const Restaurant = require('../models/Restaurant');
 const { ErrorResponse } = require('../middleware/error');
+const sendEmail = require('../utils/email');
 
 /**
  * @desc    Register a new vendor or restaurant owner
@@ -84,6 +85,22 @@ exports.register = async (req, res, next) => {
     }
     if (restaurantId) {
       await Restaurant.findByIdAndUpdate(restaurantId, { createdBy: user._id });
+    }
+
+    // Send welcome email
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Welcome to Aaroth Fresh!',
+        message: `Hi ${user.name},
+
+Welcome to Aaroth Fresh! We are excited to have you on board.
+
+Thanks,
+The Aaroth Fresh Team`
+      });
+    } catch (error) {
+      console.error('Error sending welcome email:', error);
     }
 
     // Generate JWT token

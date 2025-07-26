@@ -1,57 +1,58 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
 const { ErrorResponse } = require('./error');
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    // Create subdirectories based on file type
-    const subDir = file.fieldname === 'images' ? 'listings' : 'general';
-    const fullPath = path.join(uploadsDir, subDir);
-    
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
-    }
-    
-    cb(null, fullPath);
-  },
-  filename: function (req, file, cb) {
-    // Generate unique filename
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    const name = file.fieldname + '-' + uniqueSuffix + ext;
-    cb(null, name);
+// Configure storage for listings
+const listingStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/listings',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 1024, height: 768, crop: 'limit' }]
+  }
+});
+
+// Configure storage for other types
+const generalStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/general',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 500, height: 500, crop: 'limit' }]
   }
 });
 
 // File filter function
 const fileFilter = (req, file, cb) => {
-  // Check file type
   if (file.mimetype.startsWith('image/')) {
-    // Allow image files
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new ErrorResponse('Only JPEG, JPG, PNG and GIF images are allowed', 400), false);
-    }
+    cb(null, true);
   } else {
     cb(new ErrorResponse('Only image files are allowed', 400), false);
   }
 };
 
+// Create a dynamic storage selector
+const storageSelector = (req, file, cb) => {
+  if (file.fieldname === 'images') {
+    cb(null, listingStorage);
+  } else {
+    cb(null, generalStorage);
+  }
+};
+
 // Configure multer
 const upload = multer({
-  storage: storage,
+  storage: storageSelector,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit per file
+    fileSize: 1 * 1024 * 1024, // 1MB limit per file
     files: 5 // Maximum 5 files per request
   },
   fileFilter: fileFilter
@@ -86,10 +87,10 @@ const cleanupOnError = (req, res, next) => {
   const originalNext = next;
   next = (err) => {
     if (err && req.files) {
-      // Delete uploaded files if there's an error
+      // If there's an error, delete the uploaded files from Cloudinary
       req.files.forEach(file => {
-        fs.unlink(file.path, (unlinkErr) => {
-          if (unlinkErr) console.error('Error deleting file:', unlinkErr);
+        cloudinary.uploader.destroy(file.filename, (error, result) => {
+          if (error) console.error('Error deleting file from Cloudinary:', error);
         });
       });
     }
