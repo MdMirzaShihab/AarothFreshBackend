@@ -28,6 +28,7 @@ exports.register = async (req, res, next) => {
       businessName,
       ownerName,
       address,
+      taxId,
       // Restaurant specific fields
       restaurantName,
     } = req.body;
@@ -50,6 +51,7 @@ exports.register = async (req, res, next) => {
         email,
         phone,
         address,
+        taxId,
       });
 
       vendorId = vendor._id;
@@ -61,6 +63,7 @@ exports.register = async (req, res, next) => {
         email,
         phone,
         address,
+        taxId,
       });
 
       restaurantId = restaurant._id;

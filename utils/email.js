@@ -12,14 +12,14 @@ const sesClient = new SESClient({
 
 const sendEmail = async (options) => {
   const transporter = nodemailer.createTransport({
-    SES: { ses: sesClient, aws: { SendEmailCommand } },
+      ses: sesClient, // <-- This is the corrected, modern syntax
   });
 
   const message = {
-    from: `${process.env.SES_FROM_NAME} <${process.env.SES_FROM_EMAIL}>`,
-    to: options.email,
-    subject: options.subject,
-    text: options.message,
+      from: `${process.env.SES_FROM_NAME} <${process.env.SES_FROM_EMAIL}>`,
+      to: options.email,
+      subject: options.subject,
+      text: options.message,
   };
 
   await transporter.sendMail(message);

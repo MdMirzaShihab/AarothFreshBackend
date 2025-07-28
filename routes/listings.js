@@ -9,6 +9,7 @@ const {
 } = require('../controllers/listingsController');
 const { protect, authorize } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { uploadListingImages } = require('../middleware/upload');
 const { body } = require('express-validator');
 
 const router = express.Router();
@@ -16,9 +17,20 @@ const router = express.Router();
 // Validation rules for creating/updating listings
 const listingValidation = [
   body('productId').isMongoId().withMessage('Valid product ID is required'),
-  body('pricePerUnit').isFloat({ min: 0.01 }).withMessage('Price per unit must be a positive number'),
-  body('unit').not().isEmpty().withMessage('Unit is required'),
-  body('quantityAvailable').isInt({ min: 0 }).withMessage('Quantity available must be a non-negative integer')
+ // Use 'pricing.*.pricePerUnit' to validate each price in the pricing array
+ body('pricing.*.pricePerUnit')
+ .isFloat({ min: 0.01 })
+ .withMessage('Price per unit must be a positive number'),
+ 
+// Use 'pricing.*.unit' to validate each unit in the pricing array
+body('pricing.*.unit')
+ .not().isEmpty()
+ .withMessage('Unit is required for pricing'),
+ 
+// Use 'availability.quantityAvailable' to target the nested field
+body('availability.quantityAvailable')
+ .isInt({ min: 0 })
+ .withMessage('Quantity available must be a non-negative integer')
 ];
 
 // Apply authentication to all routes
@@ -36,9 +48,9 @@ router.get('/', authorize('owner', 'manager'), getListings);
  * @desc    Create a new listing
  * @access  Private (Vendors only)
  */
-router.post('/', 
-  authorize('vendor'), 
-  upload.array('images', 5), // Allow up to 5 images
+router.post('/',
+  authorize('vendor'),
+  ...uploadListingImages('images', 5), // <-- Use the new function
   listingValidation,
   createListing
 );
@@ -57,14 +69,15 @@ router.get('/vendor', authorize('vendor'), getVendorListings);
  */
 router.get('/:id', getListing);
 
+
 /**
  * @route   PUT /api/v1/listings/:id
  * @desc    Update a listing
  * @access  Private (Vendor who owns the listing)
  */
-router.put('/:id', 
-  authorize('vendor'), 
-  upload.array('images', 5),
+router.put('/:id',
+  authorize('vendor'),
+  ...uploadListingImages('images', 5),
   [
     body('pricePerUnit').optional().isFloat({ min: 0.01 }).withMessage('Price per unit must be a positive number'),
     body('unit').optional().not().isEmpty().withMessage('Unit cannot be empty'),

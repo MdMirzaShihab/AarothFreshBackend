@@ -10,7 +10,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Configure storage for listings
+// Create storage engine for listings
 const listingStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -20,7 +20,7 @@ const listingStorage = new CloudinaryStorage({
   }
 });
 
-// Configure storage for other types
+// Create storage engine for other general purposes
 const generalStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -30,7 +30,7 @@ const generalStorage = new CloudinaryStorage({
   }
 });
 
-// File filter function
+// Generic file filter for images
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
@@ -39,89 +39,52 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Create a dynamic storage selector
-const storageSelector = (req, file, cb) => {
-  if (file.fieldname === 'images') {
-    cb(null, listingStorage);
-  } else {
-    cb(null, generalStorage);
-  }
-};
-
-// Configure multer
-const upload = multer({
-  storage: storageSelector,
-  limits: {
-    fileSize: 1 * 1024 * 1024, // 1MB limit per file
-    files: 5 // Maximum 5 files per request
-  },
-  fileFilter: fileFilter
-});
-
-// Error handling middleware for multer errors
+// Generic error handler for multer errors
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     let message = 'File upload error';
-    
     switch (err.code) {
       case 'LIMIT_FILE_SIZE':
-        message = 'File size too large. Maximum size is 5MB per file';
+        message = 'File size too large. Maximum size is 1MB per file.';
         break;
       case 'LIMIT_FILE_COUNT':
-        message = 'Too many files. Maximum 5 files allowed';
-        break;
-      case 'LIMIT_UNEXPECTED_FILE':
-        message = 'Unexpected file field';
+        message = 'Too many files uploaded.';
         break;
       default:
         message = err.message;
     }
-    
     return next(new ErrorResponse(message, 400));
   }
   next(err);
 };
 
-// Middleware to clean up uploaded files on error
-const cleanupOnError = (req, res, next) => {
-  const originalNext = next;
-  next = (err) => {
-    if (err && req.files) {
-      // If there's an error, delete the uploaded files from Cloudinary
-      req.files.forEach(file => {
-        cloudinary.uploader.destroy(file.filename, (error, result) => {
-          if (error) console.error('Error deleting file from Cloudinary:', error);
-        });
-      });
-    }
-    originalNext(err);
-  };
-  next();
-};
 
-// Export configured upload middleware with error handling
+// EXPORT SPECIFIC UPLOAD HANDLERS
 module.exports = {
-  // Single file upload
-  single: (fieldName) => [
-    upload.single(fieldName),
-    handleMulterError,
-    cleanupOnError
-  ],
-  
-  // Multiple file upload
-  array: (fieldName, maxCount = 5) => [
-    upload.array(fieldName, maxCount),
-    handleMulterError,
-    cleanupOnError
-  ],
-  
-  // Multiple fields upload
-  fields: (fields) => [
-    upload.fields(fields),
-    handleMulterError,
-    cleanupOnError
-  ],
-  
-  // Raw multer instance for custom configurations
-  raw: upload
+  // Use this for listing images
+  uploadListingImages: (fieldName, maxCount = 5) => {
+    const upload = multer({
+      storage: listingStorage, // Use the correct storage OBJECT
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024, // 1MB
+        files: maxCount
+      }
+    });
+    // Return the middleware array
+    return [upload.array(fieldName, maxCount), handleMulterError];
+  },
+
+  // Example for other uploads
+  uploadGeneralImage: (fieldName) => {
+    const upload = multer({
+      storage: generalStorage, // Use the correct storage OBJECT
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024 // 1MB
+      }
+    });
+    // Return the middleware array
+    return [upload.single(fieldName), handleMulterError];
+  }
 };

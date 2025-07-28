@@ -4,7 +4,6 @@ const OrderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
     unique: true,
-    required: true
   },
   restaurantId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -48,7 +47,6 @@ const OrderSchema = new mongoose.Schema({
     },
     totalPrice: {
       type: Number,
-      required: true,
       min: [0, 'Total price cannot be negative']
     },
     qualityGrade: String,
@@ -57,7 +55,6 @@ const OrderSchema = new mongoose.Schema({
   // Order totals
   subtotal: {
     type: Number,
-    required: true,
     min: [0, 'Subtotal cannot be negative']
   },
   deliveryFee: {
@@ -77,7 +74,6 @@ const OrderSchema = new mongoose.Schema({
   },
   totalAmount: {
     type: Number,
-    required: true,
     min: [0, 'Total amount cannot be negative']
   },
   // Order status workflow
