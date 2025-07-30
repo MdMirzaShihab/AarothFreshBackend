@@ -1,5 +1,5 @@
-const { body, validationResult, check } = require('express-validator');
-const { ErrorResponse } = require('./error');
+const { body, validationResult, check } = require("express-validator");
+const { ErrorResponse } = require("./error");
 
 /**
  * Handle validation results
@@ -7,8 +7,8 @@ const { ErrorResponse } = require('./error');
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    const errorMessages = errors.array().map(error => error.msg);
-    return next(new ErrorResponse(errorMessages.join(', '), 400));
+    const errorMessages = errors.array().map((error) => error.msg);
+    return next(new ErrorResponse(errorMessages.join(", "), 400));
   }
   next();
 };
@@ -17,68 +17,61 @@ const handleValidationErrors = (req, res, next) => {
  * Registration validation rules
  */
 const registerValidation = [
-  body('name')
+  body("name")
     .trim()
     .isLength({ min: 2, max: 50 })
-    .withMessage('Name must be between 2 and 50 characters'),
-  body('email')
+    .withMessage("Name must be between 2 and 50 characters"),
+  body("email")
     .isEmail()
     .normalizeEmail()
-    .withMessage('Please provide a valid email'),
-  body('password')
+    .withMessage("Please provide a valid email"),
+  body("password")
     .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long')
+    .withMessage("Password must be at least 6 characters long")
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
-  body('phone')
+    .withMessage(
+      "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+    ),
+  body("phone")
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
-    .withMessage('Please provide a valid phone number'),
-  body('role')
-    .isIn(['vendor', 'owner'])
-    .withMessage('Role must be either vendor or owner'),
-  body('businessName')
-    .if(body('role').equals('vendor'))
+    .withMessage("Please provide a valid phone number"),
+  body("role")
+    .isIn(["vendor", "owner"])
+    .withMessage("Role must be either vendor or owner"),
+  body("businessName")
+    .if(body("role").equals("vendor"))
     .notEmpty()
     .trim()
     .isLength({ min: 2, max: 100 })
-    .withMessage('Business name is required for vendors and must be between 2 and 100 characters'),
-  body('restaurantName')
-    .if(body('role').equals('owner'))
+    .withMessage(
+      "Business name is required for vendors and must be between 2 and 100 characters"
+    ),
+  body("restaurantName")
+    .if(body("role").equals("owner"))
     .notEmpty()
     .trim()
     .isLength({ min: 2, max: 100 })
-    .withMessage('Restaurant name is required for owners and must be between 2 and 100 characters'),
-  body('address.street')
+    .withMessage(
+      "Restaurant name is required for owners and must be between 2 and 100 characters"
+    ),
+  body("address.street")
     .notEmpty()
     .trim()
-    .withMessage('Street address is required'),
-  body('address.city')
-    .notEmpty()
-    .trim()
-    .withMessage('City is required'),
-  body('address.state')
-    .notEmpty()
-    .trim()
-    .withMessage('State is required'),
-  body('address.zipCode')
-    .notEmpty()
-    .trim()
-    .withMessage('Zip code is required'),
-  body('taxId')
-    .notEmpty()
-    .trim()
-    .withMessage('Tax ID is required'),
-  handleValidationErrors
+    .withMessage("Street address is required"),
+  body("address.city").notEmpty().trim().withMessage("City is required"),
+  body("address.state").notEmpty().trim().withMessage("State is required"),
+  body("address.zipCode").notEmpty().trim().withMessage("Zip code is required"),
+  body("taxId").notEmpty().trim().withMessage("Tax ID is required"),
+  handleValidationErrors,
 ];
 
 /**
  * Login validation rules
  */
 const loginValidation = [
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email'),
+  body('phone')
+    .notEmpty()
+    .withMessage('Phone number is required'),
   body('password')
     .notEmpty()
     .withMessage('Password is required'),
@@ -89,200 +82,202 @@ const loginValidation = [
  * Update profile validation rules
  */
 const updateProfileValidation = [
-  body('name')
+  body("name")
     .optional()
     .trim()
     .isLength({ min: 2, max: 50 })
-    .withMessage('Name must be between 2 and 50 characters'),
-  body('phone')
-    .optional()
-    .matches(/^[\+]?[1-9][\d]{0,15}$/)
-    .withMessage('Please provide a valid phone number'),
-  handleValidationErrors
+    .withMessage("Name must be between 2 and 50 characters"),
+  handleValidationErrors,
 ];
 
 /**
  * Change password validation rules
  */
 const changePasswordValidation = [
-  body('currentPassword')
+  body("currentPassword")
     .notEmpty()
-    .withMessage('Current password is required'),
-  body('newPassword')
+    .withMessage("Current password is required"),
+  body("newPassword")
     .isLength({ min: 6 })
-    .withMessage('New password must be at least 6 characters long')
+    .withMessage("New password must be at least 6 characters long")
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage('New password must contain at least one uppercase letter, one lowercase letter, and one number'),
-  body('confirmPassword')
-    .custom((value, { req }) => {
-      if (value !== req.body.newPassword) {
-        throw new Error('Password confirmation does not match new password');
-      }
-      return true;
-    }),
-  handleValidationErrors
+    .withMessage(
+      "New password must contain at least one uppercase letter, one lowercase letter, and one number"
+    ),
+  body("confirmPassword").custom((value, { req }) => {
+    if (value !== req.body.newPassword) {
+      throw new Error("Password confirmation does not match new password");
+    }
+    return true;
+  }),
+  handleValidationErrors,
 ];
 
 /**
  * Manager creation validation rules
  */
 const managerValidation = [
-  body('name')
+  body("name")
     .trim()
     .isLength({ min: 2, max: 50 })
-    .withMessage('Name must be between 2 and 50 characters'),
-  body('email')
+    .withMessage("Name must be between 2 and 50 characters"),
+  body("email")
     .isEmail()
     .normalizeEmail()
-    .withMessage('Please provide a valid email'),
-  body('password')
+    .withMessage("Please provide a valid email"),
+  body("password")
     .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long')
+    .withMessage("Password must be at least 6 characters long")
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
-  body('phone')
+    .withMessage(
+      "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+    ),
+  body("phone")
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
-    .withMessage('Please provide a valid phone number'),
-  handleValidationErrors
+    .withMessage("Please provide a valid phone number"),
+  handleValidationErrors,
 ];
 
 /**
  * User update validation rules (for admins)
  */
 const userUpdateValidation = [
-  body('name').optional().trim().notEmpty().withMessage('Name cannot be empty'),
-  body('email').optional().isEmail().withMessage('Valid email is required'),
-  body('role').optional().isIn(['admin', 'vendor', 'owner', 'manager']).withMessage('Invalid role'),
-  handleValidationErrors
+  body("name").optional().trim().notEmpty().withMessage("Name cannot be empty"),
+  body("email").optional().isEmail().withMessage("Valid email is required"),
+  body("phone")
+    .optional()
+    .matches(/^\+880\d{10}$|^\+\d{1,3}\d{10}$/)
+    .withMessage(
+      "Please provide a valid phone number with country code (e.g., +8801234567890)"
+    ),
+  body("role")
+    .optional()
+    .isIn(["admin", "vendor", "owner", "manager"])
+    .withMessage("Invalid role"),
+  handleValidationErrors,
 ];
 
 /**
  * Product validation rules
  */
 const productValidation = [
-  body('name')
+  body("name")
     .trim()
     .notEmpty()
-    .withMessage('Product name is required')
+    .withMessage("Product name is required")
     .isLength({ min: 2, max: 100 })
-    .withMessage('Product name must be between 2 and 100 characters'),
-  
-  body('description')
+    .withMessage("Product name must be between 2 and 100 characters"),
+
+  body("description")
     .trim()
     .notEmpty()
-    .withMessage('Product description is required')
+    .withMessage("Product description is required")
     .isLength({ min: 10, max: 500 })
-    .withMessage('Product description must be between 10 and 500 characters'),
-  
-  body('category')
-    .isMongoId()
-    .withMessage('Valid category ID is required'),
-  
-  handleValidationErrors
+    .withMessage("Product description must be between 10 and 500 characters"),
+
+  body("category").isMongoId().withMessage("Valid category ID is required"),
+
+  handleValidationErrors,
 ];
 
 /**
  * Category validation rules
  */
 const categoryValidation = [
-  body('name')
+  body("name")
     .trim()
     .notEmpty()
-    .withMessage('Category name is required')
+    .withMessage("Category name is required")
     .isLength({ min: 2, max: 50 })
-    .withMessage('Category name must be between 2 and 50 characters'),
-  
-  body('description')
+    .withMessage("Category name must be between 2 and 50 characters"),
+
+  body("description")
     .optional()
     .trim()
     .isLength({ max: 200 })
-    .withMessage('Category description must not exceed 200 characters'),
-  
-  handleValidationErrors
+    .withMessage("Category description must not exceed 200 characters"),
+
+  handleValidationErrors,
 ];
 
 /**
  * Listing validation rules
  */
 const listingValidation = [
-  body('productId')
-    .isMongoId()
-    .withMessage('Valid product ID is required'),
-  
-  body('pricePerUnit')
+  body("productId").isMongoId().withMessage("Valid product ID is required"),
+
+  body("pricePerUnit")
     .isFloat({ min: 0.01 })
-    .withMessage('Price per unit must be a positive number'),
-  
-  body('unit')
+    .withMessage("Price per unit must be a positive number"),
+
+  body("unit")
     .trim()
     .notEmpty()
-    .withMessage('Unit is required')
+    .withMessage("Unit is required")
     .isLength({ min: 1, max: 20 })
-    .withMessage('Unit must be between 1 and 20 characters'),
-  
-  body('quantityAvailable')
+    .withMessage("Unit must be between 1 and 20 characters"),
+
+  body("quantityAvailable")
     .isInt({ min: 0 })
-    .withMessage('Quantity available must be a non-negative integer'),
-  
-  handleValidationErrors
+    .withMessage("Quantity available must be a non-negative integer"),
+
+  handleValidationErrors,
 ];
 
 /**
  * Order validation rules
  */
 const orderValidation = [
-  body('items')
+  body("items")
     .isArray({ min: 1 })
-    .withMessage('Items array is required and cannot be empty'),
-  
-  body('items.*.listingId')
+    .withMessage("Items array is required and cannot be empty"),
+
+  body("items.*.listingId")
     .isMongoId()
-    .withMessage('Valid listing ID is required for each item'),
-  
-  body('items.*.quantity')
+    .withMessage("Valid listing ID is required for each item"),
+
+  body("items.*.quantity")
     .isInt({ min: 1 })
-    .withMessage('Quantity must be a positive integer'),
-  
-  handleValidationErrors
+    .withMessage("Quantity must be a positive integer"),
+
+  handleValidationErrors,
 ];
 
 /**
  * Order status update validation
  */
 const orderStatusValidation = [
-  body('status')
-    .isIn(['confirmed', 'delivered', 'cancelled'])
-    .withMessage('Invalid status. Must be confirmed, delivered, or cancelled'),
-  
-  handleValidationErrors
+  body("status")
+    .isIn(["confirmed", "delivered", "cancelled"])
+    .withMessage("Invalid status. Must be confirmed, delivered, or cancelled"),
+
+  handleValidationErrors,
 ];
 
 /**
  * MongoDB ObjectId validation
  */
-const mongoIdValidation = (fieldName = 'id') => [
-  check(fieldName)
-    .isMongoId()
-    .withMessage(`Valid ${fieldName} is required`),
-  
-  handleValidationErrors
+const mongoIdValidation = (fieldName = "id") => [
+  check(fieldName).isMongoId().withMessage(`Valid ${fieldName} is required`),
+
+  handleValidationErrors,
 ];
 
 /**
  * Pagination validation
  */
 const paginationValidation = [
-  check('page')
+  check("page")
     .optional()
     .isInt({ min: 1 })
-    .withMessage('Page must be a positive integer'),
-  
-  check('limit')
+    .withMessage("Page must be a positive integer"),
+
+  check("limit")
     .optional()
     .isInt({ min: 1, max: 100 })
-    .withMessage('Limit must be between 1 and 100'),
-  
-  handleValidationErrors
+    .withMessage("Limit must be between 1 and 100"),
+
+  handleValidationErrors,
 ];
 
 module.exports = {
@@ -299,5 +294,5 @@ module.exports = {
   orderValidation,
   orderStatusValidation,
   mongoIdValidation,
-  paginationValidation
+  paginationValidation,
 };

@@ -46,9 +46,12 @@ const UserSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
+    unique: true, 
+    required: [true, 'Please add a phone number'], 
     match: [
-      /^\+?[1-9]\d{1,14}$/,
-      'Please add a valid phone number'
+      // This regex enforces the country code format
+      /^\+880\d{10}$|^\+\d{1,3}\d{10}$/,
+      'Please add a valid phone number with country code (e.g., +8801234567890)'
     ]
   },
   isActive: {

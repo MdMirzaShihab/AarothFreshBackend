@@ -18,7 +18,7 @@ exports.register = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const {
+    let {
       name,
       email,
       password,
@@ -32,6 +32,10 @@ exports.register = async (req, res, next) => {
       // Restaurant specific fields
       restaurantName,
     } = req.body;
+
+    if (phone && !phone.startsWith('+')) {
+      phone = `+880${phone}`;
+    }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -131,41 +135,46 @@ exports.login = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const { email, password } = req.body;
+    let { phone, password } = req.body;
 
-    // Find user and include password field
-    const user = await User.findOne({ email }).select('+password');
-
-    if (!user) {
-      return next(new ErrorResponse('Invalid credentials', 401));
+    // Add default country code if missing
+    if (phone && !phone.startsWith('+')) {
+      phone = `+880${phone}`;
     }
 
-    // Check if user is active
-    if (!user.isActive) {
-      return next(new ErrorResponse('Account has been deactivated', 401));
+      // Find user by phone and include password field
+      const user = await User.findOne({ phone }).select('+password');
+
+      if (!user) {
+        return next(new ErrorResponse('Invalid credentials', 401));
+      }
+  
+      // Check if user is active
+      if (!user.isActive) {
+        return next(new ErrorResponse('Account has been deactivated', 401));
+      }
+  
+      // Check password
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        return next(new ErrorResponse('Invalid credentials', 401));
+      }
+  
+      // Update last login
+      user.lastLogin = new Date();
+      await user.save({ validateBeforeSave: false });
+  
+      // Generate JWT token
+      const token = user.getSignedJwtToken();
+  
+      res.status(200).json({
+        success: true,
+        token
+      });
+    } catch (error) {
+      next(error);
     }
-
-    // Check password
-    const isMatch = await user.matchPassword(password);
-    if (!isMatch) {
-      return next(new ErrorResponse('Invalid credentials', 401));
-    }
-
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save({ validateBeforeSave: false });
-
-    // Generate JWT token
-    const token = user.getSignedJwtToken();
-
-    res.status(200).json({
-      success: true,
-      token
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+  };
 
 /**
  * @desc    Get current logged in user profile
@@ -200,11 +209,15 @@ exports.updateProfile = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const { name, phone } = req.body;
+    const { name } = req.body;
+    const updatedFields = {};
+    if (name) {
+      updatedFields.name = name;
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user.id,
-      { name, phone },
+      updatedFields,
       { new: true, runValidators: true }
     ).populate('vendorId').populate('restaurantId');
 
