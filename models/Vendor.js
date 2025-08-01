@@ -58,9 +58,12 @@ const VendorSchema = new mongoose.Schema({
     expiryDate: Date,
     document: String // File path to uploaded document
   },
-  taxId: {
+  tradeLicenseNo: {
     type: String,
-    required: [true, 'Please add tax ID']
+    unique: true,
+    trim: true,
+    maxlength: [30, 'Trade license number cannot be more than 30 characters'],
+    required: [true, 'Please add trade license number']
   },
   bankDetails: {
     accountName: String,

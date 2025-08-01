@@ -61,7 +61,7 @@ const registerValidation = [
   body("address.city").notEmpty().trim().withMessage("City is required"),
   body("address.state").notEmpty().trim().withMessage("State is required"),
   body("address.zipCode").notEmpty().trim().withMessage("Zip code is required"),
-  body("taxId").notEmpty().trim().withMessage("Tax ID is required"),
+  body("tradeLicenseNo").notEmpty().trim().withMessage("Trade license number is required"),
   handleValidationErrors,
 ];
 
