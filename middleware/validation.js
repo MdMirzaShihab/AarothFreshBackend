@@ -149,10 +149,18 @@ const userUpdateValidation = [
     .withMessage(
       "Please provide a valid phone number with country code (e.g., +8801234567890)"
     ),
-    body("role")
+  body("role")
     .optional()
     .isIn(["admin", "vendor", "restaurantOwner", "restaurantManager"])
     .withMessage("Invalid role"),
+  body("restaurantId")
+    .if(body("role").isIn(["restaurantOwner", "restaurantManager"]))
+    .isMongoId()
+    .withMessage("A valid restaurantId is required for this role"),
+  body("vendorId")
+    .if(body("role").equals("vendor"))
+    .isMongoId()
+    .withMessage("A valid vendorId is required for this role"),
   handleValidationErrors,
 ];
 

@@ -1,12 +1,12 @@
-const Product = require('../models/Product');
-const ProductCategory = require('../models/ProductCategory');
-const User = require('../models/User');
-const Vendor = require('../models/Vendor');
-const Restaurant = require('../models/Restaurant');
-const Order = require('../models/Order');
-const Listing = require('../models/Listing');
-const { ErrorResponse } = require('../middleware/error');
-const { validationResult } = require('express-validator');
+const Product = require("../models/Product");
+const ProductCategory = require("../models/ProductCategory");
+const User = require("../models/User");
+const Vendor = require("../models/Vendor");
+const Restaurant = require("../models/Restaurant");
+const Order = require("../models/Order");
+const Listing = require("../models/Listing");
+const { ErrorResponse } = require("../middleware/error");
+const { validationResult } = require("express-validator");
 
 // ======================
 // PRODUCT MANAGEMENT
@@ -26,14 +26,14 @@ exports.createProduct = async (req, res, next) => {
 
     req.body.createdBy = req.user.id;
     const product = await Product.create(req.body);
-    
-    const populatedProduct = await Product.findById(product._id)
-      .populate('category', 'name')
-      .populate('createdBy', 'name email');
 
-    res.status(201).json({ 
-      success: true, 
-      data: populatedProduct 
+    const populatedProduct = await Product.findById(product._id)
+      .populate("category", "name")
+      .populate("createdBy", "name email");
+
+    res.status(201).json({
+      success: true,
+      data: populatedProduct,
     });
   } catch (err) {
     next(err);
@@ -51,7 +51,7 @@ exports.getProducts = async (req, res, next) => {
 
     // Search by name
     if (req.query.search) {
-      query.name = { $regex: req.query.search, $options: 'i' };
+      query.name = { $regex: req.query.search, $options: "i" };
     }
 
     // Filter by category
@@ -65,9 +65,9 @@ exports.getProducts = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const products = await Product.find(query)
-      .populate('category', 'name')
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email')
+      .populate("category", "name")
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -80,7 +80,7 @@ exports.getProducts = async (req, res, next) => {
       total,
       page,
       pages: Math.ceil(total / limit),
-      data: products
+      data: products,
     });
   } catch (err) {
     next(err);
@@ -95,17 +95,19 @@ exports.getProducts = async (req, res, next) => {
 exports.getProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id)
-      .populate('category', 'name description')
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email');
+      .populate("category", "name description")
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email");
 
     if (!product) {
-      return next(new ErrorResponse(`Product not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`Product not found with id of ${req.params.id}`, 404)
+      );
     }
 
     res.status(200).json({
       success: true,
-      data: product
+      data: product,
     });
   } catch (err) {
     next(err);
@@ -126,20 +128,23 @@ exports.updateProduct = async (req, res, next) => {
 
     req.body.updatedBy = req.user.id;
     let product = await Product.findById(req.params.id);
-    
+
     if (!product) {
-      return next(new ErrorResponse(`Product not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`Product not found with id of ${req.params.id}`, 404)
+      );
     }
-    
+
     product = await Product.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
-      runValidators: true
-    }).populate('category', 'name')
-      .populate('updatedBy', 'name email');
+      runValidators: true,
+    })
+      .populate("category", "name")
+      .populate("updatedBy", "name email");
 
-    res.status(200).json({ 
-      success: true, 
-      data: product 
+    res.status(200).json({
+      success: true,
+      data: product,
     });
   } catch (err) {
     next(err);
@@ -154,26 +159,30 @@ exports.updateProduct = async (req, res, next) => {
 exports.deleteProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
-    
+
     if (!product) {
-      return next(new ErrorResponse(`Product not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`Product not found with id of ${req.params.id}`, 404)
+      );
     }
 
     // Check if product has active listings
-    const activeListings = await Listing.countDocuments({ 
-      productId: req.params.id, 
-      status: 'active' 
+    const activeListings = await Listing.countDocuments({
+      productId: req.params.id,
+      status: "active",
     });
 
     if (activeListings > 0) {
-      return next(new ErrorResponse('Cannot delete product with active listings', 400));
+      return next(
+        new ErrorResponse("Cannot delete product with active listings", 400)
+      );
     }
 
     await product.deleteOne();
 
     res.status(200).json({
       success: true,
-      data: {}
+      data: {},
     });
   } catch (err) {
     next(err);
@@ -198,13 +207,14 @@ exports.createCategory = async (req, res, next) => {
 
     req.body.createdBy = req.user.id;
     const category = await ProductCategory.create(req.body);
-    
-    const populatedCategory = await ProductCategory.findById(category._id)
-      .populate('createdBy', 'name email');
 
-    res.status(201).json({ 
-      success: true, 
-      data: populatedCategory 
+    const populatedCategory = await ProductCategory.findById(
+      category._id
+    ).populate("createdBy", "name email");
+
+    res.status(201).json({
+      success: true,
+      data: populatedCategory,
     });
   } catch (err) {
     next(err);
@@ -219,14 +229,14 @@ exports.createCategory = async (req, res, next) => {
 exports.getCategories = async (req, res, next) => {
   try {
     const categories = await ProductCategory.find()
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email')
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email")
       .sort({ name: 1 });
 
     res.status(200).json({
       success: true,
       count: categories.length,
-      data: categories
+      data: categories,
     });
   } catch (err) {
     next(err);
@@ -241,22 +251,26 @@ exports.getCategories = async (req, res, next) => {
 exports.getCategory = async (req, res, next) => {
   try {
     const category = await ProductCategory.findById(req.params.id)
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email');
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email");
 
     if (!category) {
-      return next(new ErrorResponse(`Category not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`Category not found with id of ${req.params.id}`, 404)
+      );
     }
 
     // Get products count in this category
-    const productsCount = await Product.countDocuments({ category: req.params.id });
+    const productsCount = await Product.countDocuments({
+      category: req.params.id,
+    });
 
     res.status(200).json({
       success: true,
       data: {
         ...category.toObject(),
-        productsCount
-      }
+        productsCount,
+      },
     });
   } catch (err) {
     next(err);
@@ -277,19 +291,25 @@ exports.updateCategory = async (req, res, next) => {
 
     req.body.updatedBy = req.user.id;
     let category = await ProductCategory.findById(req.params.id);
-    
-    if (!category) {
-      return next(new ErrorResponse(`Category not found with id of ${req.params.id}`, 404));
-    }
-    
-    category = await ProductCategory.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    }).populate('updatedBy', 'name email');
 
-    res.status(200).json({ 
-      success: true, 
-      data: category 
+    if (!category) {
+      return next(
+        new ErrorResponse(`Category not found with id of ${req.params.id}`, 404)
+      );
+    }
+
+    category = await ProductCategory.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate("updatedBy", "name email");
+
+    res.status(200).json({
+      success: true,
+      data: category,
     });
   } catch (err) {
     next(err);
@@ -304,23 +324,29 @@ exports.updateCategory = async (req, res, next) => {
 exports.deleteCategory = async (req, res, next) => {
   try {
     const category = await ProductCategory.findById(req.params.id);
-    
+
     if (!category) {
-      return next(new ErrorResponse(`Category not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`Category not found with id of ${req.params.id}`, 404)
+      );
     }
 
     // Check if category has products
-    const productsCount = await Product.countDocuments({ category: req.params.id });
+    const productsCount = await Product.countDocuments({
+      category: req.params.id,
+    });
 
     if (productsCount > 0) {
-      return next(new ErrorResponse('Cannot delete category with existing products', 400));
+      return next(
+        new ErrorResponse("Cannot delete category with existing products", 400)
+      );
     }
 
     await category.deleteOne();
 
     res.status(200).json({
       success: true,
-      data: {}
+      data: {},
     });
   } catch (err) {
     next(err);
@@ -347,14 +373,14 @@ exports.getAllUsers = async (req, res, next) => {
 
     // Filter by active status
     if (req.query.isActive !== undefined) {
-      query.isActive = req.query.isActive === 'true';
+      query.isActive = req.query.isActive === "true";
     }
 
     // Search by name or email
     if (req.query.search) {
       query.$or = [
-        { name: { $regex: req.query.search, $options: 'i' } },
-        { email: { $regex: req.query.search, $options: 'i' } }
+        { name: { $regex: req.query.search, $options: "i" } },
+        { email: { $regex: req.query.search, $options: "i" } },
       ];
     }
 
@@ -364,8 +390,8 @@ exports.getAllUsers = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const users = await User.find(query)
-      .populate('vendorId', 'businessName isVerified')
-      .populate('restaurantId', 'name isVerified')
+      .populate("vendorId", "businessName isVerified")
+      .populate("restaurantId", "name isVerified")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -378,7 +404,7 @@ exports.getAllUsers = async (req, res, next) => {
       total,
       page,
       pages: Math.ceil(total / limit),
-      data: users
+      data: users,
     });
   } catch (err) {
     next(err);
@@ -393,16 +419,18 @@ exports.getAllUsers = async (req, res, next) => {
 exports.getUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('vendorId')
-      .populate('restaurantId');
+      .populate("vendorId")
+      .populate("restaurantId");
 
     if (!user) {
-      return next(new ErrorResponse(`User not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`User not found with id of ${req.params.id}`, 404)
+      );
     }
 
     res.status(200).json({
       success: true,
-      data: user
+      data: user,
     });
   } catch (err) {
     next(err);
@@ -422,22 +450,63 @@ exports.updateUser = async (req, res, next) => {
     }
 
     let user = await User.findById(req.params.id);
-    
+
     if (!user) {
-      return next(new ErrorResponse(`User not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`User not found with id of ${req.params.id}`, 404)
+      );
     }
 
     // Don't allow password updates through this endpoint
     delete req.body.password;
-    
-    user = await User.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    }).populate('vendorId').populate('restaurantId');
+
+    const updates = { ...req.body };
+
+    // If role is being changed, role-specific rules
+    if (updates.role && updates.role !== user.role) {
+      if (updates.role === "vendor") {
+        if (!updates.vendorId) {
+          return next(
+            new ErrorResponse(
+              "vendorId is required when changing role to vendor",
+              400
+            )
+          );
+        }
+        updates.restaurantId = undefined; // Unset restaurantId
+      } else if (
+        updates.role === "restaurantOwner" ||
+        updates.role === "restaurantManager"
+      ) {
+        if (!updates.restaurantId) {
+          return next(
+            new ErrorResponse(
+              "restaurantId is required when changing role to restaurantOwner or restaurantManager",
+              400
+            )
+          );
+        }
+        updates.vendorId = undefined; // Unset vendorId
+      } else if (updates.role === "admin") {
+        updates.vendorId = undefined;
+        updates.restaurantId = undefined;
+      }
+    }
+
+    user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      {
+        new: true,
+        runValidators: true,
+      }
+    )
+      .populate("vendorId")
+      .populate("restaurantId");
 
     res.status(200).json({
       success: true,
-      data: user
+      data: user,
     });
   } catch (err) {
     next(err);
@@ -452,29 +521,30 @@ exports.updateUser = async (req, res, next) => {
 exports.deleteUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);
-    
+
     if (!user) {
-      return next(new ErrorResponse(`User not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`User not found with id of ${req.params.id}`, 404)
+      );
     }
 
     // Check if user has active orders
     const activeOrders = await Order.countDocuments({
-      $or: [
-        { placedBy: req.params.id },
-        { approvedBy: req.params.id }
-      ],
-      status: { $in: ['pending_approval', 'confirmed'] }
+      $or: [{ placedBy: req.params.id }, { approvedBy: req.params.id }],
+      status: { $in: ["pending_approval", "confirmed"] },
     });
 
     if (activeOrders > 0) {
-      return next(new ErrorResponse('Cannot delete user with active orders', 400));
+      return next(
+        new ErrorResponse("Cannot delete user with active orders", 400)
+      );
     }
 
     await user.deleteOne();
 
     res.status(200).json({
       success: true,
-      data: {}
+      data: {},
     });
   } catch (err) {
     next(err);
@@ -496,12 +566,12 @@ exports.getAllVendors = async (req, res, next) => {
 
     // Filter by verification status
     if (req.query.isVerified !== undefined) {
-      query.isVerified = req.query.isVerified === 'true';
+      query.isVerified = req.query.isVerified === "true";
     }
 
     // Search by business name
     if (req.query.search) {
-      query.businessName = { $regex: req.query.search, $options: 'i' };
+      query.businessName = { $regex: req.query.search, $options: "i" };
     }
 
     // Pagination
@@ -510,7 +580,7 @@ exports.getAllVendors = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const vendors = await Vendor.find(query)
-      .populate('createdBy', 'name email')
+      .populate("createdBy", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -523,7 +593,7 @@ exports.getAllVendors = async (req, res, next) => {
       total,
       page,
       pages: Math.ceil(total / limit),
-      data: vendors
+      data: vendors,
     });
   } catch (err) {
     next(err);
@@ -538,9 +608,11 @@ exports.getAllVendors = async (req, res, next) => {
 exports.verifyVendor = async (req, res, next) => {
   try {
     const vendor = await Vendor.findById(req.params.id);
-    
+
     if (!vendor) {
-      return next(new ErrorResponse(`Vendor not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(`Vendor not found with id of ${req.params.id}`, 404)
+      );
     }
 
     vendor.isVerified = true;
@@ -549,7 +621,7 @@ exports.verifyVendor = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: vendor
+      data: vendor,
     });
   } catch (err) {
     next(err);
@@ -571,12 +643,12 @@ exports.getAllRestaurants = async (req, res, next) => {
 
     // Filter by verification status
     if (req.query.isVerified !== undefined) {
-      query.isVerified = req.query.isVerified === 'true';
+      query.isVerified = req.query.isVerified === "true";
     }
 
     // Search by restaurant name
     if (req.query.search) {
-      query.name = { $regex: req.query.search, $options: 'i' };
+      query.name = { $regex: req.query.search, $options: "i" };
     }
 
     // Pagination
@@ -585,8 +657,8 @@ exports.getAllRestaurants = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const restaurants = await Restaurant.find(query)
-      .populate('createdBy', 'name email')
-      .populate('managers', 'name email')
+      .populate("createdBy", "name email")
+      .populate("managers", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -599,7 +671,7 @@ exports.getAllRestaurants = async (req, res, next) => {
       total,
       page,
       pages: Math.ceil(total / limit),
-      data: restaurants
+      data: restaurants,
     });
   } catch (err) {
     next(err);
@@ -614,9 +686,14 @@ exports.getAllRestaurants = async (req, res, next) => {
 exports.verifyRestaurant = async (req, res, next) => {
   try {
     const restaurant = await Restaurant.findById(req.params.id);
-    
+
     if (!restaurant) {
-      return next(new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404));
+      return next(
+        new ErrorResponse(
+          `Restaurant not found with id of ${req.params.id}`,
+          404
+        )
+      );
     }
 
     restaurant.isVerified = true;
@@ -625,7 +702,7 @@ exports.verifyRestaurant = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: restaurant
+      data: restaurant,
     });
   } catch (err) {
     next(err);
@@ -653,7 +730,7 @@ exports.getDashboardStats = async (req, res, next) => {
       totalOrders,
       recentOrders,
       orderStats,
-      verificationStats
+      verificationStats,
     ] = await Promise.all([
       User.countDocuments(),
       Vendor.countDocuments(),
@@ -662,20 +739,24 @@ exports.getDashboardStats = async (req, res, next) => {
       ProductCategory.countDocuments(),
       Listing.countDocuments(),
       Order.countDocuments(),
-      Order.find().populate('restaurantId', 'name').populate('placedBy', 'name').sort({ createdAt: -1 }).limit(5),
+      Order.find()
+        .populate("restaurantId", "name")
+        .populate("placedBy", "name")
+        .sort({ createdAt: -1 })
+        .limit(5),
       Order.aggregate([
         {
           $group: {
-            _id: '$status',
+            _id: "$status",
             count: { $sum: 1 },
-            totalAmount: { $sum: '$totalAmount' }
-          }
-        }
+            totalAmount: { $sum: "$totalAmount" },
+          },
+        },
       ]),
       Promise.all([
         Vendor.countDocuments({ isVerified: false }),
-        Restaurant.countDocuments({ isVerified: false })
-      ])
+        Restaurant.countDocuments({ isVerified: false }),
+      ]),
     ]);
 
     const stats = {
@@ -690,19 +771,63 @@ exports.getDashboardStats = async (req, res, next) => {
       ordersByStatus: orderStats.reduce((acc, stat) => {
         acc[stat._id] = {
           count: stat.count,
-          totalAmount: stat.totalAmount
+          totalAmount: stat.totalAmount,
         };
         return acc;
       }, {}),
       pendingVerifications: {
         vendors: verificationStats[0],
-        restaurants: verificationStats[1]
-      }
+        restaurants: verificationStats[1],
+      },
     };
 
     res.status(200).json({
       success: true,
-      data: stats
+      data: stats,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+/**
+ * @desc    Get all vendors pending verification
+ * @route   GET /api/v1/admin/vendors/pending
+ * @access  Private/Admin
+ */
+exports.getPendingVendors = async (req, res, next) => {
+  try {
+    const vendors = await Vendor.find({ isVerified: false })
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: vendors.length,
+      data: vendors
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Get all restaurants pending verification
+ * @route   GET /api/v1/admin/restaurants/pending
+ * @access  Private/Admin
+ */
+exports.getPendingRestaurants = async (req, res, next) => {
+  try {
+    const restaurants = await Restaurant.find({ isVerified: false })
+      .populate('createdBy', 'name email')
+      .populate('managers', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: restaurants.length,
+      data: restaurants
     });
   } catch (err) {
     next(err);
