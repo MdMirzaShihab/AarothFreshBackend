@@ -198,7 +198,10 @@ exports.getOrder = async (req, res, next) => {
 
     if (req.user.role === "admin") {
       authorized = true;
-    } else if (req.user.role === "owner" || req.user.role === "manager") {
+    } else if (
+      req.user.role === "restaurantOwner" ||
+      req.user.role === "restaurantManager"
+    ) {
       authorized =
         order.restaurantId._id.toString() === req.user.restaurantId.toString();
     } else if (req.user.role === "vendor") {

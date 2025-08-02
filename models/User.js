@@ -27,7 +27,7 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'vendor', 'owner', 'manager'],
+    enum: ['admin', 'vendor', 'restaurantOwner', 'restaurantManager'],
     required: [true, 'Please specify user role']
   },
   vendorId: {
@@ -41,7 +41,7 @@ const UserSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Restaurant',
     required: function() {
-      return this.role === 'owner' || this.role === 'manager';
+      return this.role === 'restaurantOwner' || this.role === 'restaurantManager';
     }
   },
   phone: {

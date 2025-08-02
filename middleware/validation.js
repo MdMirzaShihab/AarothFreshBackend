@@ -36,8 +36,8 @@ const registerValidation = [
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
     .withMessage("Please provide a valid phone number"),
   body("role")
-    .isIn(["vendor", "owner"])
-    .withMessage("Role must be either vendor or owner"),
+    .isIn(["vendor", "restaurantOwner"])
+    .withMessage("Role must be either vendor or restaurantOwner"),
   body("businessName")
     .if(body("role").equals("vendor"))
     .notEmpty()
@@ -47,7 +47,7 @@ const registerValidation = [
       "Business name is required for vendors and must be between 2 and 100 characters"
     ),
   body("restaurantName")
-    .if(body("role").equals("owner"))
+    .if(body("role").equals("restaurantOwner"))
     .notEmpty()
     .trim()
     .isLength({ min: 2, max: 100 })
@@ -61,7 +61,10 @@ const registerValidation = [
   body("address.city").notEmpty().trim().withMessage("City is required"),
   body("address.state").notEmpty().trim().withMessage("State is required"),
   body("address.zipCode").notEmpty().trim().withMessage("Zip code is required"),
-  body("tradeLicenseNo").notEmpty().trim().withMessage("Trade license number is required"),
+  body("tradeLicenseNo")
+    .notEmpty()
+    .trim()
+    .withMessage("Trade license number is required"),
   handleValidationErrors,
 ];
 
@@ -69,13 +72,9 @@ const registerValidation = [
  * Login validation rules
  */
 const loginValidation = [
-  body('phone')
-    .notEmpty()
-    .withMessage('Phone number is required'),
-  body('password')
-    .notEmpty()
-    .withMessage('Password is required'),
-  handleValidationErrors
+  body("phone").notEmpty().withMessage("Phone number is required"),
+  body("password").notEmpty().withMessage("Password is required"),
+  handleValidationErrors,
 ];
 
 /**
@@ -150,9 +149,9 @@ const userUpdateValidation = [
     .withMessage(
       "Please provide a valid phone number with country code (e.g., +8801234567890)"
     ),
-  body("role")
+    body("role")
     .optional()
-    .isIn(["admin", "vendor", "owner", "manager"])
+    .isIn(["admin", "vendor", "restaurantOwner", "restaurantManager"])
     .withMessage("Invalid role"),
   handleValidationErrors,
 ];

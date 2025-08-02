@@ -97,7 +97,7 @@ const checkOwnership = (resourceModel) => {
         }
       }
 
-      if ((req.user.role === 'owner' || req.user.role === 'manager') && resource.restaurantId) {
+      if ((req.user.role === 'restaurantOwner' || req.user.role === 'restaurantManager') && resource.restaurantId) {
         if (resource.restaurantId.toString() !== req.user.restaurantId._id.toString()) {
           return next(new ErrorResponse('Not authorized to access this resource', 403));
         }

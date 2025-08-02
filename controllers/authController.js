@@ -12,7 +12,6 @@ const sendEmail = require('../utils/email');
  */
 exports.register = async (req, res, next) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
@@ -57,7 +56,7 @@ exports.register = async (req, res, next) => {
       });
 
       vendorId = vendor._id;
-    } else if (role === 'owner') {
+    } else if (role === 'restaurantOwner') {
       // Create restaurant
       const restaurant = await Restaurant.create({
         name: restaurantName,
@@ -289,7 +288,7 @@ exports.createManager = async (req, res, next) => {
       email,
       password,
       phone,
-      role: 'manager',
+      role: 'restaurantManager',
       restaurantId: req.user.restaurantId._id
     });
 
@@ -316,7 +315,7 @@ exports.createManager = async (req, res, next) => {
 exports.getManagers = async (req, res, next) => {
   try {
     const managers = await User.find({
-      role: 'manager',
+      role: 'restaurantManager', // Change this line
       restaurantId: req.user.restaurantId._id,
       isActive: true
     }).select('-password');
@@ -340,7 +339,7 @@ exports.deactivateManager = async (req, res, next) => {
   try {
     const manager = await User.findOne({
       _id: req.params.id,
-      role: 'manager',
+      role: 'restaurantManager',
       restaurantId: req.user.restaurantId._id
     });
 

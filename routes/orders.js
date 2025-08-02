@@ -39,7 +39,7 @@ router.get('/', getOrders);
  * @access  Private (Restaurant users - Owner/Manager)
  */
 router.post('/', 
-  authorize('owner', 'manager'), 
+  authorize('restaurantOwner', 'restaurantManager'),
   placeOrderValidation,
   placeOrder
 );
@@ -56,7 +56,7 @@ router.get('/:id', getOrder);
  * @desc    Approve a pending order
  * @access  Private (Restaurant Owner only)
  */
-router.post('/:id/approve', authorize('owner'), approveOrder);
+router.post('/:id/approve', authorize('restaurantOwner'), approveOrder);
 
 /**
  * @route   PUT /api/v1/orders/:id/status
