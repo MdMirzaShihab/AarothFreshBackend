@@ -29,10 +29,16 @@ const protect = async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // Get user from token
-      const user = await User.findById(decoded.id)
-        .populate('vendorId')
-        .populate('restaurantId');
+      // Get user from token - populate selectively to avoid N+1 queries
+      const user = await User.findById(decoded.id);
+      
+      // Only populate related data if needed (reduces database load)
+      if (user && user.vendorId) {
+        await user.populate('vendorId');
+      }
+      if (user && user.restaurantId) {
+        await user.populate('restaurantId');
+      }
 
       if (!user) {
         return next(new ErrorResponse('No user found with this token', 401));

@@ -1,11 +1,23 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 const { errorHandler } = require('./middleware/error');
 
 // Load env vars
 dotenv.config();
+
+// Validate critical environment variables
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL ERROR: JWT_SECRET environment variable is not set');
+  process.exit(1);
+}
+
+if (process.env.JWT_SECRET.length < 16) {
+  console.error('FATAL ERROR: JWT_SECRET must be at least 16 characters long for security');
+  process.exit(1);
+}
 
 // Connect to database
 connectDB();
@@ -20,6 +32,37 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true
 }));
+
+// Rate limiting (only in production to avoid interfering with development)
+if (process.env.NODE_ENV === 'production') {
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: {
+      success: false,
+      error: 'Too many requests from this IP, please try again later.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  
+  // Apply rate limiting to all requests
+  app.use(limiter);
+  
+  // Stricter rate limiting for auth endpoints
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // limit each IP to 5 auth requests per windowMs
+    message: {
+      success: false,
+      error: 'Too many authentication attempts, please try again later.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  
+  app.use('/api/v1/auth', authLimiter);
+}
 
 // Static folder for uploads
 app.use('/uploads', express.static('uploads'));

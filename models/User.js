@@ -82,8 +82,9 @@ UserSchema.pre('save', async function(next) {
   // Only run this function if password was actually modified
   if (!this.isModified('password')) return next();
 
-  // Hash the password with cost of 12
-  const salt = await bcrypt.genSalt(12);
+  // Hash the password with configurable salt rounds
+  const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
+  const salt = await bcrypt.genSalt(saltRounds);
   this.password = await bcrypt.hash(this.password, salt);
 
   // Set passwordChangedAt property

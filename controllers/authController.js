@@ -35,10 +35,22 @@ exports.register = async (req, res, next) => {
       phone = `+880${phone}`;
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ phone, email });
+    // Check if user already exists - sanitize inputs to prevent NoSQL injection
+    const existingUser = await User.findOne({
+      $or: [
+        { email: String(email) },
+        { phone: String(phone) }
+      ]
+    });
+    
     if (existingUser) {
-      return next(new ErrorResponse('User with this email already exists', 400));
+      // Provide specific error messages
+      if (existingUser.email === email) {
+        return next(new ErrorResponse('User with this email already exists', 400));
+      }
+      if (existingUser.phone === phone) {
+        return next(new ErrorResponse('User with this phone number already exists', 400));
+      }
     }
 
     let vendorId = null;
@@ -125,8 +137,8 @@ exports.login = async (req, res, next) => {
       phone = `+880${phone}`;
     }
 
-      // Find user by phone and include password field
-      const user = await User.findOne({ phone }).select('+password');
+      // Find user by phone and include password field - sanitize input
+      const user = await User.findOne({ phone: String(phone) }).select('+password');
 
       if (!user) {
         return next(new ErrorResponse('Invalid credentials', 401));
