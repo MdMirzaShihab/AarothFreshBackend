@@ -50,23 +50,278 @@ const wrongData = {
    }
    ```
 
-### JWT Token Management
+### Advanced JWT Token Management
+
+#### Token Storage Strategy
 ```javascript
-// Frontend token handling pattern
-class AuthService {
-  setToken(token) {
-    localStorage.setItem('token', token);
-    // Set default header for all subsequent requests
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+// Enhanced token storage with security considerations
+class TokenStorage {
+  // Store tokens securely
+  static setTokens(accessToken, refreshToken, expiresIn) {
+    const expiryTime = Date.now() + (expiresIn * 1000);
+    
+    // Store in localStorage (consider httpOnly cookies for production)
+    localStorage.setItem('token', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('tokenExpiry', expiryTime.toString());
   }
 
-  getToken() {
+  static getAccessToken() {
     return localStorage.getItem('token');
   }
 
-  removeToken() {
+  static getRefreshToken() {
+    return localStorage.getItem('refreshToken');
+  }
+
+  static getTokenExpiry() {
+    const expiry = localStorage.getItem('tokenExpiry');
+    return expiry ? parseInt(expiry) : null;
+  }
+
+  static isTokenExpired() {
+    const expiry = this.getTokenExpiry();
+    return expiry ? Date.now() >= expiry : true;
+  }
+
+  static shouldRefreshToken() {
+    const expiry = this.getTokenExpiry();
+    // Refresh if token expires within 2 minutes
+    return expiry ? Date.now() >= (expiry - 120000) : false;
+  }
+
+  static clearTokens() {
     localStorage.removeItem('token');
-    delete api.defaults.headers.common['Authorization'];
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('tokenExpiry');
+  }
+}
+```
+
+#### Automatic Token Refresh Implementation
+```javascript
+// Advanced axios interceptor with token refresh
+import axios from 'axios';
+
+class ApiService {
+  constructor() {
+    this.api = axios.create({
+      baseURL: process.env.REACT_APP_API_BASE_URL || '/api/v1',
+    });
+    
+    this.isRefreshing = false;
+    this.failedQueue = [];
+    
+    this.setupInterceptors();
+  }
+
+  setupInterceptors() {
+    // Request interceptor - add token to requests
+    this.api.interceptors.request.use(
+      (config) => {
+        const token = TokenStorage.getAccessToken();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+      },
+      (error) => Promise.reject(error)
+    );
+
+    // Response interceptor - handle token refresh
+    this.api.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          if (this.isRefreshing) {
+            // Add request to queue while refresh is in progress
+            return new Promise((resolve, reject) => {
+              this.failedQueue.push({ resolve, reject });
+            }).then(token => {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              return this.api(originalRequest);
+            }).catch(err => Promise.reject(err));
+          }
+
+          originalRequest._retry = true;
+          this.isRefreshing = true;
+
+          try {
+            const refreshToken = TokenStorage.getRefreshToken();
+            if (!refreshToken) {
+              throw new Error('No refresh token available');
+            }
+
+            const response = await axios.post('/api/v1/auth/refresh', {}, {
+              headers: {
+                'Authorization': `Bearer ${refreshToken}`,
+              },
+            });
+
+            const { token, expiresIn } = response.data;
+            
+            // Update stored tokens
+            TokenStorage.setTokens(token, refreshToken, expiresIn);
+            
+            // Process queued requests
+            this.processQueue(null, token);
+            
+            // Retry original request
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return this.api(originalRequest);
+
+          } catch (refreshError) {
+            // Refresh failed - logout user
+            this.processQueue(refreshError, null);
+            TokenStorage.clearTokens();
+            
+            // Redirect to login or dispatch logout action
+            window.location.href = '/login';
+            
+            return Promise.reject(refreshError);
+          } finally {
+            this.isRefreshing = false;
+          }
+        }
+
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  processQueue(error, token = null) {
+    this.failedQueue.forEach(({ resolve, reject }) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(token);
+      }
+    });
+    
+    this.failedQueue = [];
+  }
+}
+
+export const apiService = new ApiService();
+export const api = apiService.api;
+```
+
+#### Concurrent Request Handling
+```javascript
+// Utility to handle multiple concurrent requests during token refresh
+class TokenManager {
+  constructor() {
+    this.refreshPromise = null;
+  }
+
+  async getValidToken() {
+    const currentToken = TokenStorage.getAccessToken();
+    
+    // Return current token if it's valid
+    if (currentToken && !TokenStorage.shouldRefreshToken()) {
+      return currentToken;
+    }
+
+    // If refresh is already in progress, wait for it
+    if (this.refreshPromise) {
+      await this.refreshPromise;
+      return TokenStorage.getAccessToken();
+    }
+
+    // Start token refresh
+    this.refreshPromise = this.refreshToken();
+    
+    try {
+      await this.refreshPromise;
+      return TokenStorage.getAccessToken();
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  async refreshToken() {
+    const refreshToken = TokenStorage.getRefreshToken();
+    
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    try {
+      const response = await fetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${refreshToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed');
+      }
+
+      const data = await response.json();
+      TokenStorage.setTokens(data.token, refreshToken, data.expiresIn);
+      
+      return data.token;
+    } catch (error) {
+      TokenStorage.clearTokens();
+      throw error;
+    }
+  }
+}
+
+export const tokenManager = new TokenManager();
+```
+
+#### Production Security Considerations
+```javascript
+// Enhanced security patterns for production
+class SecureTokenManager {
+  constructor() {
+    // Use secure storage in production
+    this.storage = this.isProduction() ? this.createSecureStorage() : localStorage;
+  }
+
+  isProduction() {
+    return process.env.NODE_ENV === 'production';
+  }
+
+  createSecureStorage() {
+    // In production, consider using:
+    // 1. HttpOnly cookies (backend-managed)
+    // 2. Secure cookie attributes
+    // 3. SameSite cookie policy
+    return {
+      setItem: (key, value) => {
+        // Implement secure storage (cookies, encrypted storage, etc.)
+        document.cookie = `${key}=${value}; Secure; SameSite=Strict; HttpOnly`;
+      },
+      getItem: (key) => {
+        // Implement secure retrieval
+        const match = document.cookie.match(new RegExp(`${key}=([^;]+)`));
+        return match ? match[1] : null;
+      },
+      removeItem: (key) => {
+        document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Strict`;
+      }
+    };
+  }
+
+  // CSRF protection
+  getCSRFToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : null;
+  }
+
+  // Add CSRF token to requests
+  addCSRFToken(config) {
+    const csrfToken = this.getCSRFToken();
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken;
+    }
+    return config;
   }
 }
 ```
@@ -175,6 +430,35 @@ Authorization: Bearer {token}
 }
 
 // Note: Frontend should clear token from localStorage
+```
+
+#### Refresh Token
+```javascript
+POST /api/v1/auth/refresh
+Authorization: Bearer {refresh_token}
+Content-Type: application/json
+
+// Success Response (200)
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", // New access token
+  "expiresIn": 3600, // Token expiry time in seconds
+  "message": "Token refreshed successfully"
+}
+
+// Error Response (401) - Refresh token expired or invalid
+{
+  "success": false,
+  "message": "Invalid or expired refresh token",
+  "code": "REFRESH_TOKEN_EXPIRED"
+}
+
+// Error Response (403) - User deactivated
+{
+  "success": false,
+  "message": "User account is deactivated",
+  "code": "USER_DEACTIVATED"
+}
 ```
 
 #### Get Current User Profile
@@ -1560,81 +1844,112 @@ GET /api/v1/health
 }
 ```
 
-## Data Models & TypeScript Types
+## Data Models & JavaScript Objects
 
-### User Model
-```typescript
-interface User {
-  id: string;
-  phone: string;
-  name: string;
-  role: 'admin' | 'vendor' | 'restaurantOwner' | 'restaurantManager';
-  isActive: boolean;
-  isApproved?: boolean; // for vendors
-  createdAt: string;
-  updatedAt: string;
+### User Model Structure
+```javascript
+// Expected User object structure
+const user = {
+  id: 'string',
+  phone: 'string', // with country code +8801234567890
+  name: 'string',
+  role: 'admin' | 'vendor' | 'restaurantOwner' | 'restaurantManager',
+  isActive: true,
+  isApproved: true, // for vendors
+  createdAt: '2024-01-01T00:00:00.000Z',
+  updatedAt: '2024-01-01T00:00:00.000Z',
   
-  // Role-specific fields
-  vendor?: {
-    businessName: string;
-    businessAddress: Address;
-    businessLicense?: string;
-  };
+  // Role-specific fields (populated based on role)
+  vendor: {
+    businessName: 'string',
+    businessAddress: {
+      street: 'string',
+      city: 'string',
+      area: 'string',
+      postalCode: 'string'
+    },
+    businessLicense: 'string' // optional
+  },
   
-  restaurant?: {
-    restaurantName: string;
-    restaurantAddress: Address;
-    restaurantType: string;
-  };
-}
+  restaurant: {
+    restaurantName: 'string',
+    restaurantAddress: {
+      street: 'string',
+      city: 'string',
+      area: 'string',
+      postalCode: 'string'
+    },
+    restaurantType: 'string'
+  }
+};
 ```
 
 ### Product & Listing Models
-```typescript
-interface Product {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  unit: string; // kg, piece, bunch, etc.
-  images: string[];
-  createdAt: string;
-}
+```javascript
+// Product object structure
+const product = {
+  id: 'string',
+  name: 'string',
+  category: {
+    id: 'string',
+    name: 'string'
+  },
+  description: 'string',
+  unit: 'string', // kg, piece, bunch, etc.
+  images: ['url1', 'url2'],
+  createdAt: '2024-01-01T00:00:00.000Z'
+};
 
-interface Listing {
-  id: string;
-  vendor: User;
-  product: Product;
-  price: number;
-  availableQuantity: number;
-  isAvailable: boolean;
-  description?: string;
-  images: string[];
-  createdAt: string;
-  updatedAt: string;
-}
+// Listing object structure
+const listing = {
+  id: 'string',
+  vendor: user, // User object
+  product: product, // Product object
+  price: 25.50,
+  availableQuantity: 100,
+  isAvailable: true,
+  description: 'string',
+  images: ['url1', 'url2'],
+  qualityGrade: 'Premium', // Premium, Standard, Economy
+  harvestDate: '2024-01-01',
+  deliveryOptions: [
+    {
+      type: 'pickup',
+      cost: 0,
+      timeRange: '30 minutes'
+    }
+  ],
+  createdAt: '2024-01-01T00:00:00.000Z',
+  updatedAt: '2024-01-01T00:00:00.000Z'
+};
 ```
 
 ### Order Model
-```typescript
-interface Order {
-  id: string;
-  restaurant: User;
-  items: OrderItem[];
-  status: 'pending' | 'confirmed' | 'prepared' | 'delivered' | 'cancelled';
-  totalAmount: number;
-  deliveryAddress: Address;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface OrderItem {
-  listing: Listing;
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-}
+```javascript
+// Order object structure
+const order = {
+  id: 'string',
+  restaurant: user, // User object
+  items: [
+    {
+      listing: listing, // Listing object
+      quantity: 5,
+      unitPrice: 25.50,
+      totalPrice: 127.50
+    }
+  ],
+  status: 'pending', // 'pending' | 'confirmed' | 'prepared' | 'delivered' | 'cancelled'
+  totalAmount: 127.50,
+  deliveryAddress: {
+    street: '123 Main St',
+    city: 'Dhaka',
+    area: 'Dhanmondi',
+    postalCode: '1205'
+  },
+  notes: 'string',
+  createdAt: '2024-01-01T00:00:00.000Z',
+  updatedAt: '2024-01-01T00:00:00.000Z'
+};
 ```
 
 ## Error Handling Patterns
@@ -1776,32 +2091,33 @@ folder: "listings"
 #### Single File Upload Component
 ```javascript
 // hooks/useFileUpload.js
-import { useMutation } from '@tanstack/react-query';
+import { useUploadFileMutation } from '../store/api/uploadApiSlice';
 import { uploadService } from '../services/upload.service';
 
 export const useFileUpload = () => {
-  return useMutation({
-    mutationFn: ({ file, folder = 'general' }) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', folder);
-      
-      return api.post('/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-    },
-    onError: (error) => {
-      const message = error.response?.data?.message || 'File upload failed';
+  const [uploadFile, { isLoading, error }] = useUploadFileMutation();
+  
+  const handleUpload = async ({ file, folder = 'general' }) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    
+    try {
+      const result = await uploadFile(formData).unwrap();
+      return result;
+    } catch (error) {
+      const message = error?.data?.message || 'File upload failed';
       toast.error(message);
+      throw error;
     }
-  });
+  };
+  
+  return { uploadFile: handleUpload, isLoading, error };
 };
 
 // Component usage
 const ImageUpload = ({ onUploadSuccess, folder = 'general' }) => {
-  const uploadMutation = useFileUpload();
+  const { uploadFile, isLoading, error } = useFileUpload();
   
   const handleFileSelect = async (event) => {
     const file = event.target.files[0];
@@ -1820,11 +2136,11 @@ const ImageUpload = ({ onUploadSuccess, folder = 'general' }) => {
     }
     
     try {
-      const response = await uploadMutation.mutateAsync({ file, folder });
-      onUploadSuccess(response.data.url);
+      const response = await uploadFile({ file, folder });
+      onUploadSuccess(response.url);
       toast.success('Image uploaded successfully');
     } catch (error) {
-      // Error handled by mutation
+      // Error handled by upload function
     }
   };
   
@@ -1841,10 +2157,10 @@ const ImageUpload = ({ onUploadSuccess, folder = 'general' }) => {
         htmlFor="file-upload"
         className="cursor-pointer bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
       >
-        {uploadMutation.isLoading ? 'Uploading...' : 'Select Image'}
+        {isLoading ? 'Uploading...' : 'Select Image'}
       </label>
       
-      {uploadMutation.isLoading && (
+      {isLoading && (
         <div className="mt-2 text-sm text-gray-600">
           Uploading image...
         </div>
@@ -1857,36 +2173,36 @@ const ImageUpload = ({ onUploadSuccess, folder = 'general' }) => {
 #### Multiple Files Upload Component
 ```javascript
 // hooks/useMultipleFileUpload.js
+import { useUploadMultipleFilesMutation } from '../store/api/uploadApiSlice';
+
 export const useMultipleFileUpload = () => {
-  return useMutation({
-    mutationFn: ({ files, folder = 'listings' }) => {
-      const formData = new FormData();
-      
-      Array.from(files).forEach((file) => {
-        formData.append('files', file);
-      });
-      formData.append('folder', folder);
-      
-      return api.post('/upload/multiple', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        },
-        // Add upload progress tracking
-        onUploadProgress: (progressEvent) => {
-          const progress = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          console.log(`Upload progress: ${progress}%`);
-        }
-      });
+  const [uploadMultipleFiles, { isLoading, error }] = useUploadMultipleFilesMutation();
+  
+  const handleMultipleUpload = async ({ files, folder = 'listings' }) => {
+    const formData = new FormData();
+    
+    Array.from(files).forEach((file) => {
+      formData.append('files', file);
+    });
+    formData.append('folder', folder);
+    
+    try {
+      const result = await uploadMultipleFiles(formData).unwrap();
+      return result;
+    } catch (error) {
+      const message = error?.data?.message || 'Multiple file upload failed';
+      toast.error(message);
+      throw error;
     }
-  });
+  };
+  
+  return { uploadMultipleFiles: handleMultipleUpload, isLoading, error };
 };
 
 // Multi-image upload component for listings
 const ListingImageUpload = ({ onUploadSuccess, maxImages = 5 }) => {
   const [selectedFiles, setSelectedFiles] = useState([]);
-  const uploadMutation = useMultipleFileUpload();
+  const { uploadMultipleFiles, isLoading, error } = useMultipleFileUpload();
   
   const handleFilesSelect = (event) => {
     const files = Array.from(event.target.files);
@@ -1926,17 +2242,17 @@ const ListingImageUpload = ({ onUploadSuccess, maxImages = 5 }) => {
     }
     
     try {
-      const response = await uploadMutation.mutateAsync({
+      const response = await uploadMultipleFiles({
         files: selectedFiles,
         folder: 'listings'
       });
       
-      const imageUrls = response.data.uploads.map(upload => upload.url);
+      const imageUrls = response.uploads.map(upload => upload.url);
       onUploadSuccess(imageUrls);
       setSelectedFiles([]);
       toast.success(`${imageUrls.length} images uploaded successfully`);
     } catch (error) {
-      // Error handled by mutation
+      // Error handled by upload function
     }
   };
   
@@ -1988,10 +2304,10 @@ const ListingImageUpload = ({ onUploadSuccess, maxImages = 5 }) => {
           
           <button
             onClick={handleUpload}
-            disabled={uploadMutation.isLoading}
+            disabled={isLoading}
             className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
           >
-            {uploadMutation.isLoading ? 'Uploading...' : 'Upload Images'}
+            {isLoading ? 'Uploading...' : 'Upload Images'}
           </button>
         </div>
       )}
@@ -2236,39 +2552,56 @@ export const listingsService = {
 };
 ```
 
-## TanStack Query Integration
+## RTK Query Integration
 
-### Query Hooks Pattern
+### RTK Query API Slice Pattern
 ```javascript
-// hooks/useListings.js
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listingsService } from '../services/listings.service';
+// store/api/listingsApiSlice.js
+import { apiSlice } from './apiSlice';
 
-// Get listings with caching
-export const useListings = (filters = {}) => {
-  return useQuery({
-    queryKey: ['listings', filters],
-    queryFn: () => listingsService.getAll(filters),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
-  });
-};
+export const listingsApiSlice = apiSlice.injectEndpoints({
+  endpoints: (builder) => ({
+    getListings: builder.query({
+      query: (filters = {}) => ({
+        url: '/listings',
+        params: filters,
+      }),
+      providesTags: (result) => [
+        { type: 'Listing', id: 'LIST' },
+        ...(result?.data?.listings || []).map(({ id }) => ({ type: 'Listing', id }))
+      ],
+    }),
+    createListing: builder.mutation({
+      query: (newListing) => ({
+        url: '/listings',
+        method: 'POST',
+        body: newListing,
+      }),
+      invalidatesTags: [{ type: 'Listing', id: 'LIST' }],
+    }),
+  }),
+});
 
-// Create listing mutation
-export const useCreateListing = () => {
-  const queryClient = useQueryClient();
+export const {
+  useGetListingsQuery,
+  useCreateListingMutation,
+} = listingsApiSlice;
+
+// Custom hook with additional logic
+export const useListingsWithToast = () => {
+  const [createListing] = useCreateListingMutation();
   
-  return useMutation({
-    mutationFn: listingsService.create,
-    onSuccess: () => {
-      // Invalidate and refetch listings
-      queryClient.invalidateQueries(['listings']);
+  const handleCreateListing = async (listingData) => {
+    try {
+      await createListing(listingData).unwrap();
       toast.success('Listing created successfully');
-    },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to create listing');
+    } catch (error) {
+      toast.error(error?.data?.message || 'Failed to create listing');
+      throw error;
     }
-  });
+  };
+  
+  return { createListing: handleCreateListing };
 };
 ```
 
@@ -2277,7 +2610,7 @@ export const useCreateListing = () => {
 ### API Request Optimization
 - **Pagination**: Always use pagination for lists
 - **Filtering**: Implement server-side filtering
-- **Caching**: Use TanStack Query for intelligent caching
+- **Caching**: Use RTK Query for intelligent caching and background updates
 - **Debouncing**: Debounce search inputs to reduce API calls
 
 ### Image Optimization
@@ -2292,34 +2625,40 @@ export const useCreateListing = () => {
 1. **Understand Backend**: Read backend code and documentation
 2. **Create Types**: Define TypeScript interfaces matching backend models
 3. **Build Services**: Create API service functions
-4. **Create Hooks**: Build TanStack Query hooks
+4. **Create API Slices**: Build RTK Query API slices with endpoints
 5. **Handle Errors**: Implement comprehensive error handling
 6. **Test Integration**: Test with real backend API
 
 ### Testing API Integration
 ```javascript
-// Example API integration test
+// Example RTK Query integration test
 import { renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useListings } from '../hooks/useListings';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
+import { setupListeners } from '@reduxjs/toolkit/query';
+import { apiSlice } from '../store/api/apiSlice';
+import { useGetListingsQuery } from '../store/api/listingsApiSlice';
 
 const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
+  const store = configureStore({
+    reducer: {
+      api: apiSlice.reducer,
     },
+    middleware: (getDefaultMiddleware) =>
+      getDefaultMiddleware().concat(apiSlice.middleware),
   });
   
+  setupListeners(store.dispatch);
+  
   return ({ children }) => (
-    <QueryClientProvider client={queryClient}>
+    <Provider store={store}>
       {children}
-    </QueryClientProvider>
+    </Provider>
   );
 };
 
 test('should fetch listings successfully', async () => {
-  const { result } = renderHook(() => useListings(), {
+  const { result } = renderHook(() => useGetListingsQuery(), {
     wrapper: createWrapper(),
   });
 
@@ -2341,16 +2680,305 @@ test('should fetch listings successfully', async () => {
 - **Role Validation**: Always validate user permissions
 - **Rate Limiting**: Respect backend rate limits
 
-### Environment Variables
+### Production Environment Configuration
+
+#### Environment Variables
 ```javascript
-// .env files for different environments
 // .env.development
+REACT_APP_ENV=development
 REACT_APP_API_BASE_URL=http://localhost:5000/api/v1
-REACT_APP_CLOUDINARY_CLOUD_NAME=your_cloud_name
+REACT_APP_WS_URL=ws://localhost:5000
+REACT_APP_CLOUDINARY_CLOUD_NAME=dev_cloud_name
+REACT_APP_CLOUDINARY_UPLOAD_PRESET=dev_preset
+REACT_APP_ENABLE_ANALYTICS=false
+REACT_APP_LOG_LEVEL=debug
+
+// .env.staging
+REACT_APP_ENV=staging
+REACT_APP_API_BASE_URL=https://staging-api.aarothfresh.com/api/v1
+REACT_APP_WS_URL=wss://staging-api.aarothfresh.com
+REACT_APP_CLOUDINARY_CLOUD_NAME=staging_cloud_name
+REACT_APP_CLOUDINARY_UPLOAD_PRESET=staging_preset
+REACT_APP_ENABLE_ANALYTICS=true
+REACT_APP_LOG_LEVEL=info
+REACT_APP_ERROR_TRACKING_DSN=your_sentry_dsn_staging
 
 // .env.production
+REACT_APP_ENV=production
 REACT_APP_API_BASE_URL=https://api.aarothfresh.com/api/v1
+REACT_APP_WS_URL=wss://api.aarothfresh.com
 REACT_APP_CLOUDINARY_CLOUD_NAME=production_cloud_name
+REACT_APP_CLOUDINARY_UPLOAD_PRESET=production_preset
+REACT_APP_ENABLE_ANALYTICS=true
+REACT_APP_LOG_LEVEL=error
+REACT_APP_ERROR_TRACKING_DSN=your_sentry_dsn_production
+REACT_APP_CDN_BASE_URL=https://cdn.aarothfresh.com
+```
+
+#### Backend CORS Configuration Requirements
+```javascript
+// Backend CORS settings needed for frontend integration
+const corsOptions = {
+  origin: [
+    'http://localhost:3000', // Development
+    'http://localhost:5173', // Vite dev server
+    'https://staging.aarothfresh.com', // Staging
+    'https://aarothfresh.com', // Production
+    'https://www.aarothfresh.com', // Production with www
+  ],
+  credentials: true, // Allow cookies and authorization headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'X-CSRF-Token',
+    'Cache-Control'
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  optionsSuccessStatus: 200,
+  maxAge: 86400 // 24 hours
+};
+```
+
+#### Production API Configuration
+```javascript
+// config/api.js - Environment-aware configuration
+const getApiConfig = () => {
+  const env = process.env.REACT_APP_ENV || 'development';
+  
+  const configs = {
+    development: {
+      baseURL: 'http://localhost:5000/api/v1',
+      timeout: 10000,
+      retryAttempts: 2,
+      retryDelay: 1000,
+    },
+    staging: {
+      baseURL: 'https://staging-api.aarothfresh.com/api/v1',
+      timeout: 15000,
+      retryAttempts: 3,
+      retryDelay: 1500,
+    },
+    production: {
+      baseURL: 'https://api.aarothfresh.com/api/v1',
+      timeout: 20000,
+      retryAttempts: 3,
+      retryDelay: 2000,
+    }
+  };
+
+  return configs[env] || configs.development;
+};
+
+// Enhanced API service with environment configuration
+import axios from 'axios';
+
+const config = getApiConfig();
+
+const api = axios.create({
+  baseURL: config.baseURL,
+  timeout: config.timeout,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add retry logic for failed requests
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const { config: originalRequest } = error;
+    
+    if (
+      error.code === 'NETWORK_ERROR' || 
+      error.response?.status >= 500
+    ) {
+      originalRequest._retryCount = originalRequest._retryCount || 0;
+      
+      if (originalRequest._retryCount < config.retryAttempts) {
+        originalRequest._retryCount++;
+        
+        // Exponential backoff
+        const delay = config.retryDelay * Math.pow(2, originalRequest._retryCount - 1);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        return api(originalRequest);
+      }
+    }
+    
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+```
+
+#### Health Check & Service Monitoring
+```javascript
+// services/healthService.js
+class HealthService {
+  constructor() {
+    this.healthCheckInterval = null;
+    this.services = {
+      api: false,
+      websocket: false,
+      cloudinary: false,
+    };
+  }
+
+  async checkAPIHealth() {
+    try {
+      const response = await fetch('/api/v1/health', {
+        method: 'GET',
+        timeout: 5000,
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        this.services.api = data.status === 'healthy';
+        return data;
+      }
+      
+      this.services.api = false;
+      return null;
+    } catch (error) {
+      this.services.api = false;
+      console.error('API health check failed:', error);
+      return null;
+    }
+  }
+
+  startHealthChecks() {
+    // Check health every 60 seconds
+    this.healthCheckInterval = setInterval(() => {
+      this.checkAPIHealth();
+    }, 60000);
+    
+    // Initial check
+    this.checkAPIHealth();
+  }
+
+  stopHealthChecks() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+  }
+
+  getServiceStatus() {
+    return { ...this.services };
+  }
+
+  isHealthy() {
+    return Object.values(this.services).every(status => status);
+  }
+}
+
+export const healthService = new HealthService();
+```
+
+#### Rate Limiting & Request Optimization
+```javascript
+// utils/rateLimiter.js
+class RateLimiter {
+  constructor(maxRequests = 100, windowMs = 60000) { // 100 requests per minute
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+    this.requests = [];
+  }
+
+  canMakeRequest() {
+    const now = Date.now();
+    
+    // Remove old requests outside the time window
+    this.requests = this.requests.filter(
+      timestamp => now - timestamp < this.windowMs
+    );
+    
+    if (this.requests.length >= this.maxRequests) {
+      const oldestRequest = Math.min(...this.requests);
+      const waitTime = this.windowMs - (now - oldestRequest);
+      
+      throw new Error(`Rate limit exceeded. Try again in ${Math.ceil(waitTime / 1000)} seconds.`);
+    }
+    
+    this.requests.push(now);
+    return true;
+  }
+
+  getRemainingRequests() {
+    const now = Date.now();
+    this.requests = this.requests.filter(
+      timestamp => now - timestamp < this.windowMs
+    );
+    
+    return Math.max(0, this.maxRequests - this.requests.length);
+  }
+}
+
+// Apply rate limiting to API requests
+const rateLimiter = new RateLimiter();
+
+api.interceptors.request.use(
+  (config) => {
+    // Skip rate limiting for authentication requests
+    if (!config.url.includes('/auth/')) {
+      rateLimiter.canMakeRequest();
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+export { rateLimiter };
+```
+
+#### CDN Integration for Static Assets
+```javascript
+// utils/cdnUtils.js
+class CDNManager {
+  constructor() {
+    this.cdnBaseUrl = process.env.REACT_APP_CDN_BASE_URL;
+    this.fallbackToCloudinary = true;
+  }
+
+  getOptimizedImageUrl(path, options = {}) {
+    const {
+      width = 400,
+      height = 300,
+      quality = 'auto',
+      format = 'auto'
+    } = options;
+
+    if (this.cdnBaseUrl) {
+      // Use CDN with transformations
+      return `${this.cdnBaseUrl}/images/${width}x${height}/${quality}/${format}/${path}`;
+    }
+
+    // Fallback to direct Cloudinary
+    if (this.fallbackToCloudinary && path.includes('cloudinary')) {
+      const transformations = `w_${width},h_${height},q_${quality},f_${format}`;
+      return path.replace('/upload/', `/upload/${transformations}/`);
+    }
+
+    return path;
+  }
+
+  preloadCriticalImages(imagePaths) {
+    imagePaths.forEach(path => {
+      const link = document.createElement('link');
+      link.rel = 'preload';
+      link.as = 'image';
+      link.href = this.getOptimizedImageUrl(path);
+      document.head.appendChild(link);
+    });
+  }
+}
+
+export const cdnManager = new CDNManager();
 ```
 
 ## Troubleshooting Common Issues
@@ -2360,10 +2988,501 @@ REACT_APP_CLOUDINARY_CLOUD_NAME=production_cloud_name
 - **CORS Errors**: Ensure backend CORS is configured for frontend domain
 - **Phone Format**: Always include country code in phone numbers
 
+### Enhanced Error Recovery & Offline Support
+
+#### Offline Queue Management
+```javascript
+// services/offlineQueueService.js
+class OfflineQueueService {
+  constructor() {
+    this.queue = [];
+    this.isOnline = navigator.onLine;
+    this.storageKey = 'aaroth_offline_queue';
+    this.maxQueueSize = 100;
+    
+    this.loadQueue();
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    window.addEventListener('online', () => {
+      console.log('Back online - processing queue');
+      this.isOnline = true;
+      this.processQueue();
+    });
+
+    window.addEventListener('offline', () => {
+      console.log('Gone offline - queuing requests');
+      this.isOnline = false;
+    });
+  }
+
+  loadQueue() {
+    try {
+      const stored = localStorage.getItem(this.storageKey);
+      this.queue = stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Error loading offline queue:', error);
+      this.queue = [];
+    }
+  }
+
+  saveQueue() {
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.queue));
+    } catch (error) {
+      console.error('Error saving offline queue:', error);
+    }
+  }
+
+  addToQueue(request) {
+    if (this.queue.length >= this.maxQueueSize) {
+      // Remove oldest request if queue is full
+      this.queue.shift();
+    }
+
+    const queueItem = {
+      id: Date.now() + Math.random(),
+      request,
+      timestamp: Date.now(),
+      retryCount: 0,
+      maxRetries: 3,
+    };
+
+    this.queue.push(queueItem);
+    this.saveQueue();
+    
+    return queueItem.id;
+  }
+
+  async processQueue() {
+    if (!this.isOnline || this.queue.length === 0) {
+      return;
+    }
+
+    console.log(`Processing ${this.queue.length} queued requests`);
+    const queue = [...this.queue];
+    this.queue = [];
+
+    for (const item of queue) {
+      try {
+        await this.retryRequest(item);
+      } catch (error) {
+        if (item.retryCount < item.maxRetries) {
+          item.retryCount++;
+          this.queue.push(item);
+          console.log(`Request ${item.id} failed, retry ${item.retryCount}/${item.maxRetries}`);
+        } else {
+          console.error(`Request ${item.id} failed permanently:`, error);
+        }
+      }
+    }
+
+    this.saveQueue();
+  }
+
+  async retryRequest(item) {
+    const { method, url, data, headers } = item.request;
+    
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: data ? JSON.stringify(data) : undefined,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  clearQueue() {
+    this.queue = [];
+    this.saveQueue();
+  }
+
+  getQueueStatus() {
+    return {
+      isOnline: this.isOnline,
+      queueLength: this.queue.length,
+      oldestItem: this.queue.length > 0 ? this.queue[0].timestamp : null,
+    };
+  }
+}
+
+export const offlineQueueService = new OfflineQueueService();
+```
+
+#### Advanced Retry Mechanisms
+```javascript
+// utils/retryUtils.js
+export class RetryManager {
+  constructor(options = {}) {
+    this.maxRetries = options.maxRetries || 3;
+    this.baseDelay = options.baseDelay || 1000; // 1 second
+    this.maxDelay = options.maxDelay || 30000; // 30 seconds
+    this.backoffMultiplier = options.backoffMultiplier || 2;
+    this.jitter = options.jitter || true;
+  }
+
+  async executeWithRetry(fn, context = null) {
+    let lastError = null;
+    
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        
+        // Don't retry on certain errors
+        if (this.shouldNotRetry(error)) {
+          throw error;
+        }
+        
+        if (attempt < this.maxRetries) {
+          const delay = this.calculateDelay(attempt);
+          console.log(`Request failed, retrying in ${delay}ms (attempt ${attempt + 1}/${this.maxRetries + 1})`);
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    throw new Error(`Request failed after ${this.maxRetries + 1} attempts: ${lastError.message}`);
+  }
+
+  shouldNotRetry(error) {
+    // Don't retry on client errors (4xx) except 429 (rate limit)
+    if (error.response) {
+      const status = error.response.status;
+      return status >= 400 && status < 500 && status !== 429;
+    }
+    
+    return false;
+  }
+
+  calculateDelay(attempt) {
+    let delay = this.baseDelay * Math.pow(this.backoffMultiplier, attempt);
+    delay = Math.min(delay, this.maxDelay);
+    
+    if (this.jitter) {
+      // Add random jitter to prevent thundering herd
+      delay *= 0.5 + Math.random() * 0.5;
+    }
+    
+    return Math.floor(delay);
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+// Global retry manager instance
+export const retryManager = new RetryManager({
+  maxRetries: 3,
+  baseDelay: 1000,
+  maxDelay: 10000,
+  backoffMultiplier: 2,
+  jitter: true,
+});
+```
+
+#### Background Sync Implementation
+```javascript
+// services/backgroundSyncService.js
+class BackgroundSyncService {
+  constructor() {
+    this.syncTags = ['orders-sync', 'listings-sync', 'user-sync'];
+    this.registerServiceWorker();
+  }
+
+  async registerServiceWorker() {
+    if ('serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype) {
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        console.log('Service Worker registered for background sync');
+        
+        // Listen for sync events
+        navigator.serviceWorker.addEventListener('message', this.handleSyncMessage.bind(this));
+        
+      } catch (error) {
+        console.error('Service Worker registration failed:', error);
+      }
+    }
+  }
+
+  handleSyncMessage(event) {
+    const { type, data } = event.data;
+    
+    switch (type) {
+      case 'sync-completed':
+        console.log('Background sync completed:', data);
+        // Dispatch Redux action to update UI
+        break;
+      case 'sync-failed':
+        console.error('Background sync failed:', data);
+        break;
+    }
+  }
+
+  async scheduleSync(tag, data) {
+    if (!navigator.serviceWorker || !navigator.serviceWorker.ready) {
+      console.warn('Service Worker not available for background sync');
+      return false;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      
+      // Store data for sync
+      await this.storeDataForSync(tag, data);
+      
+      // Schedule background sync
+      await registration.sync.register(tag);
+      
+      console.log(`Background sync scheduled: ${tag}`);
+      return true;
+    } catch (error) {
+      console.error('Error scheduling background sync:', error);
+      return false;
+    }
+  }
+
+  async storeDataForSync(tag, data) {
+    const syncData = {
+      tag,
+      data,
+      timestamp: Date.now(),
+    };
+    
+    localStorage.setItem(`sync_${tag}`, JSON.stringify(syncData));
+  }
+
+  async getSyncData(tag) {
+    try {
+      const stored = localStorage.getItem(`sync_${tag}`);
+      return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+      console.error(`Error retrieving sync data for ${tag}:`, error);
+      return null;
+    }
+  }
+
+  clearSyncData(tag) {
+    localStorage.removeItem(`sync_${tag}`);
+  }
+
+  // Schedule different types of sync operations
+  async syncOrder(orderData) {
+    return this.scheduleSync('orders-sync', orderData);
+  }
+
+  async syncListing(listingData) {
+    return this.scheduleSync('listings-sync', listingData);
+  }
+
+  async syncUserProfile(userData) {
+    return this.scheduleSync('user-sync', userData);
+  }
+}
+
+export const backgroundSyncService = new BackgroundSyncService();
+```
+
+#### Progressive Enhancement Strategies
+```javascript
+// services/progressiveEnhancementService.js
+class ProgressiveEnhancementService {
+  constructor() {
+    this.features = {
+      webSocket: false,
+      backgroundSync: false,
+      pushNotifications: false,
+      offlineStorage: false,
+      geolocation: false,
+    };
+    
+    this.detectFeatures();
+  }
+
+  detectFeatures() {
+    // WebSocket support
+    this.features.webSocket = typeof WebSocket !== 'undefined';
+    
+    // Background Sync support
+    this.features.backgroundSync = 'serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype;
+    
+    // Push Notifications support
+    this.features.pushNotifications = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+    
+    // Offline storage support
+    this.features.offlineStorage = 'indexedDB' in window && 'caches' in window;
+    
+    // Geolocation support
+    this.features.geolocation = 'geolocation' in navigator;
+    
+    console.log('Feature detection results:', this.features);
+  }
+
+  hasFeature(feature) {
+    return this.features[feature] || false;
+  }
+
+  getAvailableFeatures() {
+    return { ...this.features };
+  }
+
+  // Provide fallbacks for missing features
+  getFeatureOrFallback(feature, fallback) {
+    return this.hasFeature(feature) ? feature : fallback;
+  }
+
+  // Enhanced error handling based on available features
+  handleErrorWithFallback(error, operation) {
+    if (this.hasFeature('offlineStorage') && !navigator.onLine) {
+      // Queue operation for later
+      offlineQueueService.addToQueue(operation);
+      return { queued: true, message: 'Operation queued for when online' };
+    }
+    
+    if (this.hasFeature('backgroundSync') && operation.canBackgroundSync) {
+      // Schedule background sync
+      backgroundSyncService.scheduleSync(operation.syncTag, operation.data);
+      return { synced: true, message: 'Operation will sync in background' };
+    }
+    
+    // Standard error handling
+    throw error;
+  }
+}
+
+export const progressiveEnhancementService = new ProgressiveEnhancementService();
+```
+
+#### Network Quality Adaptation
+```javascript
+// utils/networkUtils.js
+class NetworkQualityManager {
+  constructor() {
+    this.connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    this.quality = this.detectNetworkQuality();
+    this.listeners = [];
+    
+    this.setupNetworkMonitoring();
+  }
+
+  setupNetworkMonitoring() {
+    if (this.connection) {
+      this.connection.addEventListener('change', () => {
+        this.quality = this.detectNetworkQuality();
+        this.notifyListeners();
+      });
+    }
+
+    // Fallback: Monitor request timing
+    this.startLatencyMonitoring();
+  }
+
+  detectNetworkQuality() {
+    if (!this.connection) {
+      return 'unknown';
+    }
+
+    const { effectiveType, downlink, rtt } = this.connection;
+    
+    if (effectiveType === '4g' && downlink > 5 && rtt < 150) {
+      return 'high';
+    } else if (effectiveType === '3g' || (downlink > 1.5 && rtt < 300)) {
+      return 'medium';
+    } else {
+      return 'low';
+    }
+  }
+
+  startLatencyMonitoring() {
+    // Periodically ping a lightweight endpoint to measure latency
+    setInterval(async () => {
+      try {
+        const start = performance.now();
+        await fetch('/api/v1/health', { 
+          method: 'HEAD',
+          cache: 'no-cache',
+        });
+        const latency = performance.now() - start;
+        
+        if (latency < 200) {
+          this.quality = 'high';
+        } else if (latency < 500) {
+          this.quality = 'medium';
+        } else {
+          this.quality = 'low';
+        }
+        
+        this.notifyListeners();
+      } catch (error) {
+        this.quality = 'offline';
+        this.notifyListeners();
+      }
+    }, 30000); // Check every 30 seconds
+  }
+
+  getQuality() {
+    return this.quality;
+  }
+
+  adaptRequestConfig(config) {
+    const adaptations = {
+      high: {
+        timeout: 15000,
+        maxRetries: 2,
+        concurrency: 6,
+      },
+      medium: {
+        timeout: 30000,
+        maxRetries: 3,
+        concurrency: 3,
+      },
+      low: {
+        timeout: 60000,
+        maxRetries: 5,
+        concurrency: 1,
+      },
+    };
+
+    const adaptation = adaptations[this.quality] || adaptations.medium;
+    
+    return {
+      ...config,
+      ...adaptation,
+    };
+  }
+
+  onQualityChange(callback) {
+    this.listeners.push(callback);
+  }
+
+  notifyListeners() {
+    this.listeners.forEach(callback => {
+      try {
+        callback(this.quality);
+      } catch (error) {
+        console.error('Error in network quality listener:', error);
+      }
+    });
+  }
+}
+
+export const networkQualityManager = new NetworkQualityManager();
+```
+
 ### API Integration Issues
-- **Network Errors**: Implement retry logic and offline handling
-- **Data Mismatch**: Ensure frontend types match backend models exactly
+- **Network Errors**: Enhanced retry logic with exponential backoff and jitter
+- **Data Mismatch**: Ensure frontend types match backend models exactly  
 - **Caching Issues**: Use proper cache invalidation strategies
+- **Offline Handling**: Queue operations and sync when online
+- **Rate Limiting**: Implement client-side rate limiting and respect server limits
+- **Background Sync**: Use Service Workers for reliable data synchronization
 
 ### Development Issues
 - **Hot Reload**: Configure Vite for optimal development experience
@@ -2385,4 +3504,4 @@ The key points to remember:
 2. **Role-based permissions** with four distinct roles
 3. **Comprehensive error handling** with user-friendly messages
 4. **Mobile-first approach** with performance optimization
-5. **TanStack Query** for efficient server state management
+5. **RTK Query** for efficient server state management with Redux integration
