@@ -108,9 +108,15 @@ exports.register = async (req, res, next) => {
     // Generate JWT token
     const token = user.getSignedJwtToken();
 
+    // Get user data without password for response
+    const userData = await User.findById(user._id)
+      .populate('vendorId')
+      .populate('restaurantId');
+
     res.status(201).json({
       success: true,
       token,
+      user: userData
     });
   } catch (error) {
     next(error);
@@ -161,10 +167,16 @@ exports.login = async (req, res, next) => {
   
       // Generate JWT token
       const token = user.getSignedJwtToken();
+
+      // Get user data without password for response
+      const userData = await User.findById(user._id)
+        .populate('vendorId')
+        .populate('restaurantId');
   
       res.status(200).json({
         success: true,
-        token
+        token,
+        user: userData
       });
     } catch (error) {
       next(error);
