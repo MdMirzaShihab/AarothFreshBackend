@@ -125,7 +125,7 @@ React JavaScript frontend for Aaroth Fresh B2B marketplace - connecting local ve
 
 ### Public Routes (`/api/v1/public`)
 - `GET /categories` - Product categories
-- `GET /featured-products` - Featured products for homepage
+- `GET /featured-listings` - Featured listings for homepage
 
 ## Project Architecture
 

@@ -167,10 +167,10 @@ Content-Type: application/json
 }
 ```
 
-### Create Manager Account (Restaurant Owner Only)
+### Create Manager Account (Restaurant Owner or Admin)
 ```javascript
 POST /api/v1/auth/create-manager
-Authorization: Bearer {restaurant_owner_token}
+Authorization: Bearer {restaurant_owner_token or admin_token}
 Content-Type: application/json
 
 {
@@ -192,6 +192,9 @@ Content-Type: application/json
     "createdAt": "2024-01-01T00:00:00.000Z"
   }
 }
+
+// Note: Restaurant owners can only create managers for their own restaurant
+// Admins can create managers for any restaurant using /admin/restaurant-managers
 ```
 
 ### Get Restaurant Managers (Restaurant Owner Only)
@@ -419,6 +422,100 @@ Content-Type: application/json
     "name": "Fruits",
     "description": "Fresh fruits category",
     "isActive": true,
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+### Restaurant Management
+
+#### Create Restaurant Owner (Admin Only)
+```javascript
+POST /api/v1/admin/restaurant-owners
+Authorization: Bearer {admin_token}
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "john@restaurant.com",
+  "phone": "+8801234567890",
+  "password": "SecurePass123",
+  "restaurantName": "Green Garden Restaurant",
+  "ownerName": "John Doe",
+  "address": {
+    "street": "123 Main Street",
+    "city": "Dhaka",
+    "area": "Dhanmondi",
+    "postalCode": "1205"
+  },
+  "tradeLicenseNo": "TL123456"
+}
+
+// Success Response (201)
+{
+  "success": true,
+  "message": "Restaurant owner created successfully",
+  "data": {
+    "id": "user_id",
+    "name": "John Doe",
+    "email": "john@restaurant.com",
+    "phone": "+8801234567890",
+    "role": "restaurantOwner",
+    "isActive": true,
+    "restaurantId": {
+      "id": "restaurant_id",
+      "name": "Green Garden Restaurant",
+      "email": "john@restaurant.com",
+      "phone": "+8801234567890",
+      "address": {
+        "street": "123 Main Street",
+        "city": "Dhaka",
+        "area": "Dhanmondi",
+        "postalCode": "1205"
+      }
+    },
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+#### Create Restaurant Manager (Admin Only)
+```javascript
+POST /api/v1/admin/restaurant-managers
+Authorization: Bearer {admin_token}
+Content-Type: application/json
+
+{
+  "name": "Jane Smith",
+  "email": "jane@restaurant.com",
+  "phone": "+8801234567891",
+  "password": "ManagerPass123",
+  "restaurantId": "restaurant_id"
+}
+
+// Success Response (201)
+{
+  "success": true,
+  "message": "Restaurant manager created successfully",
+  "data": {
+    "id": "manager_id",
+    "name": "Jane Smith",
+    "email": "jane@restaurant.com", 
+    "phone": "+8801234567891",
+    "role": "restaurantManager",
+    "isActive": true,
+    "restaurantId": {
+      "id": "restaurant_id",
+      "name": "Green Garden Restaurant",
+      "email": "john@restaurant.com",
+      "phone": "+8801234567890",
+      "address": {
+        "street": "123 Main Street",
+        "city": "Dhaka",
+        "area": "Dhanmondi",
+        "postalCode": "1205"
+      }
+    },
     "createdAt": "2024-01-01T00:00:00.000Z"
   }
 }
@@ -837,21 +934,57 @@ GET /api/v1/public/categories
 }
 ```
 
-### Get Featured Products (Public)
+### Get Featured Listings (Public)
 ```javascript
-GET /api/v1/public/featured-products
+GET /api/v1/public/featured-listings
+
+// Query parameters
+?page=1&limit=10
 
 // Success Response (200)
 {
   "success": true,
-  "products": [
+  "count": 5,
+  "total": 5,
+  "page": 1,
+  "pages": 1,
+  "data": [
     {
-      "id": "product_id",
-      "name": "Featured Product",
-      "category": "Vegetables",
-      "images": ["url1"],
-      "averagePrice": 25.50,
-      "activeListingsCount": 8
+      "id": "listing_id",
+      "productId": {
+        "id": "product_id",
+        "name": "Fresh Tomato",
+        "category": {
+          "id": "category_id",
+          "name": "Vegetables"
+        },
+        "description": "Fresh red tomatoes",
+        "images": ["url1", "url2"]
+      },
+      "vendorId": {
+        "id": "vendor_id",
+        "businessName": "Fresh Produce Co",
+        "rating": 4.5,
+        "isVerified": true
+      },
+      "pricing": [{
+        "unit": "kg",
+        "pricePerUnit": 25.50,
+        "minimumQuantity": 1
+      }],
+      "qualityGrade": "Premium",
+      "availability": {
+        "quantityAvailable": 100,
+        "unit": "kg",
+        "isInSeason": true
+      },
+      "images": ["listing_url1", "listing_url2"],
+      "rating": {
+        "average": 4.2,
+        "count": 15
+      },
+      "featured": true,
+      "createdAt": "2024-01-01T00:00:00.000Z"
     }
   ]
 }

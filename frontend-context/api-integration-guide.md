@@ -306,7 +306,7 @@ export const apiSlice = createApi({
     }),
 
     getFeaturedProducts: builder.query({
-      query: () => '/public/featured-products',
+      query: () => '/public/featured-listings',
       providesTags: ['Product'],
     }),
     

@@ -833,3 +833,212 @@ exports.getPendingRestaurants = async (req, res, next) => {
     next(err);
   }
 };
+
+// ======================
+// FEATURED LISTINGS MANAGEMENT
+// ======================
+
+/**
+ * @desc    Toggle featured status for a listing
+ * @route   PUT /api/v1/admin/listings/:id/featured
+ * @access  Private/Admin
+ */
+exports.toggleFeaturedListing = async (req, res, next) => {
+  try {
+    let listing = await Listing.findById(req.params.id);
+
+    if (!listing) {
+      return next(new ErrorResponse(`Listing not found with id of ${req.params.id}`, 404));
+    }
+
+    // Only allow featuring of active listings
+    if (listing.status !== 'active') {
+      return next(new ErrorResponse('Only active listings can be featured', 400));
+    }
+
+    // Toggle the featured status
+    listing.featured = !listing.featured;
+    listing.updatedBy = req.user.id;
+
+    await listing.save();
+
+    // Populate for response
+    listing = await Listing.findById(listing._id)
+      .populate({
+        path: 'productId',
+        select: 'name description category',
+        populate: {
+          path: 'category',
+          select: 'name'
+        }
+      })
+      .populate('vendorId', 'businessName')
+      .populate('updatedBy', 'name email');
+
+    res.status(200).json({
+      success: true,
+      message: `Listing ${listing.featured ? 'featured' : 'unfeatured'} successfully`,
+      data: listing
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ======================
+// RESTAURANT MANAGEMENT
+// ======================
+
+/**
+ * @desc    Create restaurant owner and restaurant (Admin only)
+ * @route   POST /api/v1/admin/restaurant-owners
+ * @access  Private/Admin
+ */
+exports.createRestaurantOwner = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    const {
+      name,
+      email,
+      phone,
+      password,
+      restaurantName,
+      ownerName,
+      address,
+      tradeLicenseNo
+    } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [
+        { email: String(email) },
+        { phone: String(phone) }
+      ]
+    });
+    
+    if (existingUser) {
+      if (existingUser.email === email) {
+        return next(new ErrorResponse('User with this email already exists', 400));
+      }
+      if (existingUser.phone === phone) {
+        return next(new ErrorResponse('User with this phone number already exists', 400));
+      }
+    }
+
+    // Create restaurant
+    const restaurant = await Restaurant.create({
+      name: restaurantName,
+      ownerName: ownerName || name,
+      email,
+      phone,
+      address,
+      tradeLicenseNo,
+      createdBy: req.user.id
+    });
+
+    // Create restaurant owner user
+    const user = await User.create({
+      name,
+      email,
+      password,
+      phone,
+      role: 'restaurantOwner',
+      restaurantId: restaurant._id
+    });
+
+    // Update restaurant with user reference
+    restaurant.createdBy = user._id;
+    await restaurant.save();
+
+    // Populate response
+    const populatedUser = await User.findById(user._id)
+      .populate('restaurantId', 'name email phone address')
+      .select('-password');
+
+    res.status(201).json({
+      success: true,
+      message: 'Restaurant owner created successfully',
+      data: populatedUser
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Create restaurant manager (Admin only)
+ * @route   POST /api/v1/admin/restaurant-managers
+ * @access  Private/Admin
+ */
+exports.createRestaurantManager = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    const {
+      name,
+      email,
+      phone,
+      password,
+      restaurantId
+    } = req.body;
+
+    // Check if restaurant exists
+    const restaurant = await Restaurant.findById(restaurantId);
+    if (!restaurant) {
+      return next(new ErrorResponse('Restaurant not found', 404));
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [
+        { email: String(email) },
+        { phone: String(phone) }
+      ]
+    });
+    
+    if (existingUser) {
+      if (existingUser.email === email) {
+        return next(new ErrorResponse('User with this email already exists', 400));
+      }
+      if (existingUser.phone === phone) {
+        return next(new ErrorResponse('User with this phone number already exists', 400));
+      }
+    }
+
+    // Create restaurant manager user
+    const manager = await User.create({
+      name,
+      email,
+      password,
+      phone,
+      role: 'restaurantManager',
+      restaurantId: restaurant._id
+    });
+
+    // Add manager to restaurant's managers array
+    await Restaurant.findByIdAndUpdate(
+      restaurant._id,
+      { $push: { managers: manager._id } }
+    );
+
+    // Populate response
+    const populatedManager = await User.findById(manager._id)
+      .populate('restaurantId', 'name email phone address')
+      .select('-password');
+
+    res.status(201).json({
+      success: true,
+      message: 'Restaurant manager created successfully',
+      data: populatedManager
+    });
+  } catch (err) {
+    next(err);
+  }
+};

@@ -232,3 +232,51 @@ exports.getPublicListing = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * @desc    Get featured listings (public)
+ * @route   GET /api/v1/public/featured-listings
+ * @access  Public
+ */
+exports.getFeaturedListings = async (req, res, next) => {
+  try {
+    // Pagination
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    // Query for active and featured listings
+    const query = { 
+      status: 'active', 
+      featured: true 
+    };
+
+    const featuredListings = await Listing.find(query)
+      .populate({
+        path: 'productId',
+        select: 'name description category images',
+        populate: {
+          path: 'category',
+          select: 'name'
+        }
+      })
+      .populate('vendorId', 'businessName rating isVerified')
+      .select('productId vendorId pricing qualityGrade availability images createdAt rating featured')
+      .sort({ createdAt: -1 }) // Newest featured first
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Listing.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      count: featuredListings.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: featuredListings
+    });
+  } catch (err) {
+    next(err);
+  }
+};

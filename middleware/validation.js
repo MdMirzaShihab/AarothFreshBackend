@@ -262,6 +262,84 @@ const orderStatusValidation = [
 ];
 
 /**
+ * Admin restaurant owner creation validation rules
+ */
+const adminRestaurantOwnerValidation = [
+  body("name")
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Name must be between 2 and 50 characters"),
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters long")
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage(
+      "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+    ),
+  body("phone")
+    .matches(/^[\+]?[1-9][\d]{0,15}$/)
+    .withMessage("Please provide a valid phone number"),
+  body("restaurantName")
+    .notEmpty()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Restaurant name is required and must be between 2 and 100 characters"),
+  body("ownerName")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Owner name must be between 2 and 50 characters"),
+  body("address.street")
+    .notEmpty()
+    .trim()
+    .withMessage("Street address is required"),
+  body("address.city")
+    .notEmpty()
+    .trim()
+    .withMessage("City is required"),
+  body("address.area")
+    .notEmpty()
+    .trim()
+    .withMessage("Area is required"),
+  body("tradeLicenseNo")
+    .optional()
+    .trim(),
+  handleValidationErrors,
+];
+
+/**
+ * Admin restaurant manager creation validation rules
+ */
+const adminRestaurantManagerValidation = [
+  body("name")
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Name must be between 2 and 50 characters"),
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters long")
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage(
+      "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+    ),
+  body("phone")
+    .matches(/^[\+]?[1-9][\d]{0,15}$/)
+    .withMessage("Please provide a valid phone number"),
+  body("restaurantId")
+    .isMongoId()
+    .withMessage("A valid restaurantId is required"),
+  handleValidationErrors,
+];
+
+/**
  * MongoDB ObjectId validation
  */
 const mongoIdValidation = (fieldName = "id") => [
@@ -300,6 +378,8 @@ module.exports = {
   listingValidation,
   orderValidation,
   orderStatusValidation,
+  adminRestaurantOwnerValidation,
+  adminRestaurantManagerValidation,
   mongoIdValidation,
   paginationValidation,
 };

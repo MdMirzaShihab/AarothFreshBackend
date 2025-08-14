@@ -4,7 +4,8 @@ const {
   getPublicProduct,
   getPublicCategories,
   getPublicListings,
-  getPublicListing
+  getPublicListing,
+  getFeaturedListings
 } = require('../controllers/publicController');
 
 const router = express.Router();
@@ -43,5 +44,12 @@ router.get('/listings', getPublicListings);
  * @access  Public
  */
 router.get('/listings/:id', getPublicListing);
+
+/**
+ * @route   GET /api/v1/public/featured-listings
+ * @desc    Get featured listings (public)
+ * @access  Public
+ */
+router.get('/featured-listings', getFeaturedListings);
 
 module.exports = router;

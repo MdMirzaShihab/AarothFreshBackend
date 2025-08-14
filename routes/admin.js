@@ -21,6 +21,9 @@ const {
   getDashboardStats,
   getPendingVendors,
   getPendingRestaurants,
+  toggleFeaturedListing,
+  createRestaurantOwner,
+  createRestaurantManager,
 } = require("../controllers/adminController");
 const { protect, authorize } = require("../middleware/auth");
 const {
@@ -28,6 +31,8 @@ const {
   categoryValidation,
   userUpdateValidation,
   mongoIdValidation,
+  adminRestaurantOwnerValidation,
+  adminRestaurantManagerValidation,
 } = require("../middleware/validation");
 
 const router = express.Router();
@@ -86,5 +91,12 @@ router
 
 // Dashboard stats
 router.get("/dashboard", getDashboardStats);
+
+// Featured listings management
+router.route("/listings/:id/featured").put(mongoIdValidation("id"), toggleFeaturedListing);
+
+// Restaurant management
+router.post("/restaurant-owners", adminRestaurantOwnerValidation, createRestaurantOwner);
+router.post("/restaurant-managers", adminRestaurantManagerValidation, createRestaurantManager);
 
 module.exports = router;
