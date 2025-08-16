@@ -28,7 +28,7 @@ router.get('/me', protect, getMe);
 router.put('/me', protect, updateProfileValidation, updateProfile);
 router.put('/change-password', protect, changePasswordValidation, changePassword);
 router.post('/create-manager', protect, authorize('restaurantOwner', 'admin'), managerValidation, createManager);
-router.get('/managers', protect, authorize('restaurantOwner'), getManagers);
-router.put('/managers/:id/deactivate', protect, authorize('restaurantOwner'), deactivateManager);
+router.get('/managers', protect, authorize('restaurantOwner', 'admin'), getManagers);
+router.put('/managers/:id/deactivate', protect, authorize('restaurantOwner', 'admin'), deactivateManager);
 
 module.exports = router;

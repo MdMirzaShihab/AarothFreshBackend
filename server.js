@@ -27,11 +27,16 @@ const app = express();
 // Body parser middleware
 app.use(express.json());
 
-// Enable CORS
+// Enable CORS with comprehensive configuration
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept'],
+  preflightContinue: false,
+  optionsSuccessStatus: 200
 }));
+
 
 // Rate limiting (only in production to avoid interfering with development)
 if (process.env.NODE_ENV === 'production') {
@@ -66,6 +71,7 @@ if (process.env.NODE_ENV === 'production') {
 
 // Static folder for uploads
 app.use('/uploads', express.static('uploads'));
+
 
 // Mount main API routes
 app.use('/api/v1', require('./routes'));

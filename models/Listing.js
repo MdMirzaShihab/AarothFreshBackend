@@ -275,6 +275,11 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
     limit = 20
   } = filters;
 
+  // Convert string parameters to numbers
+  const numericPage = parseInt(page) || 1;
+  const numericLimit = parseInt(limit) || 20;
+  const numericRadius = parseInt(radius) || 10;
+
   let query = { status: 'active' };
   let sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
@@ -311,7 +316,7 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
     query['availability.isInSeason'] = inSeason;
   }
 
-  const skip = (page - 1) * limit;
+  const skip = (numericPage - 1) * numericLimit;
 
   let aggregationPipeline = [
     {
@@ -344,7 +349,7 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
           coordinates: location.coordinates
         },
         distanceField: 'distance',
-        maxDistance: radius * 1000, // Convert km to meters
+        maxDistance: numericRadius * 1000, // Convert km to meters
         spherical: true
       }
     });
@@ -353,7 +358,7 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
   aggregationPipeline.push(
     { $sort: sort },
     { $skip: skip },
-    { $limit: limit }
+    { $limit: numericLimit }
   );
 
   return await this.aggregate(aggregationPipeline);

@@ -12,12 +12,11 @@ const protect = async (req, res, next) => {
   try {
     let token;
 
-    // Check for token in headers
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith('Bearer')
-    ) {
-      token = req.headers.authorization.split(' ')[1];
+    // Enhanced token extraction - check multiple possible header formats
+    const authHeader = req.headers.authorization || req.headers['authorization'] || req.headers.Authorization;
+    
+    if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+      token = authHeader.split(' ')[1];
     }
 
     // Make sure token exists
@@ -32,17 +31,24 @@ const protect = async (req, res, next) => {
       // Get user from token - populate selectively to avoid N+1 queries
       const user = await User.findById(decoded.id);
       
-      // Only populate related data if needed (reduces database load)
-      if (user && user.vendorId) {
-        await user.populate('vendorId');
-      }
-      if (user && user.restaurantId) {
-        await user.populate('restaurantId');
-      }
-
       if (!user) {
         return next(new ErrorResponse('No user found with this token', 401));
       }
+
+      // Only populate related data if needed (reduces database load)
+      try {
+        if (user.vendorId) {
+          await user.populate('vendorId');
+        }
+        if (user.restaurantId) {
+          await user.populate('restaurantId');
+        }
+      } catch (populationError) {
+        console.warn('User population warning:', populationError.message);
+        // Continue with user object even if population fails
+        // This prevents authentication failure due to population issues
+      }
+
 
       req.user = user;
       next();
@@ -68,7 +74,7 @@ const authorize = (...roles) => {
     if (!roles.includes(req.user.role)) {
       return next(
         new ErrorResponse(
-          `User role '${req.user.role}' is not authorized to access this route`,
+          `User role '${req.user.role}' is not authorized to access this route. Allowed roles: ${roles.join(', ')}`,
           403
         )
       );
