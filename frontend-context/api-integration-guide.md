@@ -767,4 +767,716 @@ useGetListingsQuery(params, {
 });
 ```
 
-This integration guide provides the foundation for implementing the Aaroth Fresh API with React and RTK Query, ensuring proper authentication, error handling, and performance optimization.
+## Dashboard Integration Patterns
+
+### Vendor Dashboard API Integration
+
+#### Dashboard Overview Hook
+```javascript
+// hooks/useVendorDashboard.js
+import { useGetVendorDashboardOverviewQuery } from '../store/api/dashboardSlice';
+import { useState } from 'react';
+
+export const useVendorDashboard = () => {
+  const [dateRange, setDateRange] = useState({
+    period: 'month',
+    startDate: null,
+    endDate: null
+  });
+
+  const {
+    data: overview,
+    isLoading,
+    error,
+    refetch
+  } = useGetVendorDashboardOverviewQuery(dateRange, {
+    pollingInterval: 300000, // Refresh every 5 minutes
+    refetchOnFocus: true,
+  });
+
+  const updateDateRange = (newRange) => {
+    setDateRange(newRange);
+  };
+
+  return {
+    overview: overview?.data,
+    isLoading,
+    error,
+    refetch,
+    dateRange,
+    updateDateRange
+  };
+};
+```
+
+#### Revenue Analytics Component
+```javascript
+// components/VendorDashboard/RevenueChart.jsx
+import { Line } from 'react-chartjs-2';
+import { useGetVendorRevenueAnalyticsQuery } from '../../store/api/dashboardSlice';
+import { format } from 'date-fns';
+
+export const RevenueChart = ({ dateRange }) => {
+  const { data, isLoading } = useGetVendorRevenueAnalyticsQuery(dateRange);
+
+  if (isLoading) return <div className="animate-pulse h-64 bg-gray-200 rounded"></div>;
+
+  const chartData = {
+    labels: data?.data.dailyTrends.map(day => format(new Date(day.date), 'MMM dd')),
+    datasets: [
+      {
+        label: 'Revenue',
+        data: data?.data.dailyTrends.map(day => day.revenue),
+        borderColor: 'rgb(59, 130, 246)',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        fill: true,
+        tension: 0.4
+      },
+      {
+        label: 'Orders',
+        data: data?.data.dailyTrends.map(day => day.orders),
+        borderColor: 'rgb(16, 185, 129)',
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        yAxisID: 'orders',
+        tension: 0.4
+      }
+    ]
+  };
+
+  const options = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+        text: 'Revenue Trends'
+      }
+    },
+    scales: {
+      y: {
+        type: 'linear',
+        display: true,
+        position: 'left',
+        ticks: {
+          callback: (value) => `$${value.toLocaleString()}`
+        }
+      },
+      orders: {
+        type: 'linear',
+        display: true,
+        position: 'right',
+        grid: {
+          drawOnChartArea: false,
+        },
+      }
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow">
+      <Line data={chartData} options={options} />
+    </div>
+  );
+};
+```
+
+### Restaurant Dashboard Integration
+
+#### Dashboard Slice Configuration
+```javascript
+// store/api/dashboardSlice.js
+import { apiSlice } from './apiSlice';
+
+export const dashboardSlice = apiSlice.injectEndpoints({
+  endpoints: (builder) => ({
+    // Vendor Dashboard Endpoints
+    getVendorDashboardOverview: builder.query({
+      query: (params) => ({
+        url: '/vendor-dashboard/overview',
+        params
+      }),
+      providesTags: ['VendorDashboard'],
+    }),
+    
+    getVendorRevenueAnalytics: builder.query({
+      query: (params) => ({
+        url: '/vendor-dashboard/revenue',
+        params
+      }),
+      providesTags: ['VendorRevenue'],
+    }),
+    
+    getVendorProductPerformance: builder.query({
+      query: (params) => ({
+        url: '/vendor-dashboard/products',
+        params
+      }),
+      providesTags: ['VendorProducts'],
+    }),
+    
+    getVendorInventoryStatus: builder.query({
+      query: () => '/vendor-dashboard/inventory',
+      providesTags: ['VendorInventory'],
+    }),
+    
+    getVendorOrderManagement: builder.query({
+      query: (params) => ({
+        url: '/vendor-dashboard/order-management',
+        params
+      }),
+      providesTags: ['VendorOrders'],
+    }),
+    
+    getVendorNotifications: builder.query({
+      query: (params) => ({
+        url: '/vendor-dashboard/notifications',
+        params
+      }),
+      providesTags: ['VendorNotifications'],
+    }),
+    
+    // Restaurant Dashboard Endpoints
+    getRestaurantDashboardOverview: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/overview',
+        params
+      }),
+      providesTags: ['RestaurantDashboard'],
+    }),
+    
+    getRestaurantSpendingAnalytics: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/spending',
+        params
+      }),
+      providesTags: ['RestaurantSpending'],
+    }),
+    
+    getRestaurantVendorInsights: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/vendors',
+        params
+      }),
+      providesTags: ['RestaurantVendors'],
+    }),
+    
+    getRestaurantBudgetTracking: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/budget',
+        params
+      }),
+      providesTags: ['RestaurantBudget'],
+    }),
+    
+    getRestaurantOrderHistory: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/order-history',
+        params
+      }),
+      providesTags: ['RestaurantOrderHistory'],
+    }),
+    
+    getRestaurantFavoriteVendors: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/favorite-vendors',
+        params
+      }),
+      providesTags: ['RestaurantFavorites'],
+    }),
+    
+    getRestaurantReorderSuggestions: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/reorder-suggestions',
+        params
+      }),
+      providesTags: ['RestaurantReorders'],
+    }),
+    
+    getRestaurantNotifications: builder.query({
+      query: (params) => ({
+        url: '/restaurant-dashboard/notifications',
+        params
+      }),
+      providesTags: ['RestaurantNotifications'],
+    }),
+    
+    // Notification Management
+    markNotificationsAsRead: builder.mutation({
+      query: (notificationIds) => ({
+        url: '/notifications/mark-read',
+        method: 'PUT',
+        body: { notificationIds }
+      }),
+      invalidatesTags: ['VendorNotifications', 'RestaurantNotifications'],
+    }),
+  }),
+});
+
+export const {
+  // Vendor Dashboard Hooks
+  useGetVendorDashboardOverviewQuery,
+  useGetVendorRevenueAnalyticsQuery,
+  useGetVendorProductPerformanceQuery,
+  useGetVendorInventoryStatusQuery,
+  useGetVendorOrderManagementQuery,
+  useGetVendorNotificationsQuery,
+  
+  // Restaurant Dashboard Hooks
+  useGetRestaurantDashboardOverviewQuery,
+  useGetRestaurantSpendingAnalyticsQuery,
+  useGetRestaurantVendorInsightsQuery,
+  useGetRestaurantBudgetTrackingQuery,
+  useGetRestaurantOrderHistoryQuery,
+  useGetRestaurantFavoriteVendorsQuery,
+  useGetRestaurantReorderSuggestionsQuery,
+  useGetRestaurantNotificationsQuery,
+  
+  // Notification Hooks
+  useMarkNotificationsAsReadMutation,
+} = dashboardSlice;
+```
+
+### Real-time Notifications Implementation
+
+#### Notification Context
+```javascript
+// contexts/NotificationContext.jsx
+import { createContext, useContext, useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
+import { useGetVendorNotificationsQuery, useGetRestaurantNotificationsQuery } from '../store/api/dashboardSlice';
+import { toast } from 'react-toastify';
+
+const NotificationContext = createContext();
+
+export const useNotifications = () => {
+  const context = useContext(NotificationContext);
+  if (!context) {
+    throw new Error('useNotifications must be used within NotificationProvider');
+  }
+  return context;
+};
+
+export const NotificationProvider = ({ children }) => {
+  const { user } = useSelector(state => state.auth);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Select appropriate query based on user role
+  const isVendor = user?.role === 'vendor';
+  const isRestaurant = ['restaurantOwner', 'restaurantManager'].includes(user?.role);
+
+  const { data: vendorNotifications } = useGetVendorNotificationsQuery(
+    { unreadOnly: false, limit: 50 },
+    { 
+      skip: !isVendor,
+      pollingInterval: 60000, // Poll every minute
+    }
+  );
+
+  const { data: restaurantNotifications } = useGetRestaurantNotificationsQuery(
+    { unreadOnly: false, limit: 50 },
+    { 
+      skip: !isRestaurant,
+      pollingInterval: 60000, // Poll every minute
+    }
+  );
+
+  useEffect(() => {
+    const currentNotifications = isVendor ? vendorNotifications : restaurantNotifications;
+    if (currentNotifications?.data) {
+      const { notifications: notifs, summary } = currentNotifications.data;
+      
+      // Check for new urgent notifications
+      const newUrgent = notifs?.filter(n => 
+        n.priority === 'urgent' && 
+        !n.isRead && 
+        !notifications.find(existing => existing.id === n.id)
+      );
+
+      newUrgent?.forEach(notification => {
+        toast.error(notification.message, {
+          position: 'top-right',
+          autoClose: 8000,
+          onClick: () => {
+            if (notification.actionUrl) {
+              window.location.href = notification.actionUrl;
+            }
+          }
+        });
+      });
+
+      setNotifications(notifs || []);
+      setUnreadCount(summary?.unread || 0);
+    }
+  }, [vendorNotifications, restaurantNotifications, notifications, isVendor]);
+
+  const markAsRead = async (notificationIds) => {
+    try {
+      // Update local state immediately for better UX
+      setNotifications(prev => 
+        prev.map(n => 
+          notificationIds.includes(n.id) ? { ...n, isRead: true } : n
+        )
+      );
+      setUnreadCount(prev => Math.max(0, prev - notificationIds.length));
+      
+      // API call to mark as read
+      // await markNotificationsAsRead(notificationIds);
+    } catch (error) {
+      console.error('Failed to mark notifications as read:', error);
+    }
+  };
+
+  return (
+    <NotificationContext.Provider 
+      value={{
+        notifications,
+        unreadCount,
+        markAsRead,
+      }}
+    >
+      {children}
+    </NotificationContext.Provider>
+  );
+};
+```
+
+#### Notification Component
+```javascript
+// components/Notifications/NotificationCenter.jsx
+import { useState } from 'react';
+import { useNotifications } from '../../contexts/NotificationContext';
+import { format } from 'date-fns';
+import { BellIcon, XMarkIcon } from '@heroicons/react/24/outline';
+
+export const NotificationCenter = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const { notifications, unreadCount, markAsRead } = useNotifications();
+
+  const handleNotificationClick = async (notification) => {
+    if (!notification.isRead) {
+      await markAsRead([notification.id]);
+    }
+    
+    if (notification.actionUrl) {
+      window.location.href = notification.actionUrl;
+    }
+    setIsOpen(false);
+  };
+
+  const markAllAsRead = async () => {
+    const unreadIds = notifications
+      .filter(n => !n.isRead)
+      .map(n => n.id);
+    
+    if (unreadIds.length > 0) {
+      await markAsRead(unreadIds);
+    }
+  };
+
+  const getPriorityColor = (priority) => {
+    const colors = {
+      urgent: 'bg-red-500',
+      high: 'bg-orange-500',
+      medium: 'bg-blue-500',
+      low: 'bg-gray-500'
+    };
+    return colors[priority] || colors.medium;
+  };
+
+  return (
+    <div className="relative">
+      {/* Notification Bell */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative p-2 text-gray-600 hover:text-gray-900 focus:outline-none"
+      >
+        <BellIcon className="h-6 w-6" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {/* Notification Dropdown */}
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+            <div className="flex items-center space-x-2">
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllAsRead}
+                  className="text-sm text-blue-600 hover:text-blue-800"
+                >
+                  Mark all read
+                </button>
+              )}
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Notification List */}
+          <div className="max-h-96 overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">
+                No notifications
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  onClick={() => handleNotificationClick(notification)}
+                  className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+                    !notification.isRead ? 'bg-blue-50' : ''
+                  }`}
+                >
+                  <div className="flex items-start space-x-3">
+                    {/* Priority Indicator */}
+                    <div className={`w-2 h-2 rounded-full mt-2 ${getPriorityColor(notification.priority)}`} />
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {notification.title}
+                        </p>
+                        <span className="text-xs text-gray-500">
+                          {format(new Date(notification.createdAt), 'HH:mm')}
+                        </span>
+                      </div>
+                      
+                      <p className="text-sm text-gray-600 mt-1">
+                        {notification.message}
+                      </p>
+                      
+                      {notification.isActionRequired && (
+                        <div className="mt-2">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            Action Required
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-3 border-t border-gray-200">
+            <button className="text-sm text-blue-600 hover:text-blue-800 w-full text-center">
+              View all notifications
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+### Date Range Picker Integration
+
+#### Custom Date Range Hook
+```javascript
+// hooks/useDateRange.js
+import { useState } from 'react';
+import { subDays, subWeeks, subMonths, subQuarters, subYears, startOfDay, endOfDay } from 'date-fns';
+
+export const useDateRange = (defaultPeriod = 'month') => {
+  const [period, setPeriod] = useState(defaultPeriod);
+  const [customRange, setCustomRange] = useState({ startDate: null, endDate: null });
+
+  const getDateRange = () => {
+    const now = new Date();
+    
+    switch (period) {
+      case 'today':
+        return {
+          startDate: startOfDay(now).toISOString(),
+          endDate: endOfDay(now).toISOString(),
+          period: 'today'
+        };
+      case 'week':
+        return {
+          startDate: subWeeks(now, 1).toISOString(),
+          endDate: now.toISOString(),
+          period: 'week'
+        };
+      case 'month':
+        return {
+          startDate: subMonths(now, 1).toISOString(),
+          endDate: now.toISOString(),
+          period: 'month'
+        };
+      case 'quarter':
+        return {
+          startDate: subQuarters(now, 1).toISOString(),
+          endDate: now.toISOString(),
+          period: 'quarter'
+        };
+      case 'year':
+        return {
+          startDate: subYears(now, 1).toISOString(),
+          endDate: now.toISOString(),
+          period: 'year'
+        };
+      case 'custom':
+        return {
+          startDate: customRange.startDate?.toISOString(),
+          endDate: customRange.endDate?.toISOString(),
+          period: 'custom'
+        };
+      default:
+        return {
+          startDate: subMonths(now, 1).toISOString(),
+          endDate: now.toISOString(),
+          period: 'month'
+        };
+    }
+  };
+
+  const updatePeriod = (newPeriod) => {
+    setPeriod(newPeriod);
+  };
+
+  const updateCustomRange = (startDate, endDate) => {
+    setCustomRange({ startDate, endDate });
+    setPeriod('custom');
+  };
+
+  return {
+    period,
+    dateRange: getDateRange(),
+    updatePeriod,
+    updateCustomRange,
+    customRange
+  };
+};
+```
+
+### Performance Optimization Patterns
+
+#### Memoized Chart Components
+```javascript
+// components/Dashboard/MemoizedChart.jsx
+import { memo } from 'react';
+import { Line } from 'react-chartjs-2';
+
+export const MemoizedChart = memo(({ data, options, title }) => {
+  return (
+    <div className="bg-white p-6 rounded-lg shadow">
+      <h3 className="text-lg font-semibold mb-4">{title}</h3>
+      <Line data={data} options={options} />
+    </div>
+  );
+});
+```
+
+#### Virtualized Data Tables
+```javascript
+// components/Dashboard/VirtualizedTable.jsx
+import { FixedSizeList as List } from 'react-window';
+import { memo } from 'react';
+
+const Row = memo(({ index, style, data }) => (
+  <div style={style} className="border-b border-gray-200 px-4 py-3">
+    <div className="flex items-center justify-between">
+      <span className="font-medium">{data[index].name}</span>
+      <span className="text-gray-600">${data[index].amount}</span>
+    </div>
+  </div>
+));
+
+export const VirtualizedTable = ({ items, height = 400 }) => {
+  return (
+    <div className="bg-white rounded-lg shadow">
+      <List
+        height={height}
+        itemCount={items.length}
+        itemSize={60}
+        itemData={items}
+      >
+        {Row}
+      </List>
+    </div>
+  );
+};
+```
+
+### Role-based Dashboard Layout
+
+#### Dashboard Layout Component
+```javascript
+// components/Layout/DashboardLayout.jsx
+import { useSelector } from 'react-redux';
+import { VendorSidebar } from './VendorSidebar';
+import { RestaurantSidebar } from './RestaurantSidebar';
+import { NotificationCenter } from '../Notifications/NotificationCenter';
+
+export const DashboardLayout = ({ children }) => {
+  const { user } = useSelector(state => state.auth);
+  
+  const getSidebar = () => {
+    switch (user?.role) {
+      case 'vendor':
+        return <VendorSidebar />;
+      case 'restaurantOwner':
+      case 'restaurantManager':
+        return <RestaurantSidebar />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <h1 className="text-xl font-semibold text-gray-900">
+                {user?.role === 'vendor' ? 'Vendor Dashboard' : 'Restaurant Dashboard'}
+              </h1>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <NotificationCenter />
+              
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-700">{user?.name}</span>
+                <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex">
+        {/* Sidebar */}
+        <div className="w-64 bg-white shadow-sm h-screen sticky top-0">
+          {getSidebar()}
+        </div>
+
+        {/* Main Content */}
+        <main className="flex-1 p-6">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+};
+```
+
+This comprehensive integration guide provides the foundation for implementing advanced B2B marketplace dashboards with real-time notifications, performance optimizations, and role-based access control using React and RTK Query.
