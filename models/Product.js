@@ -134,6 +134,22 @@ const ProductSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Admin status
+  adminStatus: {
+    type: String,
+    enum: ['active', 'inactive', 'discontinued'],
+    default: 'active'
+  },
+  // Soft delete fields
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: Date,
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   // Audit fields
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -143,7 +159,13 @@ const ProductSchema = new mongoose.Schema({
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }
+  },
+  lastModifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  adminNotes: String,
+  statusUpdatedAt: Date
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -222,5 +244,7 @@ ProductSchema.index({ slug: 1 });
 ProductSchema.index({ category: 1, isActive: 1 });
 ProductSchema.index({ name: 'text', description: 'text', tags: 'text' });
 ProductSchema.index({ isActive: 1, isSeasonal: 1, isOrganic: 1 });
+ProductSchema.index({ adminStatus: 1, isDeleted: 1 });
+ProductSchema.index({ createdBy: 1, adminStatus: 1 });
 
 module.exports = mongoose.model('Product', ProductSchema);

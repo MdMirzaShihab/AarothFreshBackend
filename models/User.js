@@ -65,7 +65,40 @@ const UserSchema = new mongoose.Schema({
     type: Date
   },
   resetPasswordToken: String,
-  resetPasswordExpire: Date
+  resetPasswordExpire: Date,
+  
+  // Approval workflow fields
+  approvalStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
+  },
+  approvalDate: Date,
+  approvalNotes: String,
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  rejectionReason: String,
+  
+  // Soft delete fields
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: Date,
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  
+  // Admin tracking
+  lastModifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  statusUpdatedAt: Date,
+  adminNotes: String
 }, {
   timestamps: true,
   toJSON: {
@@ -124,5 +157,8 @@ UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
 UserSchema.index({ vendorId: 1 });
 UserSchema.index({ restaurantId: 1 });
+UserSchema.index({ approvalStatus: 1, role: 1 });
+UserSchema.index({ isDeleted: 1, isActive: 1 });
+UserSchema.index({ phone: 1 });
 
 module.exports = mongoose.model('User', UserSchema);

@@ -365,6 +365,172 @@ const paginationValidation = [
   handleValidationErrors,
 ];
 
+/**
+ * Approval action validation rules
+ */
+const approvalValidation = [
+  body("approvalNotes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Approval notes cannot exceed 500 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Rejection action validation rules
+ */
+const rejectionValidation = [
+  body("rejectionReason")
+    .notEmpty()
+    .trim()
+    .isLength({ min: 10, max: 500 })
+    .withMessage("Rejection reason is required and must be between 10 and 500 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Listing flagging validation rules
+ */
+const flagListingValidation = [
+  body("flagReason")
+    .notEmpty()
+    .trim()
+    .isIn(['inappropriate_content', 'misleading_information', 'quality_issues', 'pricing_violation', 'spam', 'other'])
+    .withMessage("Flag reason must be one of: inappropriate_content, misleading_information, quality_issues, pricing_violation, spam, other"),
+
+  body("moderationNotes")
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage("Moderation notes cannot exceed 1000 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Vendor deactivation validation rules
+ */
+const vendorDeactivationValidation = [
+  body("reason")
+    .notEmpty()
+    .trim()
+    .isLength({ min: 10, max: 500 })
+    .withMessage("Deactivation reason is required and must be between 10 and 500 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Settings validation rules
+ */
+const settingsValidation = [
+  body("key")
+    .notEmpty()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .matches(/^[a-z][a-z0-9_]*$/)
+    .withMessage("Key must be lowercase alphanumeric with underscores, starting with a letter"),
+
+  body("value")
+    .notEmpty()
+    .withMessage("Value is required"),
+
+  body("category")
+    .isIn(['general', 'business', 'notifications', 'security', 'payment'])
+    .withMessage("Category must be one of: general, business, notifications, security, payment"),
+
+  body("description")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Description cannot exceed 500 characters"),
+
+  body("dataType")
+    .isIn(['string', 'number', 'boolean', 'object', 'array'])
+    .withMessage("Data type must be one of: string, number, boolean, object, array"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Bulk operation validation rules
+ */
+const bulkOperationValidation = [
+  body("ids")
+    .isArray({ min: 1, max: 100 })
+    .withMessage("IDs array is required and must contain 1-100 items"),
+
+  body("ids.*")
+    .isMongoId()
+    .withMessage("Each ID must be a valid MongoDB ObjectId"),
+
+  body("action")
+    .isIn(['activate', 'deactivate', 'delete', 'approve', 'reject'])
+    .withMessage("Action must be one of: activate, deactivate, delete, approve, reject"),
+
+  body("reason")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Reason cannot exceed 500 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Date range validation for analytics
+ */
+const dateRangeValidation = [
+  check("startDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Start date must be a valid ISO 8601 date"),
+
+  check("endDate")
+    .optional()
+    .isISO8601()
+    .withMessage("End date must be a valid ISO 8601 date")
+    .custom((endDate, { req }) => {
+      if (req.query.startDate && endDate) {
+        const start = new Date(req.query.startDate);
+        const end = new Date(endDate);
+        if (end <= start) {
+          throw new Error("End date must be after start date");
+        }
+      }
+      return true;
+    }),
+
+  handleValidationErrors,
+];
+
+/**
+ * Analytics query validation
+ */
+const analyticsValidation = [
+  check("period")
+    .optional()
+    .isIn(['day', 'week', 'month', 'quarter', 'year'])
+    .withMessage("Period must be one of: day, week, month, quarter, year"),
+
+  check("groupBy")
+    .optional()
+    .isIn(['day', 'week', 'month', 'category', 'vendor', 'restaurant'])
+    .withMessage("Group by must be one of: day, week, month, category, vendor, restaurant"),
+
+  check("limit")
+    .optional()
+    .isInt({ min: 1, max: 1000 })
+    .withMessage("Limit must be between 1 and 1000"),
+
+  ...dateRangeValidation.slice(0, -1), // Include date validation without final handler
+
+  handleValidationErrors,
+];
+
 module.exports = {
   handleValidationErrors,
   registerValidation,
@@ -382,4 +548,13 @@ module.exports = {
   adminRestaurantManagerValidation,
   mongoIdValidation,
   paginationValidation,
+  // New admin feature validations
+  approvalValidation,
+  rejectionValidation,
+  flagListingValidation,
+  vendorDeactivationValidation,
+  settingsValidation,
+  bulkOperationValidation,
+  dateRangeValidation,
+  analyticsValidation,
 };

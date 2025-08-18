@@ -135,12 +135,33 @@ const RestaurantSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  // Admin tracking fields
+  statusUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  statusUpdatedAt: Date,
+  adminNotes: String,
+  // Soft delete fields
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: Date,
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   // Audit fields
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
   updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  lastModifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }
@@ -168,5 +189,7 @@ RestaurantSchema.index({ 'address.coordinates': '2dsphere' });
 RestaurantSchema.index({ name: 'text', cuisineType: 'text' });
 RestaurantSchema.index({ isActive: 1, isVerified: 1 });
 RestaurantSchema.index({ email: 1 });
+RestaurantSchema.index({ isDeleted: 1, isActive: 1 });
+RestaurantSchema.index({ statusUpdatedBy: 1, statusUpdatedAt: -1 });
 
 module.exports = mongoose.model('Restaurant', RestaurantSchema);

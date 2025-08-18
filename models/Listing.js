@@ -147,6 +147,30 @@ const ListingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  
+  // Admin moderation fields
+  isFlagged: {
+    type: Boolean,
+    default: false
+  },
+  flagReason: String,
+  moderatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  moderationNotes: String,
+  lastStatusUpdate: Date,
+  
+  // Soft delete fields
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: Date,
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
 
 
   // Statistics
@@ -371,5 +395,8 @@ ListingSchema.index({ status: 1, featured: 1, createdAt: -1 });
 ListingSchema.index({ 'pricing.pricePerUnit': 1 });
 ListingSchema.index({ qualityGrade: 1 });
 ListingSchema.index({ description: 'text' });
+ListingSchema.index({ isFlagged: 1, status: 1 });
+ListingSchema.index({ isDeleted: 1, status: 1 });
+ListingSchema.index({ moderatedBy: 1, lastStatusUpdate: -1 });
 
 module.exports = mongoose.model('Listing', ListingSchema);

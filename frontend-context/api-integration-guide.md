@@ -1480,3 +1480,440 @@ export const DashboardLayout = ({ children }) => {
 ```
 
 This comprehensive integration guide provides the foundation for implementing advanced B2B marketplace dashboards with real-time notifications, performance optimizations, and role-based access control using React and RTK Query.
+
+## 🚨 IMPORTANT: API Migration Guide
+
+### Legacy Approval System Removal
+
+**BREAKING CHANGE**: The legacy verification endpoints have been **COMPLETELY REMOVED** and replaced with a comprehensive approval management system.
+
+#### Removed Endpoints:
+- ❌ `PUT /api/v1/admin/users/{userId}/approve` (REMOVED)
+- ❌ `PUT /api/v1/admin/vendors/{vendorId}/verify` (REMOVED)  
+- ❌ `PUT /api/v1/admin/restaurants/{restaurantId}/verify` (REMOVED)
+
+#### New Comprehensive Approval System:
+
+##### 1. Replace User Approval Calls
+```javascript
+// ❌ OLD - This will return 404
+const approveUser = builder.mutation({
+  query: ({ id, isApproved }) => ({
+    url: `/admin/users/${id}/approve`,
+    method: 'PUT',
+    body: { isApproved },
+  }),
+});
+
+// ✅ NEW - Updated API slice
+export const apiSlice = createApi({
+  // ... existing config
+  endpoints: (builder) => ({
+    // New unified approval endpoints
+    getAllApprovals: builder.query({
+      query: (params = {}) => ({
+        url: '/admin/approvals',
+        params,
+      }),
+      providesTags: ['Approvals'],
+    }),
+    
+    approveVendor: builder.mutation({
+      query: ({ id, approvalNotes }) => ({
+        url: `/admin/approvals/vendor/${id}/approve`,
+        method: 'PUT',
+        body: { approvalNotes },
+      }),
+      invalidatesTags: ['Approvals', 'User'],
+    }),
+    
+    rejectVendor: builder.mutation({
+      query: ({ id, rejectionReason }) => ({
+        url: `/admin/approvals/vendor/${id}/reject`,
+        method: 'PUT',
+        body: { rejectionReason },
+      }),
+      invalidatesTags: ['Approvals', 'User'],
+    }),
+    
+    approveRestaurant: builder.mutation({
+      query: ({ id, approvalNotes }) => ({
+        url: `/admin/approvals/restaurant/${id}/approve`,
+        method: 'PUT',
+        body: { approvalNotes },
+      }),
+      invalidatesTags: ['Approvals', 'User'],
+    }),
+    
+    rejectRestaurant: builder.mutation({
+      query: ({ id, rejectionReason }) => ({
+        url: `/admin/approvals/restaurant/${id}/reject`,
+        method: 'PUT',
+        body: { rejectionReason },
+      }),
+      invalidatesTags: ['Approvals', 'User'],
+    }),
+    
+    // Enhanced dashboard with approval metrics
+    getAdminDashboardOverview: builder.query({
+      query: (params = {}) => ({
+        url: '/admin/dashboard/overview',
+        params,
+      }),
+      providesTags: ['AdminDashboard'],
+    }),
+    
+    // New analytics endpoints
+    getAnalyticsOverview: builder.query({
+      query: (params = {}) => ({
+        url: '/admin/analytics/overview',
+        params,
+      }),
+      providesTags: ['Analytics'],
+    }),
+    
+    // System settings management
+    getSystemSettings: builder.query({
+      query: (params = {}) => ({
+        url: '/admin/settings',
+        params,
+      }),
+      providesTags: ['Settings'],
+    }),
+    
+    updateSystemSetting: builder.mutation({
+      query: ({ key, value, changeReason }) => ({
+        url: `/admin/settings/key/${key}`,
+        method: 'PUT',
+        body: { value, changeReason },
+      }),
+      invalidatesTags: ['Settings'],
+    }),
+    
+    // Enhanced security features
+    flagListing: builder.mutation({
+      query: ({ id, flagReason, moderationNotes }) => ({
+        url: `/admin/listings/${id}/flag`,
+        method: 'PUT',
+        body: { flagReason, moderationNotes },
+      }),
+      invalidatesTags: ['Listing'],
+    }),
+    
+    getFlaggedListings: builder.query({
+      query: (params = {}) => ({
+        url: '/admin/listings/flagged',
+        params,
+      }),
+      providesTags: ['FlaggedListings'],
+    }),
+    
+    // Safe deletion with dependency checking
+    safeDeleteProduct: builder.mutation({
+      query: ({ id, reason }) => ({
+        url: `/admin/products/${id}/safe-delete`,
+        method: 'DELETE',
+        body: { reason },
+      }),
+      invalidatesTags: ['Product'],
+    }),
+  }),
+});
+
+export const {
+  // New approval hooks
+  useGetAllApprovalsQuery,
+  useApproveVendorMutation,
+  useRejectVendorMutation,
+  useApproveRestaurantMutation,
+  useRejectRestaurantMutation,
+  
+  // Enhanced dashboard hooks
+  useGetAdminDashboardOverviewQuery,
+  useGetAnalyticsOverviewQuery,
+  
+  // Settings management hooks
+  useGetSystemSettingsQuery,
+  useUpdateSystemSettingMutation,
+  
+  // Security hooks
+  useFlagListingMutation,
+  useGetFlaggedListingsQuery,
+  useSafeDeleteProductMutation,
+} = apiSlice;
+```
+
+##### 2. Update Admin Dashboard Components
+```javascript
+// ❌ OLD - Admin approval component
+const AdminApprovals = () => {
+  const { data: users } = useGetAdminUsersQuery({ isApproved: false });
+  const [approveUser] = useApproveUserMutation();
+  
+  const handleApprove = async (userId) => {
+    await approveUser({ id: userId, isApproved: true });
+  };
+  
+  // ... rest of component
+};
+
+// ✅ NEW - Comprehensive approval component
+const AdminApprovalsNew = () => {
+  const { data: approvals, isLoading } = useGetAllApprovalsQuery();
+  const [approveVendor] = useApproveVendorMutation();
+  const [rejectVendor] = useRejectVendorMutation();
+  const [approveRestaurant] = useApproveRestaurantMutation();
+  const [rejectRestaurant] = useRejectRestaurantMutation();
+  
+  const handleVendorApproval = async (vendorId, action, notes, reason) => {
+    try {
+      if (action === 'approve') {
+        await approveVendor({ 
+          id: vendorId, 
+          approvalNotes: notes 
+        }).unwrap();
+        toast.success('Vendor approved successfully');
+      } else {
+        await rejectVendor({ 
+          id: vendorId, 
+          rejectionReason: reason 
+        }).unwrap();
+        toast.success('Vendor application rejected');
+      }
+    } catch (error) {
+      toast.error(error.data?.message || 'Operation failed');
+    }
+  };
+  
+  const handleRestaurantApproval = async (restaurantId, action, notes, reason) => {
+    try {
+      if (action === 'approve') {
+        await approveRestaurant({ 
+          id: restaurantId, 
+          approvalNotes: notes 
+        }).unwrap();
+        toast.success('Restaurant approved successfully');
+      } else {
+        await rejectRestaurant({ 
+          id: restaurantId, 
+          rejectionReason: reason 
+        }).unwrap();
+        toast.success('Restaurant application rejected');
+      }
+    } catch (error) {
+      toast.error(error.data?.message || 'Operation failed');
+    }
+  };
+  
+  if (isLoading) return <LoadingSpinner />;
+  
+  const { vendors, restaurants, summary } = approvals?.data || {};
+  
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <SummaryCard 
+          title="Pending Approvals" 
+          value={summary?.totalPending || 0} 
+          color="orange" 
+        />
+        <SummaryCard 
+          title="Total Approved" 
+          value={summary?.totalApproved || 0} 
+          color="green" 
+        />
+        <SummaryCard 
+          title="Total Rejected" 
+          value={summary?.totalRejected || 0} 
+          color="red" 
+        />
+      </div>
+      
+      {/* Pending Vendors */}
+      <ApprovalSection
+        title="Pending Vendor Approvals"
+        items={vendors?.pending || []}
+        onApprove={(id, notes) => handleVendorApproval(id, 'approve', notes)}
+        onReject={(id, reason) => handleVendorApproval(id, 'reject', null, reason)}
+        type="vendor"
+      />
+      
+      {/* Pending Restaurants */}
+      <ApprovalSection
+        title="Pending Restaurant Approvals"
+        items={restaurants?.pending || []}
+        onApprove={(id, notes) => handleRestaurantApproval(id, 'approve', notes)}
+        onReject={(id, reason) => handleRestaurantApproval(id, 'reject', null, reason)}
+        type="restaurant"
+      />
+    </div>
+  );
+};
+```
+
+##### 3. Update State Management for New Data Models
+```javascript
+// Updated auth slice to handle new approval status
+const authSlice = createSlice({
+  name: 'auth',
+  initialState,
+  reducers: {
+    // ... existing reducers
+  },
+  extraReducers: (builder) => {
+    builder
+      // Handle user data with new approval status
+      .addMatcher(apiSlice.endpoints.getCurrentUser.matchFulfilled, (state, action) => {
+        const { data } = action.payload;
+        if (data.success) {
+          // Backend now returns enhanced user data
+          state.user = {
+            ...data.data,
+            // New approval fields
+            approvalStatus: data.data.approvalStatus, // 'pending' | 'approved' | 'rejected'
+            approvalDate: data.data.approvalDate,
+            rejectionReason: data.data.rejectionReason,
+          };
+        }
+      });
+  },
+});
+```
+
+##### 4. Enhanced Dashboard Integration
+```javascript
+// New enhanced admin dashboard component
+const EnhancedAdminDashboard = () => {
+  const [dateRange, setDateRange] = useState({
+    period: 'month',
+    startDate: null,
+    endDate: null
+  });
+  
+  const { data: dashboard, isLoading } = useGetAdminDashboardOverviewQuery(dateRange);
+  const { data: analytics } = useGetAnalyticsOverviewQuery(dateRange);
+  const { data: settings } = useGetSystemSettingsQuery();
+  
+  if (isLoading) return <DashboardSkeleton />;
+  
+  const {
+    keyMetrics,
+    approvalMetrics,
+    businessMetrics,
+    systemHealth,
+    recentActivity
+  } = dashboard?.data || {};
+  
+  return (
+    <div className="space-y-8">
+      {/* Key Metrics */}
+      <MetricsGrid metrics={keyMetrics} />
+      
+      {/* Approval Metrics - New section */}
+      <ApprovalMetricsSection 
+        metrics={approvalMetrics}
+        onViewPending={() => navigate('/admin/approvals')}
+      />
+      
+      {/* Business Performance */}
+      <BusinessMetricsSection metrics={businessMetrics} />
+      
+      {/* System Health - Enhanced */}
+      <SystemHealthSection health={systemHealth} />
+      
+      {/* Analytics Charts */}
+      {analytics && (
+        <AnalyticsSection 
+          userGrowth={analytics.data.userGrowth}
+          revenueTrends={analytics.data.revenueTrends}
+          topCategories={analytics.data.topCategories}
+        />
+      )}
+      
+      {/* Recent Activity with Flagged Content */}
+      <RecentActivitySection 
+        activity={recentActivity}
+        onViewFlagged={() => navigate('/admin/flagged-content')}
+      />
+    </div>
+  );
+};
+```
+
+### Migration Checklist:
+
+#### Frontend Tasks:
+- [ ] Update all admin API calls to use new approval endpoints
+- [ ] Replace legacy `isApproved` boolean with `approvalStatus` enum
+- [ ] Add approval notes and rejection reason fields to UI forms
+- [ ] Implement unified approval management interface
+- [ ] Add analytics integration to admin dashboard
+- [ ] Create settings management interface
+- [ ] Implement content flagging system
+- [ ] Add dependency checking for delete operations
+- [ ] Update state management for new data models
+- [ ] Add enhanced error handling for new response formats
+- [ ] Update routing for new admin features
+- [ ] Add comprehensive audit trail display
+
+#### Testing Requirements:
+- [ ] Test all approval workflows (approve/reject vendors and restaurants)
+- [ ] Verify analytics data displays correctly
+- [ ] Test settings management functionality
+- [ ] Verify content flagging works as expected
+- [ ] Test enhanced dashboard features
+- [ ] Validate error handling for edge cases
+- [ ] Test mobile responsiveness of new interfaces
+
+#### Performance Considerations:
+- [ ] Implement pagination for approval lists
+- [ ] Add caching for analytics data
+- [ ] Optimize dashboard loading times
+- [ ] Add lazy loading for large data sets
+- [ ] Implement virtual scrolling for notifications
+
+### Data Model Updates to Handle:
+
+#### User Model Changes:
+```javascript
+// Update interfaces/types for user model
+interface User {
+  // ... existing fields
+  approvalStatus: 'pending' | 'approved' | 'rejected';
+  approvalDate?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
+  adminNotes?: string;
+  isDeleted: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+  lastModifiedBy?: string;
+  statusUpdatedAt?: string;
+}
+```
+
+#### Product/Listing Model Changes:
+```javascript
+interface Product {
+  // ... existing fields
+  adminStatus: 'active' | 'inactive' | 'discontinued';
+  isDeleted: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+}
+
+interface Listing {
+  // ... existing fields
+  isFlagged: boolean;
+  flagReason?: string;
+  moderatedBy?: string;
+  moderationNotes?: string;
+  moderationDate?: string;
+  isDeleted: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+}
+```
+
+This migration ensures your frontend will work seamlessly with the enhanced backend approval system while providing better user experience and administrative capabilities.

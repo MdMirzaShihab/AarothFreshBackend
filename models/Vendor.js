@@ -124,12 +124,40 @@ const VendorSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Admin tracking fields
+  statusUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  statusUpdatedAt: Date,
+  adminNotes: String,
+  // Performance metrics
+  performanceScore: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  // Soft delete fields
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: Date,
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   // Audit fields
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
   updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  lastModifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }
@@ -157,5 +185,8 @@ VendorSchema.index({ 'address.coordinates': '2dsphere' });
 VendorSchema.index({ businessName: 'text', specialties: 'text' });
 VendorSchema.index({ isActive: 1, isVerified: 1 });
 VendorSchema.index({ email: 1 });
+VendorSchema.index({ isDeleted: 1, isActive: 1 });
+VendorSchema.index({ performanceScore: -1 });
+VendorSchema.index({ statusUpdatedBy: 1, statusUpdatedAt: -1 });
 
 module.exports = mongoose.model('Vendor', VendorSchema);

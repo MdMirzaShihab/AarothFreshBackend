@@ -1,470 +1,1024 @@
-# 📊 Aaroth Fresh B2B Marketplace - Advanced Dashboard Implementation Guide
+# 🔐 Aaroth Fresh Admin Interface Implementation Guide
 
-## 🎯 Project Overview
+## 🎯 Task: Build Admin Dashboard Interface
 
-You are implementing **comprehensive vendor and restaurant dashboards** for Aaroth Fresh, a B2B marketplace connecting local vegetable vendors with restaurants in Bangladesh. The backend provides 26+ advanced dashboard endpoints with real-time analytics, notifications, and business intelligence features.
+**OBJECTIVE**: You are a React developer tasked with building the **complete Admin interface** for Aaroth Fresh B2B marketplace. Create a comprehensive admin dashboard using React + JavaScript (NO TypeScript) with Vite, Tailwind CSS, and RTK Query.
 
-## 🏗️ Architecture Context
+**CRITICAL REQUIREMENTS**:
+- Use React + JavaScript (vanilla JS, NO TypeScript)
+- Implement ALL admin features described in this document
+- Follow the enhanced backend API structure exactly
+- Create professional, responsive admin interface
+- Ensure proper error handling and loading states
 
-### Backend Structure
-- **API Base**: `/api/v1`
-- **Authentication**: JWT Bearer tokens with phone-based auth
-- **Vendor Dashboard**: `/vendor-dashboard/*` (12 endpoints)
-- **Restaurant Dashboard**: `/restaurant-dashboard/*` (14 endpoints)
-- **Real-time Features**: Notifications, inventory alerts, budget warnings
-- **Performance**: 40+ database indexes, optimized aggregation queries
+## 🏗️ Enhanced Backend Context
 
-### User Roles & Access
+### Admin API Endpoints Overview
+- **Base URL**: `http://localhost:5000/api/v1/admin`
+- **Authentication**: JWT Bearer tokens (admin role required)
+- **New Features**: Unified approval system, advanced analytics, system settings, content moderation
+
+### 🚨 Critical API Migration
+**Legacy endpoints REMOVED** - Use new unified approval system:
+
+#### Removed (❌):
+- `PUT /admin/users/:id/approve`
+- `PUT /admin/vendors/:id/verify` 
+- `PUT /admin/restaurants/:id/verify`
+
+#### New Unified System (✅):
+- `GET /admin/approvals` - All pending approvals
+- `PUT /admin/approvals/vendor/:id/approve` - Approve vendor
+- `PUT /admin/approvals/vendor/:id/reject` - Reject vendor
+- `PUT /admin/approvals/restaurant/:id/approve` - Approve restaurant
+- `PUT /admin/approvals/restaurant/:id/reject` - Reject restaurant
+
+### Enhanced Admin APIs
 ```javascript
-const USER_ROLES = {
-  VENDOR: 'vendor',                    // Sells products, manages inventory
-  RESTAURANT_OWNER: 'restaurantOwner', // Makes purchasing decisions
-  RESTAURANT_MANAGER: 'restaurantManager', // Places orders, limited access
-  ADMIN: 'admin'                       // Platform management
-};
+// Dashboard & Analytics
+GET /admin/dashboard/overview          // Enhanced metrics with approval data
+GET /admin/analytics/overview?period=month&useCache=true
+GET /admin/analytics/sales?startDate=2024-01-01
+GET /admin/analytics/users?period=quarter
+DELETE /admin/analytics/cache          // Clear analytics cache
+
+// System Settings Management
+GET /admin/settings                    // All system settings
+GET /admin/settings/:category          // Category-specific settings
+PUT /admin/settings/key/:key           // Update setting with reason
+POST /admin/settings/reset             // Reset to defaults
+GET /admin/settings/key/:key/history   // Setting change history
+
+// Content Moderation & Security
+PUT /admin/listings/:id/flag           // Flag listing with reason
+GET /admin/listings/flagged            // Get flagged content
+DELETE /admin/products/:id/safe-delete // Safe delete with dependency check
+PUT /admin/vendors/:id/deactivate      // Deactivate with audit
+PUT /admin/restaurants/:id/toggle-status // Enable/disable restaurant
 ```
 
 ## 🚀 Implementation Requirements
 
-### 1. **Dashboard Layout System**
+### 1. **Admin Dashboard Layout**
 
-#### Create Role-Based Dashboard Layouts
-```typescript
-// Required Components:
-- DashboardLayout.tsx         // Main container with sidebar + header
-- VendorSidebar.tsx          // Vendor navigation menu
-- RestaurantSidebar.tsx      // Restaurant navigation menu
-- DashboardHeader.tsx        // Header with notifications + user info
-- ProtectedRoute.tsx         // Role-based route protection
-
-// Navigation Structure:
-// Vendor Dashboard:
-// - Overview (KPIs, trends, recent activity)
-// - Revenue Analytics (charts, growth, payments)
-// - Product Performance (top products, categories)
-// - Order Management (pending, processing, history)
-// - Inventory Status (stock levels, alerts)
-// - Customer Insights (loyalty, acquisition)
-// - Financial Reports (P&L, commission tracking)
-// - Notifications (real-time alerts)
-
-// Restaurant Dashboard:
-// - Overview (spending, budget status, orders)
-// - Spending Analytics (trends, vendor breakdown)
-// - Vendor Insights (performance, reliability scores)
-// - Budget Tracking (limits, alerts, recommendations)
-// - Order History (filtering, search, status)
-// - Inventory Planning (consumption, reorder suggestions)
-// - Favorite Vendors (frequently used, quick reorder)
-// - Notifications (budget alerts, order updates)
-```
-
-#### Responsive Design Requirements
-- **Mobile-first approach** with breakpoints at 768px, 1024px, 1280px
-- **Collapsible sidebar** on mobile devices
-- **Touch-friendly interactions** for mobile/tablet users
-- **Progressive enhancement** for desktop features
-
-### 2. **State Management & API Integration**
-
-#### RTK Query Setup
-```typescript
-// Required API Slices:
-- store/api/dashboardSlice.ts    // All dashboard endpoints
-- store/api/notificationSlice.ts // Notification management
-- store/slices/dashboardSlice.ts // UI state (filters, preferences)
-
-// Key Features:
-- Real-time polling for live data updates
-- Optimistic updates for better UX
-- Error handling with retry logic
-- Background refetching on window focus
-- Cached data with smart invalidation
-```
-
-#### Data Fetching Patterns
-```typescript
-// Implementation Examples:
-
-// 1. Dashboard Overview with Auto-refresh
-const { data, isLoading, error } = useGetVendorDashboardOverviewQuery(
-  { period: 'month' },
+#### Sidebar Navigation Structure
+```javascript
+const adminNavItems = [
   { 
-    pollingInterval: 300000, // 5-minute refresh
-    refetchOnFocus: true,
-    refetchOnReconnect: true 
+    path: '/admin/dashboard', 
+    label: 'Dashboard', 
+    icon: 'LayoutDashboard',
+    description: 'Platform overview and key metrics'
+  },
+  { 
+    path: '/admin/approvals', 
+    label: 'Approval Management', 
+    icon: 'CheckCircle',
+    badge: pendingApprovalsCount,
+    description: 'Review and approve vendor/restaurant applications'
+  },
+  { 
+    path: '/admin/restaurant-management', 
+    label: 'Restaurant Management', 
+    icon: 'Store',
+    description: 'CRUD restaurant owners/managers, enable/disable restaurants'
+  },
+  { 
+    path: '/admin/vendor-management', 
+    label: 'Vendor Management', 
+    icon: 'Truck',
+    description: 'Manage vendors, view performance, enable/disable accounts'
+  },
+  { 
+    path: '/admin/categories', 
+    label: 'Categories', 
+    icon: 'Tag',
+    description: 'CRUD product categories'
+  },
+  { 
+    path: '/admin/products', 
+    label: 'Products', 
+    icon: 'Package',
+    description: 'CRUD products, manage status (active/inactive/discontinued)'
+  },
+  { 
+    path: '/admin/listing-management', 
+    label: 'Listing Management', 
+    icon: 'List',
+    description: 'Flag/unflag listings, feature management, status updates'
+  },
+  { 
+    path: '/admin/analytics', 
+    label: 'Analytics', 
+    icon: 'BarChart3',
+    description: 'Advanced platform analytics with caching'
+  },
+  { 
+    path: '/admin/system-settings', 
+    label: 'System Settings', 
+    icon: 'Settings',
+    description: 'Platform configuration management'
   }
-);
+];
+```
 
-// 2. Filtered Data with Debounced Queries
-const [filters, setFilters] = useState({ category: '', dateRange: 'month' });
-const debouncedFilters = useDebounce(filters, 300);
-const { data: products } = useGetVendorProductPerformanceQuery(debouncedFilters);
+### 2. **Core Admin Components**
 
-// 3. Paginated Lists with Infinite Scroll
-const { data, fetchNextPage, hasNextPage } = useInfiniteQuery({
-  queryKey: ['orders', filters],
-  queryFn: ({ pageParam = 1 }) => fetchOrders({ ...filters, page: pageParam }),
-  getNextPageParam: (lastPage) => lastPage.nextPage
+#### Approval Management Interface
+```javascript
+// components/admin/ApprovalManagement.jsx
+// CREATE: Main approval management component
+
+// Key Features TO IMPLEMENT:
+- Unified dashboard showing pending vendors and restaurants
+- Detailed application review with document verification
+- Approve with notes / Reject with detailed reason
+- Approval history and audit trail
+- Search and filter by application date, business type
+- Batch approval capabilities for efficient processing
+- Email notification triggers on approval/rejection
+
+// REQUIRED Sub-components TO CREATE:
+- ApprovalCard.jsx          // Individual approval item display
+- ApprovalModal.jsx         // Detailed review and action modal
+- ApprovalHistory.jsx       // Audit trail of decisions
+- ApprovalFilters.jsx       // Filter and search interface
+
+// EXAMPLE Component Structure:
+const ApprovalManagement = () => {
+  const { data: approvals, isLoading, error } = useGetAllApprovalsQuery();
+  const [approveVendor] = useApproveVendorMutation();
+  const [rejectVendor] = useRejectVendorMutation();
+  const [selectedApproval, setSelectedApproval] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  
+  // Handle approval logic
+  const handleApproval = async (type, id, action, data) => {
+    try {
+      // Implementation logic here
+    } catch (error) {
+      // Error handling
+    }
+  };
+  
+  return (
+    // JSX implementation
+  );
+};
+```
+
+#### Enhanced Dashboard Overview
+```javascript
+// components/admin/AdminDashboard.jsx
+// CREATE: Main admin dashboard component
+
+// IMPLEMENT These Key Metrics Cards:
+- Total Platform Users (vendors, restaurants, managers)
+- Pending Approvals (with urgency indicators)
+- Monthly Revenue and Growth Trends
+- Active Listings and Order Volume
+- System Health Status
+- Recent Critical Activities
+
+// IMPLEMENT These Visual Components:
+- Approval Pipeline Chart (pending → approved → rejected flow)
+- Revenue Trends (Line chart with monthly/quarterly view)
+- User Growth Analytics (New registrations, activation rates)
+- Geographic Distribution (Where vendors/restaurants are located)
+- Top Performing Categories/Products
+- Platform Activity Timeline
+
+// EXAMPLE Implementation:
+const AdminDashboard = () => {
+  const { data: dashboard, isLoading } = useGetAdminDashboardOverviewQuery();
+  const { data: analytics } = useGetAnalyticsOverviewQuery();
+  
+  if (isLoading) return <LoadingSpinner />;
+  
+  const { keyMetrics, approvalMetrics, systemHealth, recentActivity } = dashboard?.data || {};
+  
+  return (
+    <div className="space-y-8">
+      <MetricsGrid metrics={keyMetrics} />
+      <ApprovalMetricsSection metrics={approvalMetrics} />
+      <ChartsSection analytics={analytics} />
+      <RecentActivityFeed activity={recentActivity} />
+    </div>
+  );
+};
+```
+
+#### Restaurant Management Interface
+```javascript
+// components/admin/RestaurantManagement.jsx
+// CREATE: Restaurant management component
+
+// IMPLEMENT Core Features:
+- CRUD Restaurant Owners (create, edit, view profile, deactivate)
+- CRUD Restaurant Managers (assign to restaurants, permissions)
+- Restaurant Profile Management (edit details, address, licenses)
+- Enable/Disable Restaurant Operations
+- View Restaurant Performance Metrics
+- Manage Restaurant-Manager Relationships
+
+// CREATE These Sub-components:
+- RestaurantOwnerForm.jsx   // Create/edit restaurant owners
+- RestaurantManagerForm.jsx // Create/edit managers
+- RestaurantDetails.jsx     // Full restaurant profile view
+- RestaurantStatusToggle.jsx // Enable/disable controls with reason
+- RestaurantMetrics.jsx     // Performance dashboard per restaurant
+
+// EXAMPLE Structure:
+const RestaurantManagement = () => {
+  const [selectedTab, setSelectedTab] = useState('owners'); // 'owners', 'managers'
+  const [showForm, setShowForm] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Restaurant Management</h1>
+        <button onClick={() => setShowForm(true)}>Add New</button>
+      </div>
+      
+      <TabNavigation selectedTab={selectedTab} onTabChange={setSelectedTab} />
+      
+      {selectedTab === 'owners' && <RestaurantOwnersTable />}
+      {selectedTab === 'managers' && <RestaurantManagersTable />}
+      
+      {showForm && <RestaurantForm onClose={() => setShowForm(false)} />}
+    </div>
+  );
+};
+```
+
+#### Vendor Management Interface
+```javascript
+// components/admin/VendorManagement.jsx
+// CREATE: Vendor management component
+
+// IMPLEMENT Core Features:
+- View All Vendors with Status (active, inactive, suspended)
+- Vendor Profile Management (edit business details)
+- Performance Analytics per Vendor
+- Enable/Disable Vendor Operations
+- View Vendor Listings and Order History
+- Vendor Verification Status Tracking
+
+// CREATE These Sub-components:
+- VendorProfile.jsx         // Complete vendor information view
+- VendorPerformance.jsx     // Sales, ratings, order fulfillment metrics
+- VendorStatusControls.jsx  // Activation/deactivation with admin notes
+- VendorListings.jsx        // Listings management for specific vendor
+
+// EXAMPLE Implementation:
+const VendorManagement = () => {
+  const { data: vendors, isLoading } = useGetVendorsQuery();
+  const [deactivateVendor] = useDeactivateVendorMutation();
+  const [selectedVendor, setSelectedVendor] = useState(null);
+  
+  const handleStatusToggle = async (vendorId, isActive, reason) => {
+    try {
+      await deactivateVendor({ id: vendorId, reason }).unwrap();
+      toast.success('Vendor status updated successfully');
+    } catch (error) {
+      toast.error(error.data?.message || 'Failed to update vendor status');
+    }
+  };
+  
+  return (
+    <div className="space-y-6">
+      <VendorFilters />
+      <VendorTable vendors={vendors} onStatusToggle={handleStatusToggle} />
+      {selectedVendor && <VendorDetailsModal vendor={selectedVendor} />}
+    </div>
+  );
+};
+```
+
+#### Content Moderation System
+```javascript
+// components/admin/ContentModeration.jsx
+// CREATE: Content moderation component
+
+// IMPLEMENT Features:
+- View Flagged Listings with Reason and Context
+- Review and Moderate Flagged Content
+- Unflag/Approve Legitimate Content
+- Listing Feature Management (featured/unfeatured)
+- Content Status Updates (active, under review, removed)
+- Moderation History and Appeals
+
+// CREATE These Sub-components:
+- FlaggedContentList.jsx    // List all flagged items
+- ModerationReview.jsx      // Individual content review interface
+- FlagReason.jsx            // Categorized flagging system
+- ContentActions.jsx        // Approve, reject, escalate actions
+
+// EXAMPLE Structure:
+const ContentModeration = () => {
+  const { data: flaggedContent } = useGetFlaggedListingsQuery();
+  const [flagListing] = useFlagListingMutation();
+  const [selectedContent, setSelectedContent] = useState(null);
+  
+  const handleModeration = async (action, contentId, data) => {
+    try {
+      if (action === 'flag') {
+        await flagListing({ id: contentId, ...data }).unwrap();
+      }
+      toast.success('Content moderated successfully');
+    } catch (error) {
+      toast.error(error.data?.message || 'Moderation failed');
+    }
+  };
+  
+  return (
+    <div className="space-y-6">
+      <ModerationFilters />
+      <FlaggedContentGrid content={flaggedContent} onSelect={setSelectedContent} />
+      {selectedContent && (
+        <ModerationPanel 
+          content={selectedContent} 
+          onModerate={handleModeration}
+        />
+      )}
+    </div>
+  );
+};
+```
+
+#### System Settings Management
+```javascript
+// components/admin/SystemSettings.jsx
+// CREATE: System settings management component
+
+// IMPLEMENT Features:
+- Platform Configuration Management
+- Category-based Settings Organization
+- Setting Change History with Audit Trail
+- Bulk Settings Update and Reset to Defaults
+- Real-time Configuration Validation
+- Environment-specific Settings Display
+
+// IMPLEMENT These Settings Categories:
+- General Platform Settings
+- Email & Notification Configuration
+- Payment & Commission Settings
+- Security & Authentication Settings
+- Feature Flags and Toggles
+- API Rate Limiting Configuration
+
+// CREATE These Sub-components:
+- SettingsCategoryNav.jsx   // Category navigation
+- SettingItem.jsx           // Individual setting with validation
+- SettingsHistory.jsx       // Change audit trail
+- BulkSettingsActions.jsx   // Bulk operations interface
+
+// EXAMPLE Implementation:
+const SystemSettings = () => {
+  const [selectedCategory, setSelectedCategory] = useState('general');
+  const { data: settings } = useGetSystemSettingsQuery({ category: selectedCategory });
+  const [updateSetting] = useUpdateSystemSettingMutation();
+  
+  const handleSettingUpdate = async (key, value, reason) => {
+    try {
+      await updateSetting({ key, value, changeReason: reason }).unwrap();
+      toast.success('Setting updated successfully');
+    } catch (error) {
+      toast.error(error.data?.message || 'Failed to update setting');
+    }
+  };
+  
+  return (
+    <div className="flex h-screen">
+      <SettingsCategoryNav 
+        selectedCategory={selectedCategory}
+        onCategoryChange={setSelectedCategory}
+      />
+      <div className="flex-1 p-6">
+        <SettingsForm 
+          settings={settings}
+          category={selectedCategory}
+          onUpdate={handleSettingUpdate}
+        />
+      </div>
+    </div>
+  );
+};
+```
+
+#### Advanced Analytics Dashboard
+```javascript
+// components/admin/AnalyticsDashboard.jsx
+// CREATE: Advanced analytics dashboard
+
+// IMPLEMENT Core Analytics:
+- User Growth Trends (Registration, approval, activation rates)
+- Revenue Analytics (Platform commission, growth metrics)
+- Business Performance (Top vendors, restaurants, categories)
+- Platform Usage Metrics (Active users, order volume, listing activity)
+- Geographic Analytics (User distribution, regional performance)
+- Seasonal Trends and Forecasting
+
+// IMPLEMENT Features:
+- Date Range Selection (Today, Week, Month, Quarter, Year, Custom)
+- Export Capabilities (PDF reports, CSV data)
+- Real-time vs Cached Data Toggle
+- Drill-down Capabilities (Click metrics to see details)
+- Comparative Analysis (Period over period comparison)
+
+// CREATE These Sub-components:
+- MetricsOverview.jsx       // Key platform metrics
+- RevenueCharts.jsx         // Revenue and financial analytics
+- UserAnalytics.jsx         // User behavior and growth
+- BusinessAnalytics.jsx     // Vendor/restaurant performance
+- ExportControls.jsx        // Data export functionality
+
+// EXAMPLE Structure:
+const AnalyticsDashboard = () => {
+  const [dateRange, setDateRange] = useState({ period: 'month' });
+  const [useCache, setUseCache] = useState(true);
+  
+  const { data: analytics, isLoading } = useGetAnalyticsOverviewQuery({ 
+    ...dateRange, 
+    useCache 
+  });
+  
+  const handleExport = (format) => {
+    // Export logic implementation
+  };
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <DateRangeSelector value={dateRange} onChange={setDateRange} />
+        <div className="flex gap-4">
+          <CacheToggle value={useCache} onChange={setUseCache} />
+          <ExportControls onExport={handleExport} />
+        </div>
+      </div>
+      
+      <MetricsGrid data={analytics?.keyMetrics} />
+      <ChartsGrid data={analytics?.charts} />
+      <DetailedTables data={analytics?.tables} />
+    </div>
+  );
+};
+```
+
+### 3. **Data Models and Constants**
+
+#### JavaScript Data Structure Examples
+```javascript
+// utils/dataStructures.js
+// REFERENCE: Expected data structures from backend
+
+// Enhanced User Object
+const enhancedUserExample = {
+  id: 'string',
+  phone: 'string',
+  name: 'string',
+  role: 'vendor | restaurantOwner | restaurantManager',
+  
+  // Enhanced approval tracking
+  approvalStatus: 'pending | approved | rejected',
+  approvalDate: 'string (ISO date)',
+  approvedBy: 'string (admin user id)',
+  rejectionReason: 'string',
+  adminNotes: 'string',
+  
+  // Audit fields
+  isDeleted: 'boolean',
+  deletedAt: 'string (ISO date)',
+  deletedBy: 'string (admin user id)',
+  lastModifiedBy: 'string (admin user id)',
+  statusUpdatedAt: 'string (ISO date)',
+  
+  // Relations (populated objects)
+  vendor: 'VendorObject',
+  restaurant: 'RestaurantObject'
+};
+
+// Enhanced Product Object
+const enhancedProductExample = {
+  id: 'string',
+  name: 'string',
+  category: 'CategoryObject',
+  
+  // Admin status management
+  adminStatus: 'active | inactive | discontinued',
+  
+  // Soft delete
+  isDeleted: 'boolean',
+  deletedAt: 'string (ISO date)',
+  deletedBy: 'string (admin user id)'
+};
+
+// System Setting Object
+const systemSettingExample = {
+  id: 'string',
+  key: 'string',
+  value: 'any type',
+  category: 'string',
+  dataType: 'string | number | boolean | object | array',
+  description: 'string',
+  defaultValue: 'any type',
+  lastModifiedBy: 'string (admin user id)',
+  updatedAt: 'string (ISO date)'
+};
+
+// Approval Metrics Object
+const approvalMetricsExample = {
+  totalPending: 'number',
+  totalApproved: 'number',
+  totalRejected: 'number',
+  pendingVendors: 'number',
+  pendingRestaurants: 'number',
+  avgApprovalTime: 'number (hours)',
+  recentActivity: ['array of ApprovalActivity objects']
+};
+
+// Constants for use throughout the app
+export const APPROVAL_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected'
+};
+
+export const ADMIN_STATUS = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  DISCONTINUED: 'discontinued'
+};
+
+export const USER_ROLES = {
+  VENDOR: 'vendor',
+  RESTAURANT_OWNER: 'restaurantOwner',
+  RESTAURANT_MANAGER: 'restaurantManager'
+};
+```
+
+### 4. **RTK Query Integration**
+
+#### Enhanced Admin API Slice (JavaScript)
+```javascript
+// store/api/adminSlice.js
+// CREATE: Complete admin API slice implementation
+
+import { apiSlice } from './apiSlice';
+
+export const adminApiSlice = apiSlice.injectEndpoints({
+  endpoints: (builder) => ({
+    // IMPLEMENT: Unified Approval System
+    getAllApprovals: builder.query({
+      query: (filters = {}) => ({
+        url: '/admin/approvals',
+        params: filters,
+      }),
+      providesTags: ['Approvals'],
+    }),
+    
+    approveVendor: builder.mutation({
+      query: ({ id, approvalNotes }) => ({
+        url: `/admin/approvals/vendor/${id}/approve`,
+        method: 'PUT',
+        body: { approvalNotes },
+      }),
+      invalidatesTags: ['Approvals', 'User', 'Vendor'],
+    }),
+    
+    rejectVendor: builder.mutation({
+      query: ({ id, rejectionReason }) => ({
+        url: `/admin/approvals/vendor/${id}/reject`,
+        method: 'PUT',
+        body: { rejectionReason },
+      }),
+      invalidatesTags: ['Approvals', 'User', 'Vendor'],
+    }),
+    
+    approveRestaurant: builder.mutation({
+      query: ({ id, approvalNotes }) => ({
+        url: `/admin/approvals/restaurant/${id}/approve`,
+        method: 'PUT',
+        body: { approvalNotes },
+      }),
+      invalidatesTags: ['Approvals', 'User', 'Restaurant'],
+    }),
+    
+    rejectRestaurant: builder.mutation({
+      query: ({ id, rejectionReason }) => ({
+        url: `/admin/approvals/restaurant/${id}/reject`,
+        method: 'PUT',
+        body: { rejectionReason },
+      }),
+      invalidatesTags: ['Approvals', 'User', 'Restaurant'],
+    }),
+    
+    // IMPLEMENT: Enhanced Dashboard
+    getAdminDashboardOverview: builder.query({
+      query: (dateFilter = {}) => ({
+        url: '/admin/dashboard/overview',
+        params: dateFilter,
+      }),
+      providesTags: ['AdminDashboard'],
+      // Cache for 5 minutes
+      keepUnusedDataFor: 300,
+    }),
+    
+    // IMPLEMENT: Advanced Analytics
+    getAnalyticsOverview: builder.query({
+      query: (filters = {}) => ({
+        url: '/admin/analytics/overview',
+        params: filters,
+      }),
+      providesTags: ['Analytics'],
+    }),
+    
+    getSalesAnalytics: builder.query({
+      query: (filters = {}) => ({
+        url: '/admin/analytics/sales',
+        params: filters,
+      }),
+      providesTags: ['SalesAnalytics'],
+    }),
+    
+    getUserAnalytics: builder.query({
+      query: (filters = {}) => ({
+        url: '/admin/analytics/users',
+        params: filters,
+      }),
+      providesTags: ['UserAnalytics'],
+    }),
+    
+    clearAnalyticsCache: builder.mutation({
+      query: () => ({
+        url: '/admin/analytics/cache',
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Analytics', 'SalesAnalytics', 'UserAnalytics'],
+    }),
+    
+    // IMPLEMENT: System Settings
+    getSystemSettings: builder.query({
+      query: (filter = {}) => ({
+        url: '/admin/settings',
+        params: filter,
+      }),
+      providesTags: ['Settings'],
+    }),
+    
+    updateSystemSetting: builder.mutation({
+      query: ({ key, value, changeReason }) => ({
+        url: `/admin/settings/key/${key}`,
+        method: 'PUT',
+        body: { value, changeReason },
+      }),
+      invalidatesTags: ['Settings'],
+    }),
+    
+    resetSystemSettings: builder.mutation({
+      query: () => ({
+        url: '/admin/settings/reset',
+        method: 'POST',
+      }),
+      invalidatesTags: ['Settings'],
+    }),
+    
+    // IMPLEMENT: Content Moderation
+    getFlaggedListings: builder.query({
+      query: (filters = {}) => ({
+        url: '/admin/listings/flagged',
+        params: filters,
+      }),
+      providesTags: ['FlaggedContent'],
+    }),
+    
+    flagListing: builder.mutation({
+      query: ({ id, flagReason, moderationNotes }) => ({
+        url: `/admin/listings/${id}/flag`,
+        method: 'PUT',
+        body: { flagReason, moderationNotes },
+      }),
+      invalidatesTags: ['FlaggedContent', 'Listing'],
+    }),
+    
+    // IMPLEMENT: User Management
+    getVendors: builder.query({
+      query: (filters = {}) => ({
+        url: '/admin/vendors',
+        params: filters,
+      }),
+      providesTags: ['Vendor'],
+    }),
+    
+    deactivateVendor: builder.mutation({
+      query: ({ id, reason, adminNotes }) => ({
+        url: `/admin/vendors/${id}/deactivate`,
+        method: 'PUT',
+        body: { reason, adminNotes },
+      }),
+      invalidatesTags: ['Vendor'],
+    }),
+    
+    getRestaurants: builder.query({
+      query: (filters = {}) => ({
+        url: '/admin/restaurants',
+        params: filters,
+      }),
+      providesTags: ['Restaurant'],
+    }),
+    
+    toggleRestaurantStatus: builder.mutation({
+      query: ({ id, isActive, reason }) => ({
+        url: `/admin/restaurants/${id}/toggle-status`,
+        method: 'PUT',
+        body: { isActive, reason },
+      }),
+      invalidatesTags: ['Restaurant'],
+    }),
+    
+    // IMPLEMENT: Safe Deletion
+    safeDeleteProduct: builder.mutation({
+      query: ({ id, reason }) => ({
+        url: `/admin/products/${id}/safe-delete`,
+        method: 'DELETE',
+        body: { reason },
+      }),
+      invalidatesTags: ['Product'],
+    }),
+    
+    safeDeleteCategory: builder.mutation({
+      query: ({ id, reason }) => ({
+        url: `/admin/categories/${id}/safe-delete`,
+        method: 'DELETE',
+        body: { reason },
+      }),
+      invalidatesTags: ['Category'],
+    }),
+  }),
 });
+
+// EXPORT: All hooks for use in components
+export const {
+  // Approval System Hooks
+  useGetAllApprovalsQuery,
+  useApproveVendorMutation,
+  useRejectVendorMutation,
+  useApproveRestaurantMutation,
+  useRejectRestaurantMutation,
+  
+  // Dashboard & Analytics Hooks
+  useGetAdminDashboardOverviewQuery,
+  useGetAnalyticsOverviewQuery,
+  useGetSalesAnalyticsQuery,
+  useGetUserAnalyticsQuery,
+  useClearAnalyticsCacheMutation,
+  
+  // Settings Management Hooks
+  useGetSystemSettingsQuery,
+  useUpdateSystemSettingMutation,
+  useResetSystemSettingsMutation,
+  
+  // Content Moderation Hooks
+  useGetFlaggedListingsQuery,
+  useFlagListingMutation,
+  
+  // User Management Hooks
+  useGetVendorsQuery,
+  useDeactivateVendorMutation,
+  useGetRestaurantsQuery,
+  useToggleRestaurantStatusMutation,
+  
+  // Safe Deletion Hooks
+  useSafeDeleteProductMutation,
+  useSafeDeleteCategoryMutation,
+} = adminApiSlice;
 ```
 
-### 3. **Advanced Analytics & Visualization**
+### 5. **UI Design System for Admin**
 
-#### Chart Library Integration
-**Use Chart.js with react-chartjs-2** for consistent, performant visualizations:
-
-```typescript
-// Required Chart Types:
-- Line Charts: Revenue trends, order volume, budget tracking
-- Bar Charts: Category performance, vendor comparison
-- Doughnut Charts: Order status distribution, budget allocation  
-- Area Charts: Seasonal trends, cumulative spending
-- Mixed Charts: Revenue vs orders (dual axis)
-
-// Performance Requirements:
-- Memoized chart components to prevent unnecessary re-renders
-- Data aggregation on frontend for large datasets
-- Loading skeletons for chart components
-- Responsive chart sizing for mobile devices
+#### Admin-Specific Color Palette
+```javascript
+// Enhanced admin color scheme
+const adminColors = {
+  // Status colors
+  'approval-pending': '#F59E0B',      // Amber for pending items
+  'approval-approved': '#10B981',     // Green for approved
+  'approval-rejected': '#EF4444',     // Red for rejected
+  'system-healthy': '#10B981',        // Green for system health
+  'system-warning': '#F59E0B',        // Amber for warnings
+  'system-critical': '#EF4444',       // Red for critical issues
+  
+  // Admin action colors
+  'admin-primary': '#1E40AF',         // Blue for primary admin actions
+  'admin-secondary': '#6366F1',       // Indigo for secondary actions
+  'admin-danger': '#DC2626',          // Red for dangerous actions
+  
+  // Background variations
+  'admin-bg-primary': '#F8FAFC',      // Light gray background
+  'admin-bg-secondary': '#F1F5F9',    // Slightly darker gray
+  'admin-surface': '#FFFFFF',         // White surfaces
+};
 ```
 
-#### KPI Cards & Metrics
-```typescript
-// Implementation Pattern:
-interface KPICardProps {
-  title: string;
-  value: number | string;
-  change?: number;        // Growth percentage
-  format?: 'currency' | 'number' | 'percentage';
-  trend?: 'up' | 'down' | 'neutral';
-  loading?: boolean;
-  onClick?: () => void;   // Navigation to detailed view
-}
-
-// Required Metrics:
-// Vendor KPIs: Revenue, Orders, AOV, Customer Retention, Inventory Turnover
-// Restaurant KPIs: Total Spent, Budget Used, Vendor Count, Order Frequency
+#### Admin Component Styling
+```javascript
+// Admin-specific component classes
+const adminStyles = {
+  // Dashboard cards
+  dashboardCard: "bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300",
+  
+  // Approval items
+  approvalCard: "bg-white rounded-xl p-6 border border-gray-200 hover:border-blue-300 transition-colors duration-200",
+  approvalPending: "border-l-4 border-l-amber-400 bg-amber-50/30",
+  approvalApproved: "border-l-4 border-l-green-400 bg-green-50/30",
+  approvalRejected: "border-l-4 border-l-red-400 bg-red-50/30",
+  
+  // Action buttons
+  approveButton: "bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md",
+  rejectButton: "bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md",
+  moderateButton: "bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md",
+  
+  // Status indicators
+  statusActive: "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800",
+  statusInactive: "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800",
+  statusSuspended: "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800",
+  
+  // Form elements
+  adminInput: "w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200",
+  adminSelect: "w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200",
+  adminTextarea: "w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 min-h-[120px]",
+};
 ```
 
-### 4. **Real-time Notification System**
+## 📋 Detailed Implementation Checklist
 
-#### Notification Features
-```typescript
-// Notification Types:
-- Inventory Alerts: Low stock, out of stock warnings
-- Order Updates: New orders, status changes, delivery confirmations  
-- Budget Warnings: Spending limits exceeded, category overspending
-- System Notifications: Feature updates, maintenance alerts
+### Phase 1: Core Admin Infrastructure
+**MANDATORY FIRST STEPS**:
+- [ ] **SETUP**: Create admin-only routing with role protection (`/admin/*` routes)
+- [ ] **CREATE**: Admin layout component with fixed sidebar navigation
+- [ ] **IMPLEMENT**: Admin authentication flow with role verification
+- [ ] **SETUP**: Enhanced RTK Query admin slice (`store/api/adminSlice.js`)
+- [ ] **CREATE**: Base admin dashboard structure (`components/admin/AdminDashboard.jsx`)
+- [ ] **STYLE**: Apply admin-specific Tailwind CSS classes
 
-// Implementation Requirements:
-- Toast notifications for urgent alerts
-- Notification center dropdown with action buttons
-- Real-time badge counts on navigation
-- Mark as read functionality
-- Action buttons that link to relevant dashboard sections
-- Priority-based styling (urgent=red, high=orange, medium=blue, low=gray)
+### Phase 2: Approval Management System
+**CRITICAL MIGRATION**:
+- [ ] **REMOVE**: All legacy approval API calls (they will return 404 errors)
+- [ ] **IMPLEMENT**: Unified approval management interface (`ApprovalManagement.jsx`)
+- [ ] **CREATE**: Approval cards with detailed review capabilities (`ApprovalCard.jsx`)
+- [ ] **BUILD**: Approve/reject modals with notes and reasons (`ApprovalModal.jsx`)
+- [ ] **ADD**: Approval history and audit trail (`ApprovalHistory.jsx`)
+- [ ] **IMPLEMENT**: Search and filter functionality (`ApprovalFilters.jsx`)
+- [ ] **TEST**: All approval workflows (vendor + restaurant approval/rejection)
+
+### Phase 3: User Management Interfaces  
+**COMPLETE CRUD INTERFACES**:
+- [ ] **BUILD**: Restaurant management with owners/managers CRUD (`RestaurantManagement.jsx`)
+- [ ] **CREATE**: Vendor management with performance metrics (`VendorManagement.jsx`)
+- [ ] **IMPLEMENT**: Enable/disable functionality with admin notes
+- [ ] **ADD**: User profile editing capabilities
+- [ ] **BUILD**: User search and filtering with pagination
+- [ ] **STYLE**: Professional table layouts and forms
+
+### Phase 4: Content and Product Management
+**MODERATION SYSTEM**:
+- [ ] **CREATE**: Category management interface with CRUD (`CategoryManagement.jsx`)
+- [ ] **BUILD**: Product management with admin status (`ProductManagement.jsx`)
+- [ ] **IMPLEMENT**: Listing management with flagging system (`ListingManagement.jsx`)
+- [ ] **ADD**: Safe deletion with dependency checking warnings
+- [ ] **CREATE**: Content moderation workflow (`ContentModeration.jsx`)
+- [ ] **TEST**: All moderation and deletion workflows
+
+### Phase 5: Advanced Analytics and Settings
+**DATA VISUALIZATION**:
+- [ ] **BUILD**: Comprehensive analytics dashboard (`AnalyticsDashboard.jsx`)
+- [ ] **IMPLEMENT**: Chart.js integration for data visualization
+- [ ] **CREATE**: System settings management (`SystemSettings.jsx`)
+- [ ] **ADD**: Settings change history and audit trail
+- [ ] **IMPLEMENT**: Data export functionality (CSV, PDF)
+- [ ] **ADD**: Analytics caching with cache management controls
+
+### Phase 6: Polish and Testing
+**FINAL STEPS**:
+- [ ] **TEST**: All approval workflows thoroughly
+- [ ] **OPTIMIZE**: Performance and caching strategies
+- [ ] **ENSURE**: Mobile responsiveness for admin interface
+- [ ] **IMPLEMENT**: Accessibility improvements (ARIA labels, keyboard navigation)
+- [ ] **ADD**: Loading states, error handling, and user feedback
+- [ ] **VERIFY**: All RTK Query hooks work correctly with backend APIs
+
+## 🎨 Admin UI Guidelines
+
+### Design Philosophy
+- **Professional & Clean**: Business-focused interface with clear hierarchy
+- **Data-Dense but Organized**: Present lots of information without overwhelming
+- **Action-Oriented**: Clear paths to common admin tasks
+- **Audit-Focused**: Transparency in all administrative actions
+
+### Layout Principles
+- **Fixed sidebar**: Always visible navigation for quick access
+- **Contextual actions**: Actions relevant to current view
+- **Status-first design**: Clear visual status indicators throughout
+- **Mobile-responsive**: Functional on tablets for mobile administration
+
+### Critical Success Factors
+1. **Approval Efficiency**: Streamlined vendor/restaurant approval process
+2. **System Monitoring**: Real-time visibility into platform health
+3. **Content Safety**: Effective content moderation tools
+4. **Audit Compliance**: Complete tracking of administrative actions
+5. **Performance**: Fast loading of admin dashboards and analytics
+
+## 🔑 Key Features Summary
+
+### New Admin Capabilities
+- **Unified Approval System**: Single interface for all approval workflows
+- **Enhanced Analytics**: Advanced platform insights with caching
+- **System Settings**: Comprehensive configuration management
+- **Content Moderation**: Professional flagging and review system
+- **Audit Trails**: Complete tracking of all admin actions
+- **Safe Operations**: Dependency checking before deletions
+- **Real-time Monitoring**: Live platform health and metrics
+
+### Migration Requirements
+- Replace all legacy approval endpoints
+- Update data models for enhanced approval status
+- Implement audit trail display throughout interface
+- Add content moderation workflows
+- Create system settings management interface
+
+## 🚀 Getting Started Instructions
+
+### Step 1: Project Setup
+```bash
+# Ensure you have these dependencies
+npm install @reduxjs/toolkit react-redux react-router-dom
+npm install lucide-react react-toastify chart.js react-chartjs-2
 ```
 
-#### Notification Context
-```typescript
-// Required Context Features:
-interface NotificationContextType {
-  notifications: Notification[];
-  unreadCount: number;
-  markAsRead: (ids: string[]) => Promise<void>;
-  markAllAsRead: () => Promise<void>;
-  subscribeToNotifications: () => void;
-  unsubscribeFromNotifications: () => void;
-}
-
-// Auto-polling every 60 seconds for new notifications
-// Toast integration for urgent notifications (priority: 'urgent')
-// Optimistic updates for mark-as-read actions
+### Step 2: File Structure to Create
+```
+src/
+├── components/
+│   └── admin/
+│       ├── layout/
+│       │   ├── AdminLayout.jsx
+│       │   ├── AdminSidebar.jsx
+│       │   └── AdminHeader.jsx
+│       ├── dashboard/
+│       │   ├── AdminDashboard.jsx
+│       │   ├── MetricsCard.jsx
+│       │   └── ChartsGrid.jsx
+│       ├── approvals/
+│       │   ├── ApprovalManagement.jsx
+│       │   ├── ApprovalCard.jsx
+│       │   ├── ApprovalModal.jsx
+│       │   └── ApprovalFilters.jsx
+│       ├── users/
+│       │   ├── RestaurantManagement.jsx
+│       │   ├── VendorManagement.jsx
+│       │   └── UserStatusToggle.jsx
+│       ├── content/
+│       │   ├── ProductManagement.jsx
+│       │   ├── CategoryManagement.jsx
+│       │   └── ContentModeration.jsx
+│       ├── analytics/
+│       │   ├── AnalyticsDashboard.jsx
+│       │   └── ExportControls.jsx
+│       └── settings/
+│           ├── SystemSettings.jsx
+│           └── SettingItem.jsx
+├── store/
+│   └── api/
+│       └── adminSlice.js
+├── utils/
+│   ├── constants.js
+│   └── dataStructures.js
+└── pages/
+    └── admin/
+        └── AdminRoutes.jsx
 ```
 
-### 5. **Advanced Data Filtering & Search**
+### Step 3: Start Implementation
+1. **Begin with the admin layout and routing**
+2. **Set up the RTK Query admin slice**
+3. **Implement the dashboard overview first**
+4. **Then tackle the approval management system**
+5. **Follow the phase-by-phase implementation plan**
 
-#### Filter System
-```typescript
-// Required Filter Components:
-- DateRangePicker: Custom periods, preset ranges (today, week, month, quarter, year)
-- CategoryFilter: Multi-select product categories
-- VendorFilter: Search and select vendors
-- StatusFilter: Order/listing status filtering
-- PriceRangeFilter: Min/max price inputs
-- SortingControls: Sort by various metrics
+### Step 4: Key Integration Points
+- **API Base URL**: `http://localhost:5000/api/v1/admin`
+- **Authentication**: JWT Bearer tokens in headers
+- **Error Handling**: Use react-toastify for user feedback
+- **Loading States**: Show spinners and skeleton screens
+- **Mobile First**: Ensure responsive design on all screens
 
-// Filter Persistence:
-- Save filter preferences in localStorage
-- URL state management for shareable filtered views
-- Reset to defaults functionality
-```
+### Critical Success Factors:
+1. **API Migration**: Replace ALL legacy endpoints with new unified system
+2. **Error Handling**: Comprehensive error handling throughout
+3. **User Feedback**: Clear loading states and success/error messages
+4. **Security**: Proper role-based access control
+5. **Performance**: Efficient data fetching and caching
+6. **Usability**: Clean, professional admin interface
 
-#### Search Implementation
-```typescript
-// Search Features:
-- Global search across products, vendors, orders
-- Autocomplete with debounced queries
-- Search history and suggestions
-- Advanced search with multiple criteria
-- Search result highlighting
-```
-
-### 6. **Data Export & Reporting**
-
-#### Export Functionality
-```typescript
-// Required Export Features:
-- CSV/Excel export for all data tables
-- PDF reports for financial summaries
-- Chart image exports (PNG/SVG)
-- Date range selection for exports
-- Custom column selection for tables
-- Email reports functionality
-
-// Implementation:
-- Use libraries like react-csv, jspdf, html2canvas
-- Progress indicators for large exports
-- Error handling for failed exports
-```
-
-### 7. **Performance Optimization Strategies**
-
-#### Code Splitting & Lazy Loading
-```typescript
-// Route-based splitting:
-const VendorDashboard = lazy(() => import('./pages/VendorDashboard'));
-const RestaurantDashboard = lazy(() => import('./pages/RestaurantDashboard'));
-
-// Component-based splitting for heavy charts:
-const RevenueChart = lazy(() => import('./components/RevenueChart'));
-
-// Data virtualization for large lists:
-- Use react-window for order history tables
-- Implement infinite scrolling for product lists
-- Lazy load chart data based on viewport visibility
-```
-
-#### Caching Strategy
-```typescript
-// RTK Query caching:
-- 5-minute cache for dashboard overview data
-- 15-minute cache for analytics data
-- 1-hour cache for reference data (categories, products)
-- Background refresh with stale-while-revalidate pattern
-
-// Memory optimization:
-- Memoize expensive calculations
-- Use React.memo for pure components
-- Implement proper dependency arrays in useEffect
-```
-
-### 8. **Mobile-Responsive Design**
-
-#### Mobile Dashboard Features
-```typescript
-// Mobile-Specific Adaptations:
-- Collapsible sidebar with overlay
-- Swipeable chart navigation
-- Touch-friendly filter controls
-- Simplified data tables with horizontal scroll
-- Bottom navigation for quick actions
-- Pull-to-refresh for data updates
-
-// Progressive Web App Features:
-- Offline support for cached dashboard data
-- Add to home screen capability
-- Push notifications for urgent alerts (if supported)
-```
-
-### 9. **Accessibility & UX**
-
-#### Accessibility Requirements
-```typescript
-// WCAG 2.1 AA Compliance:
-- Keyboard navigation for all interactive elements
-- Screen reader support with proper ARIA labels
-- Color contrast ratios meeting accessibility standards
-- Focus management for modal dialogs and dropdowns
-- Alt text for chart visualizations
-- Skip links for main content areas
-
-// UX Enhancements:
-- Loading states for all async operations
-- Error boundaries with user-friendly error messages
-- Optimistic updates for immediate feedback
-- Undo/redo functionality for critical actions
-```
-
-### 10. **Testing Strategy**
-
-#### Test Coverage Requirements
-```typescript
-// Unit Tests (80%+ coverage):
-- Component rendering and interaction
-- Custom hooks functionality
-- Utility functions and calculations
-- API integration logic
-
-// Integration Tests:
-- Dashboard data flow end-to-end
-- Notification system functionality
-- Filter and search operations
-- Export functionality
-
-// E2E Tests (Critical Paths):
-- User login and dashboard access
-- Data visualization interactions
-- Notification workflows
-- Mobile responsive behavior
-```
-
-## 📋 Implementation Checklist
-
-### Phase 1: Foundation (Week 1-2)
-- [ ] Set up project structure with TypeScript
-- [ ] Configure Redux Toolkit with RTK Query
-- [ ] Implement authentication and routing
-- [ ] Create base dashboard layout components
-- [ ] Set up Chart.js integration
-
-### Phase 2: Vendor Dashboard (Week 3-4)
-- [ ] Implement vendor overview page with KPIs
-- [ ] Create revenue analytics with interactive charts
-- [ ] Build product performance analytics
-- [ ] Develop inventory management interface
-- [ ] Add order management functionality
-
-### Phase 3: Restaurant Dashboard (Week 5-6)
-- [ ] Implement restaurant overview page
-- [ ] Create spending analytics and trends
-- [ ] Build vendor insights and comparison
-- [ ] Develop budget tracking with alerts
-- [ ] Add order history and management
-
-### Phase 4: Advanced Features (Week 7-8)
-- [ ] Implement real-time notification system
-- [ ] Add advanced filtering and search
-- [ ] Create data export functionality
-- [ ] Optimize performance with code splitting
-- [ ] Add mobile responsive design
-
-### Phase 5: Polish & Testing (Week 9-10)
-- [ ] Comprehensive testing suite
-- [ ] Accessibility improvements
-- [ ] Performance optimization
-- [ ] User experience refinements
-- [ ] Documentation and deployment
-
-## 🔧 Technical Stack Recommendations
-
-### Core Technologies
-- **Framework**: React 18+ with TypeScript
-- **State Management**: Redux Toolkit + RTK Query
-- **Routing**: React Router v6
-- **Styling**: Tailwind CSS + Headless UI
-- **Charts**: Chart.js + react-chartjs-2
-- **Date Handling**: date-fns
-- **Forms**: React Hook Form + Zod validation
-
-### Development Tools
-- **Build Tool**: Vite
-- **Testing**: Vitest + React Testing Library + Playwright
-- **Code Quality**: ESLint + Prettier + Husky
-- **Deployment**: Docker + CI/CD pipeline
-
-## 📚 Key API Endpoints Reference
-
-### Vendor Dashboard Endpoints
-```typescript
-GET /vendor-dashboard/overview          // Dashboard KPIs and summary
-GET /vendor-dashboard/revenue           // Revenue analytics and trends  
-GET /vendor-dashboard/products          // Product performance metrics
-GET /vendor-dashboard/inventory         // Stock levels and alerts
-GET /vendor-dashboard/order-management  // Order processing interface
-GET /vendor-dashboard/notifications     // Real-time alerts
-// ... 6 additional endpoints for detailed analytics
-```
-
-### Restaurant Dashboard Endpoints  
-```typescript
-GET /restaurant-dashboard/overview         // Spending overview and KPIs
-GET /restaurant-dashboard/spending         // Spending analytics by vendor/category
-GET /restaurant-dashboard/vendors          // Vendor performance and reliability
-GET /restaurant-dashboard/budget           // Budget tracking with alerts
-GET /restaurant-dashboard/order-history    // Complete order history
-GET /restaurant-dashboard/notifications    // Order and budget alerts
-// ... 8 additional endpoints for advanced features
-```
-
-## 🎨 Design System Guidelines
-
-### Color Palette
-```css
-/* Primary Colors */
---primary-50: #eff6ff;
---primary-500: #3b82f6;   /* Main brand color */
---primary-700: #1d4ed8;
-
-/* Status Colors */
---success: #10b981;       /* Positive trends, completed */
---warning: #f59e0b;       /* Alerts, attention needed */  
---error: #ef4444;         /* Urgent, critical issues */
---info: #6366f1;          /* Informational, neutral */
-
-/* Chart Colors */
---chart-revenue: #3b82f6;
---chart-orders: #10b981;
---chart-expenses: #f59e0b;
---chart-profit: #8b5cf6;
-```
-
-### Typography Scale
-```css
-/* Headings */
-.text-dashboard-h1 { @apply text-2xl font-bold text-gray-900; }
-.text-dashboard-h2 { @apply text-xl font-semibold text-gray-800; }
-.text-dashboard-h3 { @apply text-lg font-medium text-gray-700; }
-
-/* Data Display */
-.text-metric-primary { @apply text-3xl font-bold text-gray-900; }
-.text-metric-secondary { @apply text-lg font-medium text-gray-600; }
-.text-trend-positive { @apply text-sm font-medium text-green-600; }
-.text-trend-negative { @apply text-sm font-medium text-red-600; }
-```
-
-## 🔄 Data Flow Architecture
-
-```mermaid
-graph TD
-    A[User Authentication] --> B[Dashboard Route]
-    B --> C{User Role Check}
-    C -->|Vendor| D[Vendor Dashboard Layout]
-    C -->|Restaurant| E[Restaurant Dashboard Layout]
-    D --> F[Vendor API Calls]
-    E --> G[Restaurant API Calls]
-    F --> H[Data Processing & Caching]
-    G --> H
-    H --> I[Chart Components]
-    H --> J[KPI Cards]
-    H --> K[Data Tables]
-    I --> L[User Interactions]
-    J --> L
-    K --> L
-    L --> M[Filter Updates]
-    M --> N[Refetch Data]
-    N --> H
-```
-
-This comprehensive implementation guide provides everything needed to build a professional, scalable B2B marketplace dashboard system. Focus on creating an intuitive user experience while maintaining high performance and accessibility standards.
-
-## 🚨 Critical Success Factors
-
-1. **Performance**: Dashboard loads under 2 seconds, charts render smoothly
-2. **Usability**: Intuitive navigation, clear data visualization, mobile-friendly
-3. **Reliability**: 99.9% uptime, graceful error handling, offline resilience
-4. **Scalability**: Handles 1000+ concurrent users, efficient data loading
-5. **Accessibility**: WCAG 2.1 AA compliance, keyboard navigation support
-
-**Remember**: This is a B2B tool for business-critical decisions. Prioritize data accuracy, performance, and professional UX over flashy animations or unnecessary features.
+**Remember**: This is a complete admin system implementation. Each component should be fully functional with proper styling, error handling, and integration with the enhanced backend APIs.

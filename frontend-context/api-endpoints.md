@@ -1,23 +1,11 @@
 # Aaroth Fresh API Endpoints Reference
 
-This document provides a complete reference of all API endpoints for the Aaroth Fresh B2B marketplace backend.
+Compact reference for all API endpoints in the Aaroth Fresh B2B marketplace backend.
 
-## Base Configuration
-
-### Server Details
-- **Base URL**: `http://localhost:5000` (development)
-- **API Prefix**: `/api/v1`
-- **CORS**: Enabled for frontend domains
-- **Authentication**: JWT Bearer tokens
-- **Content Type**: `application/json`
-
-### Authentication Headers
-```javascript
-headers: {
-  'Authorization': `Bearer ${token}`,
-  'Content-Type': 'application/json'
-}
-```
+## Configuration
+- **Base URL**: `http://localhost:5000/api/v1`
+- **Auth**: JWT Bearer tokens with phone-based authentication
+- **Headers**: `Authorization: Bearer ${token}`, `Content-Type: application/json`
 
 ## Authentication Routes (`/api/v1/auth`)
 
@@ -240,285 +228,124 @@ Authorization: Bearer {restaurant_owner_token}
 
 #### Get All Users
 ```javascript
-GET /api/v1/admin/users
-Authorization: Bearer {admin_token}
-
-// Query parameters
-?page=1&limit=10&role=vendor&isActive=true
-
-// Response
-{
-  "success": true,
-  "data": {
-    "users": [...],
-    "pagination": {
-      "current": 1,
-      "pages": 5,
-      "total": 50
-    }
-  }
-}
+GET /admin/users?page=1&limit=10&role=vendor&isActive=true
+// Response: { success: true, data: { users: [...], pagination: {...} } }
 ```
 
-#### Approve Vendor
+### Enhanced Admin Management
+
+#### Unified Approval System
 ```javascript
-PUT /api/v1/admin/users/{userId}/approve
-Authorization: Bearer {admin_token}
+// Get all pending approvals
+GET /admin/approvals
+// Response: { success: true, data: { vendors: {...}, restaurants: {...}, summary: {...} } }
 
-{
-  "isApproved": true
-}
+// Approve vendor
+PUT /admin/approvals/vendor/{id}/approve
+{ "approvalNotes": "All documents verified" }
 
-// Success Response (200)
-{
-  "success": true,
-  "message": "User approved successfully",
-  "user": {
-    "id": "user_id",
-    "isApproved": true
-  }
-}
+// Reject vendor
+PUT /admin/approvals/vendor/{id}/reject
+{ "rejectionReason": "Missing business license" }
+
+// Approve restaurant
+PUT /admin/approvals/restaurant/{id}/approve
+{ "approvalNotes": "Trade license verified" }
+
+// Reject restaurant
+PUT /admin/approvals/restaurant/{id}/reject
+{ "rejectionReason": "Invalid documentation" }
 ```
 
-#### Get Dashboard Analytics
+#### Enhanced Dashboard & Analytics
 ```javascript
-GET /api/v1/admin/dashboard
-Authorization: Bearer {admin_token}
+// Dashboard overview with approval metrics
+GET /admin/dashboard/overview
+// Response includes: keyMetrics, approvalMetrics, systemHealth, recentActivity
 
-// Success Response (200)
-{
-  "success": true,
-  "analytics": {
-    "totalUsers": 150,
-    "totalVendors": 45,
-    "totalRestaurants": 30,
-    "pendingApprovals": 12,
-    "totalOrders": 1250,
-    "totalListings": 340,
-    "revenueThisMonth": 125000,
-    "ordersByStatus": {
-      "pending": 15,
-      "confirmed": 45,
-      "delivered": 890,
-      "cancelled": 25
-    }
-  }
-}
+// Advanced analytics with caching
+GET /admin/analytics/overview?period=month&useCache=true
+GET /admin/analytics/sales?startDate=2024-01-01&endDate=2024-01-31
+GET /admin/analytics/users?period=quarter
+GET /admin/analytics/products?sort=revenue&limit=20
+DELETE /admin/analytics/cache // Clear cache
+```
+
+#### System Settings Management
+```javascript
+GET /admin/settings // All settings
+GET /admin/settings/{category} // Category-specific
+PUT /admin/settings/key/{key} // Update setting
+{ "value": "new_value", "changeReason": "Updated for compliance" }
+POST /admin/settings/reset // Reset to defaults
+GET /admin/settings/key/{key}/history // Change history
+```
+
+#### Content Moderation & Security
+```javascript
+// Flag listing for moderation
+PUT /admin/listings/{id}/flag
+{ "flagReason": "inappropriate_content", "moderationNotes": "Contains spam" }
+
+// Get flagged content
+GET /admin/listings/flagged?status=pending&page=1
+
+// Safe deletion with dependency checking
+DELETE /admin/products/{id}/safe-delete
+{ "reason": "Product discontinued" }
+
+// Enhanced user management
+PUT /admin/vendors/{id}/deactivate
+{ "reason": "Policy violation", "adminNotes": "Multiple complaints" }
+PUT /admin/restaurants/{id}/toggle-status
+{ "isActive": false, "reason": "Temporary suspension" }
 ```
 
 ### Product Management
-
-#### Get All Products
 ```javascript
-GET /api/v1/admin/products
-Authorization: Bearer {admin_token}
+// Get products with enhanced admin status
+GET /admin/products?page=1&limit=20&adminStatus=active&search=tomato
+// Response includes adminStatus: 'active'|'inactive'|'discontinued'
 
-// Query parameters
-?page=1&limit=20&category=vegetables&search=tomato&isActive=true
+// Create product
+POST /admin/products
+{ "name": "Fresh Carrot", "category": "category_id", "description": "...", "unit": "kg" }
 
-// Success Response (200)
-{
-  "success": true,
-  "data": {
-    "products": [
-      {
-        "id": "product_id",
-        "name": "Fresh Tomato",
-        "category": {
-          "id": "category_id",
-          "name": "Vegetables"
-        },
-        "description": "Fresh red tomatoes",
-        "unit": "kg",
-        "images": ["url1", "url2"],
-        "isActive": true,
-        "activeListingsCount": 5,
-        "createdAt": "2024-01-01T00:00:00.000Z"
-      }
-    ],
-    "pagination": {
-      "current": 1,
-      "pages": 10,
-      "total": 200
-    }
-  }
-}
-```
-
-#### Create Product
-```javascript
-POST /api/v1/admin/products
-Authorization: Bearer {admin_token}
-Content-Type: application/json
-
-{
-  "name": "Fresh Carrot",
-  "category": "category_id",
-  "description": "Organic fresh carrots",
-  "unit": "kg",
-  "images": ["image_url1", "image_url2"]
-}
-
-// Success Response (201)
-{
-  "success": true,
-  "message": "Product created successfully",
-  "product": {
-    "id": "new_product_id",
-    "name": "Fresh Carrot",
-    "category": {...},
-    "description": "Organic fresh carrots",
-    "unit": "kg",
-    "images": ["image_url1", "image_url2"],
-    "isActive": true,
-    "createdAt": "2024-01-01T00:00:00.000Z"
-  }
-}
+// Update product status
+PUT /admin/products/{id}/status
+{ "adminStatus": "discontinued", "reason": "Seasonal unavailability" }
 ```
 
 ### Category Management
-
-#### Get All Categories
 ```javascript
-GET /api/v1/admin/categories
-Authorization: Bearer {admin_token}
-
-// Success Response (200)
-{
-  "success": true,
-  "data": {
-    "categories": [
-      {
-        "id": "category_id",
-        "name": "Vegetables",
-        "description": "Fresh vegetables category",
-        "isActive": true,
-        "productCount": 25,
-        "createdAt": "2024-01-01T00:00:00.000Z"
-      }
-    ],
-    "pagination": {...}
-  }
-}
-```
-
-#### Create Category
-```javascript
-POST /api/v1/admin/categories
-Authorization: Bearer {admin_token}
-Content-Type: application/json
-
-{
-  "name": "Fruits",
-  "description": "Fresh fruits category"
-}
-
-// Success Response (201)
-{
-  "success": true,
-  "message": "Category created successfully",
-  "category": {
-    "id": "new_category_id",
-    "name": "Fruits",
-    "description": "Fresh fruits category",
-    "isActive": true,
-    "createdAt": "2024-01-01T00:00:00.000Z"
-  }
-}
+GET /admin/categories // List all categories
+POST /admin/categories // Create category
+{ "name": "Fruits", "description": "Fresh fruits category" }
+PUT /admin/categories/{id} // Update category
+DELETE /admin/categories/{id}/safe-delete // Safe delete with dependency check
 ```
 
 ### Restaurant Management
 
-#### Create Restaurant Owner (Admin Only)
+### Restaurant & Vendor Management
 ```javascript
-POST /api/v1/admin/restaurant-owners
-Authorization: Bearer {admin_token}
-Content-Type: application/json
+// Create restaurant owner
+POST /admin/restaurant-owners
+{ "name": "John Doe", "phone": "+8801234567890", "password": "...", "restaurantName": "...", "address": {...} }
 
-{
-  "name": "John Doe",
-  "email": "john@restaurant.com",
-  "phone": "+8801234567890",
-  "password": "SecurePass123",
-  "restaurantName": "Green Garden Restaurant",
-  "ownerName": "John Doe",
-  "address": {
-    "street": "123 Main Street",
-    "city": "Dhaka",
-    "area": "Dhanmondi",
-    "postalCode": "1205"
-  },
-  "tradeLicenseNo": "TL123456"
-}
+// Create restaurant manager
+POST /admin/restaurant-managers  
+{ "name": "Jane Smith", "phone": "+8801234567891", "password": "...", "restaurantId": "restaurant_id" }
 
-// Success Response (201)
-{
-  "success": true,
-  "message": "Restaurant owner created successfully",
-  "data": {
-    "id": "user_id",
-    "name": "John Doe",
-    "email": "john@restaurant.com",
-    "phone": "+8801234567890",
-    "role": "restaurantOwner",
-    "isActive": true,
-    "restaurantId": {
-      "id": "restaurant_id",
-      "name": "Green Garden Restaurant",
-      "email": "john@restaurant.com",
-      "phone": "+8801234567890",
-      "address": {
-        "street": "123 Main Street",
-        "city": "Dhaka",
-        "area": "Dhanmondi",
-        "postalCode": "1205"
-      }
-    },
-    "createdAt": "2024-01-01T00:00:00.000Z"
-  }
-}
-```
+// Enhanced restaurant management
+GET /admin/restaurants?approvalStatus=pending&page=1
+PUT /admin/restaurants/{id}/toggle-status
+{ "isActive": false, "reason": "Compliance review" }
 
-#### Create Restaurant Manager (Admin Only)
-```javascript
-POST /api/v1/admin/restaurant-managers
-Authorization: Bearer {admin_token}
-Content-Type: application/json
-
-{
-  "name": "Jane Smith",
-  "email": "jane@restaurant.com",
-  "phone": "+8801234567891",
-  "password": "ManagerPass123",
-  "restaurantId": "restaurant_id"
-}
-
-// Success Response (201)
-{
-  "success": true,
-  "message": "Restaurant manager created successfully",
-  "data": {
-    "id": "manager_id",
-    "name": "Jane Smith",
-    "email": "jane@restaurant.com", 
-    "phone": "+8801234567891",
-    "role": "restaurantManager",
-    "isActive": true,
-    "restaurantId": {
-      "id": "restaurant_id",
-      "name": "Green Garden Restaurant",
-      "email": "john@restaurant.com",
-      "phone": "+8801234567890",
-      "address": {
-        "street": "123 Main Street",
-        "city": "Dhaka",
-        "area": "Dhanmondi",
-        "postalCode": "1205"
-      }
-    },
-    "createdAt": "2024-01-01T00:00:00.000Z"
-  }
-}
+// Enhanced vendor management
+GET /admin/vendors?approvalStatus=approved&isActive=true
+PUT /admin/vendors/{id}/deactivate
+{ "reason": "Policy violation", "adminNotes": "Multiple complaints received" }
 ```
 
 ## Listings Routes (`/api/v1/listings`)
@@ -1987,4 +1814,88 @@ const order = {
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z'
 };
+```
+
+## Migration Notes for Frontend Teams
+
+### 🚨 API Migration Notice
+
+**Legacy verification endpoints removed** - Use new unified approval system:
+
+#### Removed:
+- ❌ `PUT /admin/vendors/:id/verify`
+- ❌ `PUT /admin/restaurants/:id/verify`
+- ❌ `PUT /admin/users/:id/approve`
+
+#### Use Instead:
+- ✅ `GET /admin/approvals` - Unified pending approvals
+- ✅ `PUT /admin/approvals/vendor/:id/approve` - Approve with notes
+- ✅ `PUT /admin/approvals/vendor/:id/reject` - Reject with reason
+- ✅ `PUT /admin/approvals/restaurant/:id/approve` - Approve with notes
+- ✅ `PUT /admin/approvals/restaurant/:id/reject` - Reject with reason
+
+### Migration Guide
+
+#### Before (Legacy - No longer works):
+```javascript
+// ❌ This will return 404 - endpoint removed
+PUT /api/v1/admin/vendors/123/verify
+{
+  "isVerified": true
+}
+```
+
+#### After (New Comprehensive System):
+```javascript
+// ✅ Use this instead
+PUT /api/v1/admin/approvals/vendor/123/approve
+{
+  "approvalNotes": "All documents verified successfully"
+}
+```
+
+### Enhanced Features in New System:
+- **Audit Trail**: Complete tracking of who approved/rejected and when
+- **Approval Notes**: Contextual information for approvals
+- **Rejection Reasons**: Required detailed reasons for rejections
+- **Unified Management**: Single endpoint to manage all pending approvals
+- **Status Tracking**: Enhanced status fields (`pending`, `approved`, `rejected`)
+- **Analytics Integration**: Approval metrics in admin dashboard
+
+### Enhanced Data Models
+
+#### User Model (Enhanced)
+```javascript
+{
+  // Standard fields + enhanced approval tracking
+  "approvalStatus": "pending|approved|rejected",
+  "approvalDate": "2024-01-15T10:30:00.000Z",
+  "approvedBy": "admin_user_id",
+  "rejectionReason": "Detailed reason if rejected",
+  "adminNotes": "Admin notes",
+  "isDeleted": false,
+  "lastModifiedBy": "admin_user_id"
+}
+```
+
+#### Product/Listing Models (Enhanced)
+```javascript
+// Products: adminStatus: "active|inactive|discontinued"
+// Listings: isFlagged, flagReason, moderatedBy, moderationNotes
+// All models: isDeleted, deletedAt, deletedBy for soft delete
+```
+
+### Frontend Implementation Notes:
+1. **Update API calls** to use new approval endpoints
+2. **Handle approval status** in UI components (`pending`, `approved`, `rejected`)
+3. **Display approval/rejection reasons** in admin interfaces
+4. **Use unified approvals endpoint** for dashboard overview
+5. **Implement proper error handling** for the new response formats
+6. **Add approval workflow UI** for admin dashboard
+7. **Display audit trail information** (who approved, when, notes)
+8. **Handle soft delete status** in listing and product displays
+9. **Implement flagging system** for content moderation
+10. **Add analytics integration** for approval metrics
+11. **Show dependency warnings** for delete operations
+12. **Implement settings management UI** for system configuration
 ```
