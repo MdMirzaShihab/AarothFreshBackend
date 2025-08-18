@@ -13,6 +13,38 @@
 
 ## 🏗️ Enhanced Backend Context
 
+### 📚 Essential Reference Files
+**IMPORTANT**: The previous `api-integration-guide.md` (4,400+ lines) has been optimized and split into focused, digestible files for better Claude Code consumption:
+
+1. **@api-integration-essentials.md** (~1,500 lines)
+   - Core authentication patterns and JWT management
+   - Essential RTK Query configuration
+   - Critical API migration from legacy to unified approval system
+   - Basic error handling and security patterns
+   - **USE THIS** as your primary integration reference
+
+2. **@ui-patterns-reference.md** (~800 lines)
+   - Complete UI component patterns following Organic Futurism design
+   - Button, form, navigation, and layout patterns
+   - Loading states, empty states, and status indicators
+   - Accessibility and responsive design patterns
+   - **USE THIS** for all component styling and patterns
+
+3. **@advanced-patterns.md** (~1,200 lines)
+   - Complex state management with Redux Toolkit
+   - Performance optimization techniques
+   - Real-time WebSocket integration
+   - Advanced caching and security patterns
+   - **USE THIS** for complex features and optimizations
+
+4. **@api-endpoints.md** (~1,900 lines)
+   - Complete API reference with request/response examples
+   - All admin endpoints with parameters and data structures
+   - **USE THIS** as your API reference guide
+
+**Total optimized context**: ~5,400 lines across 4 focused files (vs. previous single 4,400+ line file)
+**Claude Code consumption**: Each file is under 2,000 lines for optimal processing
+
 ### Admin API Endpoints Overview
 - **Base URL**: `http://localhost:5000/api/v1/admin`
 - **Authentication**: JWT Bearer tokens (admin role required)
@@ -949,6 +981,14 @@ const adminStyles = {
 
 ## 🚀 Getting Started Instructions
 
+### Step 0: Review Context Files (CRITICAL)
+**BEFORE CODING**: Read these optimized context files in order:
+
+1. **@api-integration-essentials.md** - Authentication, RTK Query, API migration
+2. **@ui-patterns-reference.md** - UI components and styling patterns  
+3. **@api-endpoints.md** - Complete API reference
+4. **@advanced-patterns.md** - Complex features (if needed)
+
 ### Step 1: Project Setup
 ```bash
 # Ensure you have these dependencies
@@ -958,45 +998,35 @@ npm install lucide-react react-toastify chart.js react-chartjs-2
 
 ### Step 2: File Structure to Create
 ```
-src/
-├── components/
-│   └── admin/
-│       ├── layout/
-│       │   ├── AdminLayout.jsx
-│       │   ├── AdminSidebar.jsx
-│       │   └── AdminHeader.jsx
-│       ├── dashboard/
-│       │   ├── AdminDashboard.jsx
-│       │   ├── MetricsCard.jsx
-│       │   └── ChartsGrid.jsx
-│       ├── approvals/
-│       │   ├── ApprovalManagement.jsx
-│       │   ├── ApprovalCard.jsx
-│       │   ├── ApprovalModal.jsx
-│       │   └── ApprovalFilters.jsx
-│       ├── users/
-│       │   ├── RestaurantManagement.jsx
-│       │   ├── VendorManagement.jsx
-│       │   └── UserStatusToggle.jsx
-│       ├── content/
-│       │   ├── ProductManagement.jsx
-│       │   ├── CategoryManagement.jsx
-│       │   └── ContentModeration.jsx
-│       ├── analytics/
-│       │   ├── AnalyticsDashboard.jsx
-│       │   └── ExportControls.jsx
-│       └── settings/
-│           ├── SystemSettings.jsx
-│           └── SettingItem.jsx
-├── store/
-│   └── api/
-│       └── adminSlice.js
-├── utils/
-│   ├── constants.js
-│   └── dataStructures.js
-└── pages/
-    └── admin/
-        └── AdminRoutes.jsx
+
+├── layout/
+│   ├── AdminLayout.jsx
+│   ├── AdminSidebar.jsx
+│   └── AdminHeader.jsx
+├── dashboard/
+│   ├── AdminDashboard.jsx
+│   ├── MetricsCard.jsx
+│   └── ChartsGrid.jsx
+├── approvals/
+│   ├── ApprovalManagement.jsx
+│   ├── ApprovalCard.jsx
+│   ├── ApprovalModal.jsx
+│   └── ApprovalFilters.jsx
+├── users/
+│   ├── RestaurantManagement.jsx
+│   ├── VendorManagement.jsx
+│   └── UserStatusToggle.jsx
+├── content/
+│   ├── ProductManagement.jsx
+│   ├── CategoryManagement.jsx
+│   └── ContentModeration.jsx
+├── analytics/
+│   ├── AnalyticsDashboard.jsx
+│   └── ExportControls.jsx
+└── settings/
+│   ├── SystemSettings.jsx
+│   └── SettingItem.jsx
+
 ```
 
 ### Step 3: Start Implementation
