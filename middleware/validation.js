@@ -184,6 +184,7 @@ const productValidation = [
 
   body("category").isMongoId().withMessage("Valid category ID is required"),
 
+  // Note: Image validation is handled in controller middleware as files are processed there
   handleValidationErrors,
 ];
 
@@ -204,6 +205,7 @@ const categoryValidation = [
     .isLength({ max: 200 })
     .withMessage("Category description must not exceed 200 characters"),
 
+  // Note: Image validation is handled in controller middleware as files are processed there
   handleValidationErrors,
 ];
 
@@ -531,6 +533,118 @@ const analyticsValidation = [
   handleValidationErrors,
 ];
 
+/**
+ * Admin listing status validation
+ */
+const adminListingStatusValidation = [
+  body("status")
+    .notEmpty()
+    .isIn(['active', 'inactive', 'out_of_stock', 'discontinued'])
+    .withMessage("Status must be one of: active, inactive, out_of_stock, discontinued"),
+
+  body("reason")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Reason cannot exceed 500 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Admin listing flag validation
+ */
+const adminListingFlagValidation = [
+  body("action")
+    .notEmpty()
+    .isIn(['flag', 'unflag'])
+    .withMessage("Action must be either 'flag' or 'unflag'"),
+
+  body("flagReason")
+    .if(body("action").equals('flag'))
+    .notEmpty()
+    .isIn(['inappropriate_content', 'misleading_information', 'quality_issues', 'pricing_violation', 'spam', 'other'])
+    .withMessage("Flag reason is required when flagging and must be one of the valid options"),
+
+  body("moderationNotes")
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage("Moderation notes cannot exceed 1000 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Admin bulk listing operations validation
+ */
+const adminListingBulkValidation = [
+  body("listingIds")
+    .isArray({ min: 1, max: 50 })
+    .withMessage("Listing IDs array is required and must contain 1-50 items"),
+
+  body("listingIds.*")
+    .isMongoId()
+    .withMessage("Each listing ID must be a valid MongoDB ObjectId"),
+
+  body("operation")
+    .notEmpty()
+    .isIn(['updateStatus', 'toggleFeatured', 'updateFlag', 'softDelete'])
+    .withMessage("Operation must be one of: updateStatus, toggleFeatured, updateFlag, softDelete"),
+
+  // Conditional validation for different operations
+  body("operationData.status")
+    .if(body("operation").equals("updateStatus"))
+    .notEmpty()
+    .isIn(['active', 'inactive', 'out_of_stock', 'discontinued'])
+    .withMessage("Status is required for updateStatus operation"),
+
+  body("operationData.isFlagged")
+    .if(body("operation").equals("updateFlag"))
+    .isBoolean()
+    .withMessage("isFlagged is required for updateFlag operation"),
+
+  body("operationData.flagReason")
+    .if(body("operation").equals("updateFlag"))
+    .if(body("operationData.isFlagged").equals(true))
+    .notEmpty()
+    .isIn(['inappropriate_content', 'misleading_information', 'quality_issues', 'pricing_violation', 'spam', 'other'])
+    .withMessage("Flag reason is required when flagging listings"),
+
+  body("reason")
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage("Reason cannot exceed 1000 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Category availability validation (flag system)
+ */
+const categoryAvailabilityValidation = [
+  body("isAvailable")
+    .isBoolean()
+    .withMessage("isAvailable must be a boolean value"),
+
+  body("flagReason")
+    .if(body("isAvailable").equals(false))
+    .notEmpty()
+    .trim()
+    .isLength({ min: 10, max: 500 })
+    .withMessage("Flag reason is required when disabling availability and must be between 10-500 characters"),
+
+  body("flagReason")
+    .if(body("isAvailable").equals(true))
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Flag reason cannot exceed 500 characters"),
+
+  handleValidationErrors,
+];
+
 module.exports = {
   handleValidationErrors,
   registerValidation,
@@ -557,4 +671,10 @@ module.exports = {
   bulkOperationValidation,
   dateRangeValidation,
   analyticsValidation,
+  // Enhanced listing management validations
+  adminListingStatusValidation,
+  adminListingFlagValidation,
+  adminListingBulkValidation,
+  // Enhanced category management validations
+  categoryAvailabilityValidation,
 };

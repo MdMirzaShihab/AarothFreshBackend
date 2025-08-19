@@ -54,6 +54,17 @@ const UserSchema = new mongoose.Schema({
       'Please add a valid phone number with country code (e.g., +8801234567890)'
     ]
   },
+  profileImage: {
+    type: String, // Cloudinary URL to user profile image
+    default: null,
+    validate: {
+      validator: function(v) {
+        // If profileImage is provided, it should be a valid string
+        return !v || (typeof v === 'string' && v.length > 0);
+      },
+      message: 'Profile image must be a valid URL'
+    }
+  },
   isActive: {
     type: Boolean,
     default: true

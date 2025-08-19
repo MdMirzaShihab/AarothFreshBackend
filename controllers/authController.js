@@ -218,8 +218,14 @@ exports.updateProfile = async (req, res, next) => {
 
     const { name } = req.body;
     const updatedFields = {};
+    
     if (name) {
       updatedFields.name = name;
+    }
+
+    // Handle optional profile image upload
+    if (req.file) {
+      updatedFields.profileImage = req.file.path; // Cloudinary URL
     }
 
     const user = await User.findByIdAndUpdate(

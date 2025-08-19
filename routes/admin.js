@@ -6,21 +6,19 @@ const {
   updateCategory,
   getProducts,
   getProduct,
-  deleteProduct,
   getCategories,
   getCategory,
-  deleteCategory,
+  toggleCategoryAvailability,
+  getCategoryUsageStats,
   getAllUsers,
   getUser,
   updateUser,
   deleteUser,
   getAllVendors,
   getAllRestaurants,
-  getDashboardStats,
   getDashboardOverview,
   getPendingVendors,
   getPendingRestaurants,
-  toggleFeaturedListing,
   createRestaurantOwner,
   createRestaurantManager,
   // Approval Management
@@ -29,13 +27,18 @@ const {
   rejectVendor,
   approveRestaurant,
   rejectRestaurant,
-  // Enhanced Deletion Protection
+  // Safe Deletion Protection
   safeDeleteProduct,
   safeDeleteCategory,
   deactivateVendor,
-  // Listing Management
-  flagListing,
-  getFlaggedListings,
+  // Comprehensive Listing Management
+  getAdminListings,
+  getAdminListing,
+  updateListingStatus,
+  toggleListingFeatured,
+  updateListingFlag,
+  softDeleteListing,
+  bulkUpdateListings,
 } = require("../controllers/adminController");
 
 // Import analytics and settings controllers
@@ -78,7 +81,13 @@ const {
   vendorDeactivationValidation,
   settingsValidation,
   analyticsValidation,
-  dateRangeValidation
+  dateRangeValidation,
+  // Enhanced listing validations
+  adminListingStatusValidation,
+  adminListingFlagValidation,
+  adminListingBulkValidation,
+  // Enhanced category validations
+  categoryAvailabilityValidation
 } = require("../middleware/validation");
 
 // Import models for audit logging
@@ -95,116 +104,19 @@ const router = express.Router();
 router.use(protect, authorize("admin"));
 router.use(auditRateLimit());
 
-// Dashboard stats
-router.get("/dashboard", getDashboardStats);
+// ================================
+// DASHBOARD & ANALYTICS MANAGEMENT
+// ================================
+
+// Dashboard routes
+router.get("/dashboard", getDashboardOverview);
 router.get("/dashboard/overview", getDashboardOverview);
 
-// Restaurant management
-router.post("/restaurant-owners", 
-  adminRestaurantOwnerValidation,
-  auditLog('restaurant_owner_created', 'User', 'Created restaurant owner: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-  createRestaurantOwner
-);
-router.post("/restaurant-managers", 
-  adminRestaurantManagerValidation,
-  auditLog('restaurant_manager_created', 'User', 'Created restaurant manager: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-  createRestaurantManager
-);
+// ================================  
+// USER MANAGEMENT
+// ================================
 
-// ======================
-// APPROVAL MANAGEMENT ROUTES
-// ======================
-
-// Get all pending approvals
-router.get("/approvals", getAllApprovals);
-
-
-// ======================
-// ENHANCED DELETION PROTECTION ROUTES
-// ======================
-
-// Safe deletion routes with dependency checking
-router.delete("/products/:id/safe-delete",
-  mongoIdValidation("id"),
-  captureOriginalData(Product),
-  auditLog('product_deleted', 'Product', 'Safely deleted product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-  safeDeleteProduct
-);
-
-router.delete("/categories/:id/safe-delete",
-  mongoIdValidation("id"),
-  captureOriginalData(ProductCategory),
-  auditLog('category_deleted', 'ProductCategory', 'Safely deleted category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-  safeDeleteCategory
-);
-
-
-// ======================
-// LISTING MANAGEMENT ROUTES
-// ======================
-
-// Get all flagged listings
-router.get("/listings/flagged", getFlaggedListings);
-
-// ======================
-// ENHANCED ENTITY MANAGEMENT WITH AUDIT
-// ======================
-
-// Enhanced product routes with audit logging
-router
-  .route("/products")
-  .get(getProducts)
-  .post(
-    productValidation,
-    auditLog('product_created', 'Product', 'Created product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-    createProduct
-  );
-
-router
-  .route("/products/:id")
-  .get(mongoIdValidation("id"), getProduct)
-  .put(
-    mongoIdValidation("id"),
-    productValidation,
-    captureOriginalData(Product),
-    auditLog('product_updated', 'Product', 'Updated product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-    updateProduct
-  )
-  .delete(
-    mongoIdValidation("id"),
-    captureOriginalData(Product),
-    auditLog('product_deleted', 'Product', 'Deleted product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-    deleteProduct
-  );
-
-// Enhanced category routes with audit logging
-router
-  .route("/categories")
-  .get(getCategories)
-  .post(
-    categoryValidation,
-    auditLog('category_created', 'ProductCategory', 'Created category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-    createCategory
-  );
-
-router
-  .route("/categories/:id")
-  .get(mongoIdValidation("id"), getCategory)
-  .put(
-    mongoIdValidation("id"),
-    categoryValidation,
-    captureOriginalData(ProductCategory),
-    auditLog('category_updated', 'ProductCategory', 'Updated category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-    updateCategory
-  )
-  .delete(
-    mongoIdValidation("id"),
-    captureOriginalData(ProductCategory),
-    auditLog('category_deleted', 'ProductCategory', 'Deleted category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-    deleteCategory
-  );
-
-// Enhanced user management routes with audit logging
+// User CRUD routes
 router.route("/users").get(getAllUsers);
 
 router
@@ -224,17 +136,242 @@ router
     deleteUser
   );
 
-// Enhanced vendor management routes with audit logging
+// ================================
+// VENDOR MANAGEMENT  
+// ================================
+
+// Vendor routes
 router.route("/vendors").get(getAllVendors);
 router.route("/vendors/pending").get(getPendingVendors);
 
-// Enhanced restaurant management routes with audit logging
+// Vendor deactivation
+router.put("/vendors/:id/deactivate",
+  mongoIdValidation("id"),
+  vendorDeactivationValidation,
+  captureOriginalData(Vendor),
+  auditSecurity('vendor_deactivated', 'Deactivated vendor account', { severity: 'high', impactLevel: 'major' }),
+  deactivateVendor
+);
+
+// ================================
+// RESTAURANT MANAGEMENT
+// ================================
+
+// Restaurant routes
 router.route("/restaurants").get(getAllRestaurants);
 router.route("/restaurants/pending").get(getPendingRestaurants);
 
-// ======================
-// ANALYTICS ROUTES
-// ======================
+// Restaurant owner and manager creation
+router.post("/restaurant-owners", 
+  adminRestaurantOwnerValidation,
+  auditLog('restaurant_owner_created', 'User', 'Created restaurant owner: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+  createRestaurantOwner
+);
+router.post("/restaurant-managers", 
+  adminRestaurantManagerValidation,
+  auditLog('restaurant_manager_created', 'User', 'Created restaurant manager: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+  createRestaurantManager
+);
+
+// ================================
+// PRODUCT MANAGEMENT
+// ================================
+
+// Product CRUD routes
+router
+  .route("/products")
+  .get(getProducts)
+  .post(
+    productValidation,
+    auditLog('product_created', 'Product', 'Created product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+    createProduct
+  );
+
+router
+  .route("/products/:id")
+  .get(mongoIdValidation("id"), getProduct)
+  .put(
+    mongoIdValidation("id"),
+    productValidation,
+    captureOriginalData(Product),
+    auditLog('product_updated', 'Product', 'Updated product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+    updateProduct
+  );
+
+// Safe delete product route
+router.delete("/products/:id/safe-delete",
+  mongoIdValidation("id"),
+  captureOriginalData(Product),
+  auditLog('product_deleted', 'Product', 'Safely deleted product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+  safeDeleteProduct
+);
+
+// ================================
+// PRODUCT CATEGORY MANAGEMENT
+// ================================
+
+// Category CRUD routes
+router
+  .route("/categories")
+  .get(
+    auditLog('categories_viewed', 'ProductCategory', 'Viewed admin categories with filters', { severity: 'low', impactLevel: 'minor' }),
+    getCategories
+  )
+  .post(
+    categoryValidation,
+    auditLog('category_created', 'ProductCategory', 'Created category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+    createCategory
+  );
+
+router
+  .route("/categories/:id")
+  .get(
+    mongoIdValidation("id"),
+    auditLog('category_viewed', 'ProductCategory', 'Viewed category details: {id}', { severity: 'low', impactLevel: 'minor' }),
+    getCategory
+  )
+  .put(
+    mongoIdValidation("id"),
+    categoryValidation,
+    captureOriginalData(ProductCategory),
+    auditLog('category_updated', 'ProductCategory', 'Updated category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+    updateCategory
+  );
+
+// Safe delete category route
+router.delete("/categories/:id/safe-delete",
+  mongoIdValidation("id"),
+  captureOriginalData(ProductCategory),
+  auditLog('category_deleted', 'ProductCategory', 'Safely deleted category: {name}', { severity: 'high', impactLevel: 'significant' }),
+  safeDeleteCategory
+);
+
+// Toggle category availability (flag system)
+router.put("/categories/:id/availability",
+  mongoIdValidation("id"),
+  categoryAvailabilityValidation,
+  captureOriginalData(ProductCategory),
+  auditLog('category_availability_toggled', 'ProductCategory', 'Toggled category availability', { severity: 'medium', impactLevel: 'moderate' }),
+  toggleCategoryAvailability
+);
+
+// Get category usage statistics
+router.get("/categories/:id/usage",
+  mongoIdValidation("id"),
+  auditLog('category_usage_viewed', 'ProductCategory', 'Viewed category usage stats', { severity: 'low', impactLevel: 'minor' }),
+  getCategoryUsageStats
+);
+
+// ================================
+// LISTING MANAGEMENT
+// ================================
+
+// Get all admin listings with advanced filtering
+router.get("/listings",
+  auditLog('listings_viewed', 'Listing', 'Viewed admin listings with filters', { severity: 'low', impactLevel: 'minor' }),
+  getAdminListings
+);
+
+// Get featured listings only
+router.get("/listings/featured",
+  auditLog('featured_listings_viewed', 'Listing', 'Viewed featured listings', { severity: 'low', impactLevel: 'minor' }),
+  getAdminListings // Will filter for featured=true
+);
+
+// Get flagged listings only
+router.get("/listings/flagged",
+  auditLog('flagged_listings_viewed', 'Listing', 'Viewed flagged listings', { severity: 'low', impactLevel: 'minor' }),
+  getAdminListings // Will filter for isFlagged=true
+);
+
+// Get single listing with full admin details
+router.get("/listings/:id",
+  mongoIdValidation("id"),
+  auditLog('listing_viewed', 'Listing', 'Viewed listing details: {id}', { severity: 'low', impactLevel: 'minor' }),
+  getAdminListing
+);
+
+// Update listing status (active, inactive, out_of_stock, discontinued)
+router.put("/listings/:id/status",
+  mongoIdValidation("id"),
+  adminListingStatusValidation,
+  captureOriginalData(Listing),
+  auditLog('listing_status_updated', 'Listing', 'Updated listing status: {status}', { severity: 'medium', impactLevel: 'moderate' }),
+  updateListingStatus
+);
+
+// Toggle listing featured status
+router.put("/listings/:id/featured",
+  mongoIdValidation("id"),
+  captureOriginalData(Listing),
+  auditLog('listing_featured_toggled', 'Listing', 'Toggled listing featured status', { severity: 'medium', impactLevel: 'moderate' }),
+  toggleListingFeatured
+);
+
+// Update listing flag status (flag/unflag with reason)
+router.put("/listings/:id/flag",
+  mongoIdValidation("id"),
+  adminListingFlagValidation,
+  captureOriginalData(Listing),
+  auditLog('listing_flag_updated', 'Listing', 'Updated listing flag status', { severity: 'medium', impactLevel: 'moderate' }),
+  updateListingFlag
+);
+
+// Soft delete listing
+router.delete("/listings/:id",
+  mongoIdValidation("id"),
+  captureOriginalData(Listing),
+  auditSecurity('listing_deleted', 'Soft deleted listing', { severity: 'high', impactLevel: 'major' }),
+  softDeleteListing
+);
+
+// Bulk operations on multiple listings
+router.post("/listings/bulk",
+  adminListingBulkValidation,
+  auditSecurity('listings_bulk_updated', 'Performed bulk operations on listings', { severity: 'high', impactLevel: 'major' }),
+  bulkUpdateListings
+);
+
+// ================================
+// APPROVAL MANAGEMENT
+// ================================
+
+// Get all pending approvals
+router.get("/approvals", getAllApprovals);
+
+// Vendor approval routes
+router.put("/approvals/vendor/:id/approve", 
+  mongoIdValidation("id"),
+  approvalValidation,
+  auditSecurity('vendor_approved', 'Approved vendor account', { severity: 'high', impactLevel: 'major' }),
+  approveVendor
+);
+
+router.put("/approvals/vendor/:id/reject",
+  mongoIdValidation("id"),
+  rejectionValidation,
+  auditSecurity('vendor_rejected', 'Rejected vendor account', { severity: 'high', impactLevel: 'major' }),
+  rejectVendor
+);
+
+// Restaurant approval routes
+router.put("/approvals/restaurant/:id/approve",
+  mongoIdValidation("id"),
+  approvalValidation,
+  auditSecurity('restaurant_approved', 'Approved restaurant account', { severity: 'high', impactLevel: 'major' }),
+  approveRestaurant
+);
+
+router.put("/approvals/restaurant/:id/reject",
+  mongoIdValidation("id"),
+  rejectionValidation,
+  auditSecurity('restaurant_rejected', 'Rejected restaurant account', { severity: 'high', impactLevel: 'major' }),
+  rejectRestaurant
+);
+
+// ================================
+// SYSTEM SETTINGS & ANALYTICS
+// ================================
 
 // Analytics overview
 router.get("/analytics/overview", 
@@ -269,104 +406,39 @@ router.delete("/analytics/cache",
   clearAnalyticsCache
 );
 
-// ======================
-// SYSTEM SETTINGS ROUTES
-// ======================
-
-// Get all settings
+// System settings routes
 router.get("/settings", getAllSettings);
 
-// Get settings by category
-router.get("/settings/:category",
-  getSettingsByCategory
-);
+router.get("/settings/:category", getSettingsByCategory);
 
-// Get single setting
 router.get("/settings/key/:key", getSetting);
 
-// Get setting history
 router.get("/settings/key/:key/history", getSettingHistory);
 
-// Create new setting
 router.post("/settings",
   settingsValidation,
   auditSecurity('settings_created', 'Created system setting', { severity: 'high', impactLevel: 'major' }),
   createSetting
 );
 
-// Update setting
 router.put("/settings/key/:key",
   auditSecurity('settings_updated', 'Updated system setting', { severity: 'high', impactLevel: 'major' }),
   updateSetting
 );
 
-// Delete setting
 router.delete("/settings/key/:key",
   auditSecurity('settings_deleted', 'Deleted system setting', { severity: 'high', impactLevel: 'major' }),
   deleteSetting
 );
 
-// Bulk update settings
 router.put("/settings/bulk",
   auditSecurity('settings_bulk_updated', 'Bulk updated system settings', { severity: 'high', impactLevel: 'major' }),
   bulkUpdateSettings
 );
 
-// Reset settings to default
 router.post("/settings/reset",
   auditSecurity('settings_reset', 'Reset settings to default', { severity: 'critical', impactLevel: 'major' }),
   resetSettingsToDefault
-);
-
-// ======================
-// ENHANCED ROUTES WITH VALIDATION
-// ======================
-
-// Update approval routes with validation
-router.put("/approvals/vendor/:id/approve", 
-  mongoIdValidation("id"),
-  approvalValidation,
-  auditSecurity('vendor_approved', 'Approved vendor account', { severity: 'high', impactLevel: 'major' }),
-  approveVendor
-);
-
-router.put("/approvals/vendor/:id/reject",
-  mongoIdValidation("id"),
-  rejectionValidation,
-  auditSecurity('vendor_rejected', 'Rejected vendor account', { severity: 'high', impactLevel: 'major' }),
-  rejectVendor
-);
-
-router.put("/approvals/restaurant/:id/approve",
-  mongoIdValidation("id"),
-  approvalValidation,
-  auditSecurity('restaurant_approved', 'Approved restaurant account', { severity: 'high', impactLevel: 'major' }),
-  approveRestaurant
-);
-
-router.put("/approvals/restaurant/:id/reject",
-  mongoIdValidation("id"),
-  rejectionValidation,
-  auditSecurity('restaurant_rejected', 'Rejected restaurant account', { severity: 'high', impactLevel: 'major' }),
-  rejectRestaurant
-);
-
-// Update listing flagging with validation
-router.put("/listings/:id/flag",
-  mongoIdValidation("id"),
-  flagListingValidation,
-  captureOriginalData(Listing),
-  auditLog('listing_flagged', 'Listing', 'Flagged listing for moderation', { severity: 'medium', impactLevel: 'moderate' }),
-  flagListing
-);
-
-// Update vendor deactivation with validation
-router.put("/vendors/:id/deactivate",
-  mongoIdValidation("id"),
-  vendorDeactivationValidation,
-  captureOriginalData(Vendor),
-  auditSecurity('vendor_deactivated', 'Deactivated vendor account', { severity: 'high', impactLevel: 'major' }),
-  deactivateVendor
 );
 
 module.exports = router;

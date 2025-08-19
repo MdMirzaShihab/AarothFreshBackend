@@ -20,6 +20,36 @@ const listingStorage = new CloudinaryStorage({
   }
 });
 
+// Create storage engine for product categories
+const categoryStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/categories',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 800, height: 600, crop: 'limit' }]
+  }
+});
+
+// Create storage engine for products
+const productStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/products',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 1024, height: 768, crop: 'limit' }]
+  }
+});
+
+// Create storage engine for user profiles
+const profileStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/profiles',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 400, height: 400, crop: 'fill', gravity: 'face' }]
+  }
+});
+
 // Create storage engine for other general purposes
 const generalStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
@@ -64,27 +94,65 @@ module.exports = {
   // Use this for listing images
   uploadListingImages: (fieldName, maxCount = 5) => {
     const upload = multer({
-      storage: listingStorage, // Use the correct storage OBJECT
+      storage: listingStorage,
       fileFilter,
       limits: {
         fileSize: 1 * 1024 * 1024, // 1MB
         files: maxCount
       }
     });
-    // Return the middleware array
     return [upload.array(fieldName, maxCount), handleMulterError];
   },
 
-  // Example for other uploads
-  uploadGeneralImage: (fieldName) => {
+  // Use this for product category images
+  uploadCategoryImage: (fieldName) => {
     const upload = multer({
-      storage: generalStorage, // Use the correct storage OBJECT
+      storage: categoryStorage,
       fileFilter,
       limits: {
         fileSize: 1 * 1024 * 1024 // 1MB
       }
     });
-    // Return the middleware array
     return [upload.single(fieldName), handleMulterError];
-  }
+  },
+
+  // Use this for product images
+  uploadProductImages: (fieldName, maxCount = 5) => {
+    const upload = multer({
+      storage: productStorage,
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024, // 1MB
+        files: maxCount
+      }
+    });
+    return [upload.array(fieldName, maxCount), handleMulterError];
+  },
+
+  // Use this for user profile images
+  uploadProfileImage: (fieldName) => {
+    const upload = multer({
+      storage: profileStorage,
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024 // 1MB
+      }
+    });
+    return [upload.single(fieldName), handleMulterError];
+  },
+
+  // General purpose uploads
+  uploadGeneralImage: (fieldName) => {
+    const upload = multer({
+      storage: generalStorage,
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024 // 1MB
+      }
+    });
+    return [upload.single(fieldName), handleMulterError];
+  },
+
+  // Cloudinary instance for manual operations
+  cloudinary
 };

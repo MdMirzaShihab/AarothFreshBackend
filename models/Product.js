@@ -104,14 +104,29 @@ const ProductSchema = new mongoose.Schema({
     }
   }],
   // Images
-  images: [{
-    url: String,
-    alt: String,
-    isPrimary: {
-      type: Boolean,
-      default: false
-    }
-  }],
+  images: {
+    type: [{
+      url: {
+        type: String,
+        required: [true, 'Image URL is required']
+      },
+      alt: {
+        type: String,
+        default: ''
+      },
+      isPrimary: {
+        type: Boolean,
+        default: false
+      }
+    }],
+    validate: {
+      validator: function(v) {
+        return v && v.length > 0;
+      },
+      message: 'At least one product image is required'
+    },
+    required: [true, 'Product images are required']
+  },
   // SEO and search
   tags: [String],
   searchKeywords: [String],
