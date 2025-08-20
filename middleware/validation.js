@@ -202,8 +202,8 @@ const categoryValidation = [
   body("description")
     .optional()
     .trim()
-    .isLength({ max: 200 })
-    .withMessage("Category description must not exceed 200 characters"),
+    .isLength({ max: 500 })
+    .withMessage("Category description must not exceed 500 characters"),
 
   // Note: Image validation is handled in controller middleware as files are processed there
   handleValidationErrors,

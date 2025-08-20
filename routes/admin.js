@@ -62,6 +62,10 @@ const {
   getSettingHistory
 } = require("../controllers/settingsController");
 const { protect, authorize } = require("../middleware/auth");
+const { 
+  uploadCategoryImage, 
+  uploadProductImages 
+} = require("../middleware/upload");
 const {
   auditLog,
   captureOriginalData,
@@ -213,11 +217,9 @@ router.delete("/products/:id/safe-delete",
 // Category CRUD routes
 router
   .route("/categories")
-  .get(
-    auditLog('categories_viewed', 'ProductCategory', 'Viewed admin categories with filters', { severity: 'low', impactLevel: 'minor' }),
-    getCategories
-  )
+  .get(getCategories)
   .post(
+    ...uploadCategoryImage('image'),
     categoryValidation,
     auditLog('category_created', 'ProductCategory', 'Created category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
     createCategory
@@ -227,11 +229,11 @@ router
   .route("/categories/:id")
   .get(
     mongoIdValidation("id"),
-    auditLog('category_viewed', 'ProductCategory', 'Viewed category details: {id}', { severity: 'low', impactLevel: 'minor' }),
     getCategory
   )
   .put(
     mongoIdValidation("id"),
+    ...uploadCategoryImage('image'),
     categoryValidation,
     captureOriginalData(ProductCategory),
     auditLog('category_updated', 'ProductCategory', 'Updated category: {name}', { severity: 'medium', impactLevel: 'moderate' }),
@@ -258,7 +260,6 @@ router.put("/categories/:id/availability",
 // Get category usage statistics
 router.get("/categories/:id/usage",
   mongoIdValidation("id"),
-  auditLog('category_usage_viewed', 'ProductCategory', 'Viewed category usage stats', { severity: 'low', impactLevel: 'minor' }),
   getCategoryUsageStats
 );
 
@@ -268,26 +269,22 @@ router.get("/categories/:id/usage",
 
 // Get all admin listings with advanced filtering
 router.get("/listings",
-  auditLog('listings_viewed', 'Listing', 'Viewed admin listings with filters', { severity: 'low', impactLevel: 'minor' }),
   getAdminListings
 );
 
 // Get featured listings only
 router.get("/listings/featured",
-  auditLog('featured_listings_viewed', 'Listing', 'Viewed featured listings', { severity: 'low', impactLevel: 'minor' }),
   getAdminListings // Will filter for featured=true
 );
 
 // Get flagged listings only
 router.get("/listings/flagged",
-  auditLog('flagged_listings_viewed', 'Listing', 'Viewed flagged listings', { severity: 'low', impactLevel: 'minor' }),
   getAdminListings // Will filter for isFlagged=true
 );
 
 // Get single listing with full admin details
 router.get("/listings/:id",
   mongoIdValidation("id"),
-  auditLog('listing_viewed', 'Listing', 'Viewed listing details: {id}', { severity: 'low', impactLevel: 'minor' }),
   getAdminListing
 );
 
@@ -382,21 +379,18 @@ router.get("/analytics/overview",
 // Sales analytics
 router.get("/analytics/sales",
   analyticsValidation,
-  auditLog('analytics_viewed', 'Settings', 'Viewed sales analytics', { severity: 'low', impactLevel: 'minor' }),
   getSalesAnalytics
 );
 
 // User analytics
 router.get("/analytics/users",
   analyticsValidation,
-  auditLog('analytics_viewed', 'Settings', 'Viewed user analytics', { severity: 'low', impactLevel: 'minor' }),
   getUserAnalytics
 );
 
 // Product analytics
 router.get("/analytics/products",
   analyticsValidation,
-  auditLog('analytics_viewed', 'Settings', 'Viewed product analytics', { severity: 'low', impactLevel: 'minor' }),
   getProductAnalytics
 );
 

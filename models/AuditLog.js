@@ -27,13 +27,14 @@ const AuditLogSchema = new mongoose.Schema({
       // Product management
       'product_created', 'product_updated', 'product_deleted', 'product_status_changed',
       // Category management
-      'category_created', 'category_updated', 'category_deleted',
+      'category_created', 'category_updated', 'category_deleted', 'category_viewed', 'categories_viewed', 'category_usage_viewed',
       // Listing management
       'listing_flagged', 'listing_unflagged', 'listing_featured', 'listing_status_changed',
+      'listings_viewed', 'featured_listings_viewed', 'flagged_listings_viewed', 'listing_viewed',
       // Order management
       'order_approved', 'order_cancelled', 'order_status_changed',
       // System management
-      'settings_updated', 'bulk_operation', 'system_backup', 'system_maintenance'
+      'settings_updated', 'bulk_operation', 'system_backup', 'system_maintenance', 'analytics_viewed'
     ]
   },
   
