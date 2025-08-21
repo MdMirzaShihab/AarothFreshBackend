@@ -3,6 +3,7 @@ const {
   register,
   login,
   getMe,
+  getUserStatus,
   updateProfile,
   changePassword,
   createManager,
@@ -25,6 +26,7 @@ router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);
 router.post('/logout', protect, logout);
 router.get('/me', protect, getMe);
+router.get('/status', protect, getUserStatus);
 router.put('/me', protect, updateProfileValidation, updateProfile);
 router.put('/change-password', protect, changePasswordValidation, changePassword);
 router.post('/create-manager', protect, authorize('restaurantOwner', 'admin'), managerValidation, createManager);

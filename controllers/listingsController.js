@@ -2,6 +2,7 @@ const Listing = require('../models/Listing');
 const Product = require('../models/Product');
 const { ErrorResponse } = require('../middleware/error');
 const { validationResult } = require('express-validator');
+const { canUserCreateListings } = require('../middleware/approval');
 
 /**
  * @desc    Create a new listing
@@ -14,6 +15,14 @@ exports.createListing = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    // Check if vendor business is verified to create listings
+    if (!canUserCreateListings(req.user)) {
+      const businessName = req.user.vendorId?.businessName || 'your vendor business';
+      const statusMessage = `Your vendor business "${businessName}" is not verified. You cannot create listings until your business is verified by admin.`;
+      
+      return next(new ErrorResponse(statusMessage, 403));
     }
 
     const { productId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications } = req.body;
@@ -103,6 +112,14 @@ exports.updateListing = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
+    // Check if vendor business is verified to modify listings
+    if (!canUserCreateListings(req.user)) {
+      const businessName = req.user.vendorId?.businessName || 'your vendor business';
+      const statusMessage = `Your vendor business "${businessName}" is not verified. You cannot modify listings until your business is verified by admin.`;
+      
+      return next(new ErrorResponse(statusMessage, 403));
+    }
+
     let listing = await Listing.findById(req.params.id);
 
     if (!listing) {
@@ -144,6 +161,14 @@ exports.updateListing = async (req, res, next) => {
  */
 exports.deleteListing = async (req, res, next) => {
   try {
+    // Check if vendor business is verified to delete listings
+    if (!canUserCreateListings(req.user)) {
+      const businessName = req.user.vendorId?.businessName || 'your vendor business';
+      const statusMessage = `Your vendor business "${businessName}" is not verified. You cannot delete listings until your business is verified by admin.`;
+      
+      return next(new ErrorResponse(statusMessage, 403));
+    }
+
     const listing = await Listing.findById(req.params.id);
 
     if (!listing) {

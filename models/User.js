@@ -78,19 +78,7 @@ const UserSchema = new mongoose.Schema({
   resetPasswordToken: String,
   resetPasswordExpire: Date,
   
-  // Approval workflow fields
-  approvalStatus: {
-    type: String,
-    enum: ['pending', 'approved', 'rejected'],
-    default: 'pending'
-  },
-  approvalDate: Date,
-  approvalNotes: String,
-  approvedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  rejectionReason: String,
+  // Note: Approval workflow now handled at business entity level (Vendor/Restaurant)
   
   // Soft delete fields
   isDeleted: {
@@ -168,7 +156,7 @@ UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
 UserSchema.index({ vendorId: 1 });
 UserSchema.index({ restaurantId: 1 });
-UserSchema.index({ approvalStatus: 1, role: 1 });
+// Removed approvalStatus index - approval now handled at business entity level
 UserSchema.index({ isDeleted: 1, isActive: 1 });
 UserSchema.index({ phone: 1 });
 

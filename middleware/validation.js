@@ -368,7 +368,7 @@ const paginationValidation = [
 ];
 
 /**
- * Approval action validation rules
+ * Approval action validation rules - Legacy support
  */
 const approvalValidation = [
   body("approvalNotes")
@@ -381,7 +381,7 @@ const approvalValidation = [
 ];
 
 /**
- * Rejection action validation rules
+ * Rejection action validation rules - Legacy support
  */
 const rejectionValidation = [
   body("rejectionReason")

@@ -2,6 +2,7 @@ const Order = require("../models/Order");
 const Listing = require("../models/Listing");
 const { ErrorResponse } = require("../middleware/error");
 const { validationResult } = require("express-validator");
+const { canUserPlaceOrders } = require("../middleware/approval");
 
 /**
  * @desc    Place a new order
@@ -14,6 +15,14 @@ exports.placeOrder = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    // Check if restaurant business is verified to place orders
+    if (!canUserPlaceOrders(req.user)) {
+      const restaurantName = req.user.restaurantId?.name || 'your restaurant';
+      const statusMessage = `Your restaurant "${restaurantName}" is not verified. You cannot place orders until your restaurant is verified by admin.`;
+      
+      return next(new ErrorResponse(statusMessage, 403));
     }
 
     const { items, deliveryInfo, paymentInfo, notes } = req.body;

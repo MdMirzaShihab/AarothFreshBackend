@@ -4,6 +4,7 @@ const Vendor = require('../models/Vendor');
 const Restaurant = require('../models/Restaurant');
 const { ErrorResponse } = require('../middleware/error');
 const sendEmail = require('../utils/email');
+const { canUserCreateListings, canUserPlaceOrders, canUserManageRestaurant } = require('../middleware/approval');
 
 /**
  * @desc    Register a new vendor or restaurant owner
@@ -197,6 +198,146 @@ exports.getMe = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: user
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get user approval status and capabilities
+ * @route   GET /api/auth/status
+ * @access  Private
+ */
+exports.getUserStatus = async (req, res, next) => {
+  try {
+    const user = req.user;
+
+    // Get business verification status and next steps
+    const getBusinessStatusAndSteps = (user) => {
+      let isVerified = false;
+      let businessType = '';
+      let businessName = '';
+      let verificationDate = null;
+
+      if (user.role === 'vendor' && user.vendorId) {
+        isVerified = user.vendorId.isVerified;
+        businessType = 'vendor business';
+        businessName = user.vendorId.businessName;
+        verificationDate = user.vendorId.verificationDate;
+      } else if (['restaurantOwner', 'restaurantManager'].includes(user.role) && user.restaurantId) {
+        isVerified = user.restaurantId.isVerified;
+        businessType = 'restaurant';
+        businessName = user.restaurantId.name;
+        verificationDate = user.restaurantId.verificationDate;
+      }
+
+      let nextSteps = [];
+      if (isVerified) {
+        const roleSpecificSteps = {
+          vendor: [
+            'Your vendor business is verified',
+            'You can now create and manage product listings',
+            'Start receiving orders from restaurants',
+            'Complete your business profile for better visibility'
+          ],
+          restaurantOwner: [
+            'Your restaurant is verified',
+            'You can now place orders from verified vendors',
+            'Manage your restaurant profile and settings',
+            'Add restaurant managers if needed'
+          ],
+          restaurantManager: [
+            'This restaurant is verified',
+            'You can now place orders for your restaurant',
+            'View order history and manage current orders',
+            'Update restaurant operational details'
+          ]
+        };
+        nextSteps = roleSpecificSteps[user.role] || ['You have full access to all platform features'];
+      } else {
+        nextSteps = [
+          `Wait for admin verification of your ${businessType}`,
+          'Ensure all required business documents are uploaded',
+          'Check your email for any additional requirements',
+          'Contact admin if you have been waiting more than 3 business days',
+          'Complete your business profile with accurate information'
+        ];
+      }
+
+      return {
+        isVerified,
+        businessType,
+        businessName,
+        verificationDate,
+        nextSteps
+      };
+    };
+
+    // Get business status information
+    const businessStatus = getBusinessStatusAndSteps(user);
+
+    // Build response with user capabilities and status
+    const statusInfo = {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isActive: user.isActive
+      },
+      businessVerification: {
+        isVerified: businessStatus.isVerified,
+        businessType: businessStatus.businessType,
+        businessName: businessStatus.businessName,
+        verificationDate: businessStatus.verificationDate
+      },
+      capabilities: {
+        canCreateListings: canUserCreateListings(user),
+        canPlaceOrders: canUserPlaceOrders(user),
+        canManageRestaurant: canUserManageRestaurant(user),
+        canAccessDashboard: businessStatus.isVerified || user.role === 'admin',
+        canUpdateProfile: true // Everyone can update basic profile
+      },
+      restrictions: {
+        hasRestrictions: !businessStatus.isVerified && user.role !== 'admin',
+        reason: businessStatus.isVerified 
+          ? null
+          : `${businessStatus.businessType} "${businessStatus.businessName}" is not verified`
+      },
+      nextSteps: businessStatus.nextSteps,
+      businessInfo: {}
+    };
+
+    // Add detailed business-specific information
+    if (user.vendorId) {
+      statusInfo.businessInfo.vendor = {
+        id: user.vendorId._id,
+        businessName: user.vendorId.businessName,
+        tradeLicenseNo: user.vendorId.tradeLicenseNo,
+        isVerified: user.vendorId.isVerified,
+        verificationDate: user.vendorId.verificationDate,
+        isActive: user.vendorId.isActive,
+        address: user.vendorId.address
+      };
+    }
+
+    if (user.restaurantId) {
+      statusInfo.businessInfo.restaurant = {
+        id: user.restaurantId._id,
+        name: user.restaurantId.name,
+        tradeLicenseNo: user.restaurantId.tradeLicenseNo,
+        isVerified: user.restaurantId.isVerified,
+        verificationDate: user.restaurantId.verificationDate,
+        isActive: user.restaurantId.isActive,
+        address: user.restaurantId.address
+      };
+    }
+
+    res.status(200).json({
+      success: true,
+      data: statusInfo
     });
   } catch (error) {
     next(error);

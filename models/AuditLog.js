@@ -121,7 +121,7 @@ AuditLogSchema.virtual('formattedDate').get(function() {
 });
 
 // Static method to log an action
-AuditLogSchema.statics.logAction = async function(actionData) {
+AuditLogSchema.statics.logAction = async function(actionData, session = null) {
   const {
     userId,
     userRole,
@@ -160,7 +160,7 @@ AuditLogSchema.statics.logAction = async function(actionData) {
     metadata
   });
 
-  return await auditLog.save();
+  return await auditLog.save({ session });
 };
 
 // Static method to get logs by user

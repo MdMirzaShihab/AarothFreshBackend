@@ -27,6 +27,11 @@ const {
   rejectVendor,
   approveRestaurant,
   rejectRestaurant,
+  // Enhanced Verification Management
+  toggleVendorVerification,
+  toggleRestaurantVerification,
+  resetVendorApproval,
+  resetRestaurantApproval,
   // Safe Deletion Protection
   safeDeleteProduct,
   safeDeleteCategory,
@@ -330,13 +335,13 @@ router.post("/listings/bulk",
 );
 
 // ================================
-// APPROVAL MANAGEMENT
+// APPROVAL MANAGEMENT (Legacy + Enhanced)
 // ================================
 
 // Get all pending approvals
 router.get("/approvals", getAllApprovals);
 
-// Vendor approval routes
+// Legacy vendor approval routes (redirects to business verification)
 router.put("/approvals/vendor/:id/approve", 
   mongoIdValidation("id"),
   approvalValidation,
@@ -351,7 +356,7 @@ router.put("/approvals/vendor/:id/reject",
   rejectVendor
 );
 
-// Restaurant approval routes
+// Legacy restaurant approval routes (redirects to business verification)
 router.put("/approvals/restaurant/:id/approve",
   mongoIdValidation("id"),
   approvalValidation,
@@ -364,6 +369,52 @@ router.put("/approvals/restaurant/:id/reject",
   rejectionValidation,
   auditSecurity('restaurant_rejected', 'Rejected restaurant account', { severity: 'high', impactLevel: 'major' }),
   rejectRestaurant
+);
+
+// ================================
+// BUSINESS ENTITY VERIFICATION MANAGEMENT
+// ================================
+
+// Direct vendor verification toggle (Preferred method)
+router.put("/vendors/:id/verification",
+  mongoIdValidation("id"),
+  [
+    body('isVerified').isBoolean().withMessage('isVerified must be a boolean'),
+    body('reason').optional().isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters')
+  ],
+  auditSecurity('vendor_verification_toggle', 'Toggled vendor verification status', { severity: 'high', impactLevel: 'significant' }),
+  toggleVendorVerification
+);
+
+// Direct restaurant verification toggle (Preferred method)
+router.put("/restaurants/:id/verification",
+  mongoIdValidation("id"),
+  [
+    body('isVerified').isBoolean().withMessage('isVerified must be a boolean'),
+    body('reason').optional().isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters')
+  ],
+  auditSecurity('restaurant_verification_toggle', 'Toggled restaurant verification status', { severity: 'high', impactLevel: 'significant' }),
+  toggleRestaurantVerification
+);
+
+// Reset vendor approval status to pending
+router.put("/approvals/vendor/:id/reset",
+  mongoIdValidation("id"),
+  [
+    body('reason').isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters and is required')
+  ],
+  auditSecurity('vendor_status_reset', 'Reset vendor approval status to pending', { severity: 'medium', impactLevel: 'moderate' }),
+  resetVendorApproval
+);
+
+// Reset restaurant approval status to pending
+router.put("/approvals/restaurant/:id/reset",
+  mongoIdValidation("id"),
+  [
+    body('reason').isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters and is required')
+  ],
+  auditSecurity('restaurant_status_reset', 'Reset restaurant approval status to pending', { severity: 'medium', impactLevel: 'moderate' }),
+  resetRestaurantApproval
 );
 
 // ================================

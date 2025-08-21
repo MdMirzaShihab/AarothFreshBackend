@@ -35,6 +35,16 @@ const protect = async (req, res, next) => {
         return next(new ErrorResponse('No user found with this token', 401));
       }
 
+      // Check if user account is active
+      if (!user.isActive) {
+        return next(new ErrorResponse('Account has been deactivated. Contact admin for assistance.', 401));
+      }
+
+      // Check if user account is deleted
+      if (user.isDeleted) {
+        return next(new ErrorResponse('Account not found', 401));
+      }
+
       // Only populate related data if needed (reduces database load)
       try {
         if (user.vendorId) {
@@ -48,7 +58,6 @@ const protect = async (req, res, next) => {
         // Continue with user object even if population fails
         // This prevents authentication failure due to population issues
       }
-
 
       req.user = user;
       next();
@@ -123,4 +132,35 @@ const checkOwnership = (resourceModel) => {
   };
 };
 
-module.exports = { protect, authorize, checkOwnership };
+/**
+ * Enhanced authorization that considers approval status
+ * @param {...string} roles - Allowed roles
+ * @returns {Function} Express middleware function
+ */
+const authorizeApproved = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return next(new ErrorResponse('Please login to access this route', 401));
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return next(
+        new ErrorResponse(
+          `User role '${req.user.role}' is not authorized to access this route. Allowed roles: ${roles.join(', ')}`,
+          403
+        )
+      );
+    }
+
+    // Admin users bypass approval checks
+    if (req.user.role === 'admin') {
+      return next();
+    }
+
+    // Note: Approval status checking now handled at business entity level via approval middleware
+
+    next();
+  };
+};
+
+module.exports = { protect, authorize, authorizeApproved, checkOwnership };

@@ -8,6 +8,7 @@ const Listing = require("../models/Listing");
 const Settings = require("../models/Settings");
 const AuditLog = require("../models/AuditLog");
 const { ErrorResponse } = require("../middleware/error");
+const mongoose = require("mongoose");
 const { validationResult } = require("express-validator");
 
 // ================================
@@ -2080,7 +2081,7 @@ exports.getAllApprovals = async (req, res, next) => {
 };
 
 /**
- * @desc    Approve vendor
+ * @desc    Approve vendor - Legacy endpoint redirects to business verification
  * @route   PUT /api/v1/admin/approvals/vendor/:id/approve
  * @access  Private/Admin
  */
@@ -2088,40 +2089,35 @@ exports.approveVendor = async (req, res, next) => {
   try {
     const { approvalNotes } = req.body;
     
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).populate('vendorId');
     if (!user || user.role !== 'vendor') {
       return next(new ErrorResponse('Vendor not found', 404));
     }
 
-    // Update user approval status
-    user.approvalStatus = 'approved';
-    user.approvalDate = new Date();
-    user.approvedBy = req.user.id;
-    user.approvalNotes = approvalNotes;
-    user.lastModifiedBy = req.user.id;
-    await user.save();
-
-    // Update vendor verification status
-    if (user.vendorId) {
-      await Vendor.findByIdAndUpdate(user.vendorId, {
-        isVerified: true,
-        verificationDate: new Date(),
-        statusUpdatedBy: req.user.id,
-        statusUpdatedAt: new Date()
-      });
+    if (!user.vendorId) {
+      return next(new ErrorResponse('Vendor business not found', 404));
     }
+
+    // Update vendor verification status directly
+    const vendor = user.vendorId;
+    vendor.isVerified = true;
+    vendor.verificationDate = new Date();
+    vendor.statusUpdatedBy = req.user.id;
+    vendor.statusUpdatedAt = new Date();
+    vendor.adminNotes = approvalNotes;
+    await vendor.save();
 
     // Log the approval action
     await AuditLog.logAction({
       userId: req.user.id,
       userRole: req.user.role,
-      action: 'user_approved',
-      entityType: 'User',
-      entityId: user._id,
-      description: `Approved vendor: ${user.name}`,
+      action: 'vendor_verified',
+      entityType: 'Vendor',
+      entityId: vendor._id,
+      description: `Approved vendor business: ${vendor.businessName}`,
       reason: approvalNotes,
-      severity: 'medium',
-      impactLevel: 'moderate'
+      severity: 'high',
+      impactLevel: 'significant'
     });
 
     const populatedUser = await User.findById(user._id)
@@ -2130,7 +2126,7 @@ exports.approveVendor = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Vendor approved successfully',
+      message: 'Vendor business approved successfully',
       data: populatedUser
     });
   } catch (err) {
@@ -2139,7 +2135,7 @@ exports.approveVendor = async (req, res, next) => {
 };
 
 /**
- * @desc    Reject vendor
+ * @desc    Reject vendor - Legacy endpoint redirects to business verification
  * @route   PUT /api/v1/admin/approvals/vendor/:id/reject
  * @access  Private/Admin
  */
@@ -2151,34 +2147,40 @@ exports.rejectVendor = async (req, res, next) => {
       return next(new ErrorResponse('Rejection reason is required', 400));
     }
 
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).populate('vendorId');
     if (!user || user.role !== 'vendor') {
       return next(new ErrorResponse('Vendor not found', 404));
     }
 
-    user.approvalStatus = 'rejected';
-    user.approvalDate = new Date();
-    user.approvedBy = req.user.id;
-    user.rejectionReason = rejectionReason;
-    user.lastModifiedBy = req.user.id;
-    await user.save();
+    if (!user.vendorId) {
+      return next(new ErrorResponse('Vendor business not found', 404));
+    }
+
+    // Update vendor verification status directly
+    const vendor = user.vendorId;
+    vendor.isVerified = false;
+    vendor.verificationDate = null;
+    vendor.statusUpdatedBy = req.user.id;
+    vendor.statusUpdatedAt = new Date();
+    vendor.adminNotes = rejectionReason;
+    await vendor.save();
 
     // Log the rejection action
     await AuditLog.logAction({
       userId: req.user.id,
       userRole: req.user.role,
-      action: 'user_rejected',
-      entityType: 'User',
-      entityId: user._id,
-      description: `Rejected vendor: ${user.name}`,
+      action: 'vendor_verification_revoked',
+      entityType: 'Vendor',
+      entityId: vendor._id,
+      description: `Rejected vendor business: ${vendor.businessName}`,
       reason: rejectionReason,
-      severity: 'medium',
-      impactLevel: 'moderate'
+      severity: 'high',
+      impactLevel: 'significant'
     });
 
     res.status(200).json({
       success: true,
-      message: 'Vendor rejected successfully',
+      message: 'Vendor business rejected successfully',
       data: { rejectionReason }
     });
   } catch (err) {
@@ -2187,7 +2189,7 @@ exports.rejectVendor = async (req, res, next) => {
 };
 
 /**
- * @desc    Approve restaurant
+ * @desc    Approve restaurant - Legacy endpoint redirects to business verification
  * @route   PUT /api/v1/admin/approvals/restaurant/:id/approve
  * @access  Private/Admin
  */
@@ -2195,39 +2197,35 @@ exports.approveRestaurant = async (req, res, next) => {
   try {
     const { approvalNotes } = req.body;
     
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).populate('restaurantId');
     if (!user || !['restaurantOwner', 'restaurantManager'].includes(user.role)) {
       return next(new ErrorResponse('Restaurant user not found', 404));
     }
 
-    user.approvalStatus = 'approved';
-    user.approvalDate = new Date();
-    user.approvedBy = req.user.id;
-    user.approvalNotes = approvalNotes;
-    user.lastModifiedBy = req.user.id;
-    await user.save();
-
-    // Update restaurant verification status
-    if (user.restaurantId) {
-      await Restaurant.findByIdAndUpdate(user.restaurantId, {
-        isVerified: true,
-        verificationDate: new Date(),
-        statusUpdatedBy: req.user.id,
-        statusUpdatedAt: new Date()
-      });
+    if (!user.restaurantId) {
+      return next(new ErrorResponse('Restaurant business not found', 404));
     }
+
+    // Update restaurant verification status directly
+    const restaurant = user.restaurantId;
+    restaurant.isVerified = true;
+    restaurant.verificationDate = new Date();
+    restaurant.statusUpdatedBy = req.user.id;
+    restaurant.statusUpdatedAt = new Date();
+    restaurant.adminNotes = approvalNotes;
+    await restaurant.save();
 
     // Log the approval action
     await AuditLog.logAction({
       userId: req.user.id,
       userRole: req.user.role,
-      action: 'user_approved',
-      entityType: 'User',
-      entityId: user._id,
-      description: `Approved restaurant user: ${user.name}`,
+      action: 'restaurant_verified',
+      entityType: 'Restaurant',
+      entityId: restaurant._id,
+      description: `Approved restaurant business: ${restaurant.name}`,
       reason: approvalNotes,
-      severity: 'medium',
-      impactLevel: 'moderate'
+      severity: 'high',
+      impactLevel: 'significant'
     });
 
     const populatedUser = await User.findById(user._id)
@@ -2236,7 +2234,7 @@ exports.approveRestaurant = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Restaurant user approved successfully',
+      message: 'Restaurant business approved successfully',
       data: populatedUser
     });
   } catch (err) {
@@ -2245,7 +2243,7 @@ exports.approveRestaurant = async (req, res, next) => {
 };
 
 /**
- * @desc    Reject restaurant
+ * @desc    Reject restaurant - Legacy endpoint redirects to business verification
  * @route   PUT /api/v1/admin/approvals/restaurant/:id/reject
  * @access  Private/Admin
  */
@@ -2257,35 +2255,323 @@ exports.rejectRestaurant = async (req, res, next) => {
       return next(new ErrorResponse('Rejection reason is required', 400));
     }
 
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).populate('restaurantId');
     if (!user || !['restaurantOwner', 'restaurantManager'].includes(user.role)) {
       return next(new ErrorResponse('Restaurant user not found', 404));
     }
 
-    user.approvalStatus = 'rejected';
-    user.approvalDate = new Date();
-    user.approvedBy = req.user.id;
-    user.rejectionReason = rejectionReason;
-    user.lastModifiedBy = req.user.id;
-    await user.save();
+    if (!user.restaurantId) {
+      return next(new ErrorResponse('Restaurant business not found', 404));
+    }
+
+    // Update restaurant verification status directly
+    const restaurant = user.restaurantId;
+    restaurant.isVerified = false;
+    restaurant.verificationDate = null;
+    restaurant.statusUpdatedBy = req.user.id;
+    restaurant.statusUpdatedAt = new Date();
+    restaurant.adminNotes = rejectionReason;
+    await restaurant.save();
 
     // Log the rejection action
     await AuditLog.logAction({
       userId: req.user.id,
       userRole: req.user.role,
-      action: 'user_rejected',
-      entityType: 'User',
-      entityId: user._id,
-      description: `Rejected restaurant user: ${user.name}`,
+      action: 'restaurant_verification_revoked',
+      entityType: 'Restaurant',
+      entityId: restaurant._id,
+      description: `Rejected restaurant business: ${restaurant.name}`,
       reason: rejectionReason,
-      severity: 'medium',
-      impactLevel: 'moderate'
+      severity: 'high',
+      impactLevel: 'significant'
     });
 
     res.status(200).json({
       success: true,
-      message: 'Restaurant user rejected successfully',
+      message: 'Restaurant business rejected successfully',
       data: { rejectionReason }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ================================
+// ENHANCED VERIFICATION MANAGEMENT
+// ================================
+
+/**
+ * @desc    Toggle vendor verification status
+ * @route   PUT /api/v1/admin/vendors/:id/verification
+ * @access  Private/Admin
+ */
+exports.toggleVendorVerification = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  
+  try {
+    const { isVerified, reason } = req.body;
+
+    if (typeof isVerified !== 'boolean') {
+      return next(new ErrorResponse('isVerified field must be a boolean', 400));
+    }
+
+    if (!isVerified && !reason) {
+      return next(new ErrorResponse('Reason is required when revoking verification', 400));
+    }
+
+    const result = await session.withTransaction(async () => {
+      const vendor = await Vendor.findById(req.params.id).session(session);
+      if (!vendor) {
+        throw new ErrorResponse(`Vendor not found with id of ${req.params.id}`, 404);
+      }
+
+      const oldStatus = vendor.isVerified;
+      
+      // Update vendor verification
+      vendor.isVerified = isVerified;
+      vendor.verificationDate = isVerified ? new Date() : null;
+      vendor.statusUpdatedBy = req.user.id;
+      vendor.statusUpdatedAt = new Date();
+      vendor.adminNotes = reason;
+      await vendor.save({ session });
+
+      // Log the action
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: isVerified ? 'vendor_verified' : 'vendor_verification_revoked',
+        entityType: 'Vendor',
+        entityId: vendor._id,
+        description: `${isVerified ? 'Verified' : 'Revoked verification for'} vendor: ${vendor.businessName}`,
+        reason,
+        severity: 'high',
+        impactLevel: 'significant',
+        metadata: {
+          oldStatus,
+          newStatus: isVerified,
+          affectedUsers: await User.countDocuments({ vendorId: vendor._id })
+        }
+      }, session);
+
+      return vendor;
+    });
+
+    await session.commitTransaction();
+
+    const populatedVendor = await Vendor.findById(result._id)
+      .populate('statusUpdatedBy', 'name email');
+
+    res.status(200).json({
+      success: true,
+      message: `Vendor verification ${isVerified ? 'enabled' : 'revoked'} successfully`,
+      data: populatedVendor
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    next(err);
+  } finally {
+    session.endSession();
+  }
+};
+
+/**
+ * @desc    Toggle restaurant verification status
+ * @route   PUT /api/v1/admin/restaurants/:id/verification
+ * @access  Private/Admin
+ */
+exports.toggleRestaurantVerification = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  
+  try {
+    const { isVerified, reason } = req.body;
+
+    if (typeof isVerified !== 'boolean') {
+      return next(new ErrorResponse('isVerified field must be a boolean', 400));
+    }
+
+    if (!isVerified && !reason) {
+      return next(new ErrorResponse('Reason is required when revoking verification', 400));
+    }
+
+    const result = await session.withTransaction(async () => {
+      const restaurant = await Restaurant.findById(req.params.id).session(session);
+      if (!restaurant) {
+        throw new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404);
+      }
+
+      const oldStatus = restaurant.isVerified;
+      
+      // Update restaurant verification
+      restaurant.isVerified = isVerified;
+      restaurant.verificationDate = isVerified ? new Date() : null;
+      restaurant.statusUpdatedBy = req.user.id;
+      restaurant.statusUpdatedAt = new Date();
+      restaurant.adminNotes = reason;
+      await restaurant.save({ session });
+
+      // Log the action
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: isVerified ? 'restaurant_verified' : 'restaurant_verification_revoked',
+        entityType: 'Restaurant',
+        entityId: restaurant._id,
+        description: `${isVerified ? 'Verified' : 'Revoked verification for'} restaurant: ${restaurant.name}`,
+        reason,
+        severity: 'high',
+        impactLevel: 'significant',
+        metadata: {
+          oldStatus,
+          newStatus: isVerified,
+          affectedUsers: await User.countDocuments({ restaurantId: restaurant._id })
+        }
+      }, session);
+
+      return restaurant;
+    });
+
+    await session.commitTransaction();
+
+    const populatedRestaurant = await Restaurant.findById(result._id)
+      .populate('statusUpdatedBy', 'name email')
+      .populate('managers', 'name email');
+
+    res.status(200).json({
+      success: true,
+      message: `Restaurant verification ${isVerified ? 'enabled' : 'revoked'} successfully`,
+      data: populatedRestaurant
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    next(err);
+  } finally {
+    session.endSession();
+  }
+};
+
+/**
+ * @desc    Reset vendor approval status to pending
+ * @route   PUT /api/v1/admin/approvals/vendor/:id/reset
+ * @access  Private/Admin
+ */
+exports.resetVendorApproval = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+
+    if (!reason) {
+      return next(new ErrorResponse('Reason is required for status reset', 400));
+    }
+
+    const user = await User.findById(req.params.id).populate('vendorId');
+    if (!user || user.role !== 'vendor') {
+      return next(new ErrorResponse('Vendor not found', 404));
+    }
+
+    if (!user.vendorId) {
+      return next(new ErrorResponse('Vendor business not found', 404));
+    }
+
+    const oldStatus = user.vendorId.isVerified;
+
+    // Reset vendor verification status
+    const vendor = user.vendorId;
+    vendor.isVerified = false;
+    vendor.verificationDate = null;
+    vendor.statusUpdatedBy = req.user.id;
+    vendor.statusUpdatedAt = new Date();
+    vendor.adminNotes = reason;
+    await vendor.save();
+
+    // Log the action
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'vendor_status_reset',
+      entityType: 'Vendor',
+      entityId: vendor._id,
+      description: `Reset vendor verification status: ${vendor.businessName}`,
+      reason,
+      severity: 'medium',
+      impactLevel: 'moderate',
+      metadata: {
+        oldStatus,
+        newStatus: false
+      }
+    });
+
+    const populatedUser = await User.findById(user._id)
+      .populate('vendorId')
+      .select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Vendor approval status reset to pending',
+      data: populatedUser
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Reset restaurant approval status to pending
+ * @route   PUT /api/v1/admin/approvals/restaurant/:id/reset
+ * @access  Private/Admin
+ */
+exports.resetRestaurantApproval = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+
+    if (!reason) {
+      return next(new ErrorResponse('Reason is required for status reset', 400));
+    }
+
+    const user = await User.findById(req.params.id).populate('restaurantId');
+    if (!user || !['restaurantOwner', 'restaurantManager'].includes(user.role)) {
+      return next(new ErrorResponse('Restaurant user not found', 404));
+    }
+
+    if (!user.restaurantId) {
+      return next(new ErrorResponse('Restaurant business not found', 404));
+    }
+
+    const oldStatus = user.restaurantId.isVerified;
+
+    // Reset restaurant verification status
+    const restaurant = user.restaurantId;
+    restaurant.isVerified = false;
+    restaurant.verificationDate = null;
+    restaurant.statusUpdatedBy = req.user.id;
+    restaurant.statusUpdatedAt = new Date();
+    restaurant.adminNotes = reason;
+    await restaurant.save();
+
+    // Log the action
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'restaurant_status_reset',
+      entityType: 'Restaurant',
+      entityId: restaurant._id,
+      description: `Reset restaurant verification status: ${restaurant.name}`,
+      reason,
+      severity: 'medium',
+      impactLevel: 'moderate',
+      metadata: {
+        oldStatus,
+        newStatus: false,
+        affectedUsers: await User.countDocuments({ restaurantId: user.restaurantId })
+      }
+    });
+
+    const populatedUser = await User.findById(user._id)
+      .populate('restaurantId')
+      .select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant approval status reset to pending',
+      data: populatedUser
     });
   } catch (err) {
     next(err);
