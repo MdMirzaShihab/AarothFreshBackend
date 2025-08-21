@@ -22,8 +22,10 @@ const AuditLogSchema = new mongoose.Schema({
       'user_created', 'user_updated', 'user_deleted', 'user_approved', 'user_rejected',
       // Vendor management
       'vendor_created', 'vendor_updated', 'vendor_verified', 'vendor_deactivated',
+      'vendor_verification_toggle', 'vendor_verification_revoked', 'vendor_status_reset',
       // Restaurant management
       'restaurant_created', 'restaurant_updated', 'restaurant_verified', 'restaurant_deactivated',
+      'restaurant_verification_toggle', 'restaurant_verification_revoked', 'restaurant_status_reset',
       // Product management
       'product_created', 'product_updated', 'product_deleted', 'product_status_changed',
       // Category management
@@ -79,7 +81,7 @@ const AuditLogSchema = new mongoose.Schema({
   },
   impactLevel: {
     type: String,
-    enum: ['none', 'minor', 'moderate', 'major'],
+    enum: ['none', 'minor', 'moderate', 'significant', 'major'],
     default: 'minor'
   },
   

@@ -40,13 +40,13 @@ const VendorSchema = new mongoose.Schema({
       type: String,
       required: [true, 'Please add city']
     },
-    state: {
+    area: {
       type: String,
-      required: [true, 'Please add state']
+      required: [true, 'Please add area']
     },
-    zipCode: {
+    postalCode: {
       type: String,
-      required: [true, 'Please add zip code']
+      required: [true, 'Please add postal code']
     },
     coordinates: {
       type: [Number], // [longitude, latitude]
@@ -169,7 +169,7 @@ const VendorSchema = new mongoose.Schema({
 
 // Virtual for getting full address
 VendorSchema.virtual('fullAddress').get(function() {
-  return `${this.address.street}, ${this.address.city}, ${this.address.state} ${this.address.zipCode}`;
+  return `${this.address.street}, ${this.address.city}, ${this.address.area} ${this.address.postalCode}`;
 });
 
 // Virtual populate for listings
