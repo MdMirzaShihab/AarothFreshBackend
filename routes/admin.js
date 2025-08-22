@@ -22,17 +22,9 @@ const {
   getPendingRestaurants,
   createRestaurantOwner,
   createRestaurantManager,
-  // Approval Management
-  getAllApprovals,
-  approveVendor,
-  rejectVendor,
-  approveRestaurant,
-  rejectRestaurant,
-  // Enhanced Verification Management
+  // Business Entity Verification Management
   toggleVendorVerification,
   toggleRestaurantVerification,
-  resetVendorApproval,
-  resetRestaurantApproval,
   // Safe Deletion Protection
   safeDeleteProduct,
   safeDeleteCategory,
@@ -85,8 +77,6 @@ const {
   mongoIdValidation,
   adminRestaurantOwnerValidation,
   adminRestaurantManagerValidation,
-  approvalValidation,
-  rejectionValidation,
   flagListingValidation,
   vendorDeactivationValidation,
   settingsValidation,
@@ -336,47 +326,10 @@ router.post("/listings/bulk",
 );
 
 // ================================
-// APPROVAL MANAGEMENT (Legacy + Enhanced)
-// ================================
-
-// Get all pending approvals
-router.get("/approvals", getAllApprovals);
-
-// Legacy vendor approval routes (redirects to business verification)
-router.put("/approvals/vendor/:id/approve", 
-  mongoIdValidation("id"),
-  approvalValidation,
-  auditSecurity('vendor_approved', 'Approved vendor account', { severity: 'high', impactLevel: 'major' }),
-  approveVendor
-);
-
-router.put("/approvals/vendor/:id/reject",
-  mongoIdValidation("id"),
-  rejectionValidation,
-  auditSecurity('vendor_rejected', 'Rejected vendor account', { severity: 'high', impactLevel: 'major' }),
-  rejectVendor
-);
-
-// Legacy restaurant approval routes (redirects to business verification)
-router.put("/approvals/restaurant/:id/approve",
-  mongoIdValidation("id"),
-  approvalValidation,
-  auditSecurity('restaurant_approved', 'Approved restaurant account', { severity: 'high', impactLevel: 'major' }),
-  approveRestaurant
-);
-
-router.put("/approvals/restaurant/:id/reject",
-  mongoIdValidation("id"),
-  rejectionValidation,
-  auditSecurity('restaurant_rejected', 'Rejected restaurant account', { severity: 'high', impactLevel: 'major' }),
-  rejectRestaurant
-);
-
-// ================================
 // BUSINESS ENTITY VERIFICATION MANAGEMENT
 // ================================
 
-// Direct vendor verification toggle (Preferred method)
+// Direct vendor verification toggle
 router.put("/vendors/:id/verification",
   mongoIdValidation("id"),
   [
@@ -387,7 +340,7 @@ router.put("/vendors/:id/verification",
   toggleVendorVerification
 );
 
-// Direct restaurant verification toggle (Preferred method)
+// Direct restaurant verification toggle
 router.put("/restaurants/:id/verification",
   mongoIdValidation("id"),
   [
@@ -396,26 +349,6 @@ router.put("/restaurants/:id/verification",
   ],
   auditSecurity('restaurant_verification_toggle', 'Toggled restaurant verification status', { severity: 'high', impactLevel: 'significant' }),
   toggleRestaurantVerification
-);
-
-// Reset vendor approval status to pending
-router.put("/approvals/vendor/:id/reset",
-  mongoIdValidation("id"),
-  [
-    body('reason').isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters and is required')
-  ],
-  auditSecurity('vendor_status_reset', 'Reset vendor approval status to pending', { severity: 'medium', impactLevel: 'moderate' }),
-  resetVendorApproval
-);
-
-// Reset restaurant approval status to pending
-router.put("/approvals/restaurant/:id/reset",
-  mongoIdValidation("id"),
-  [
-    body('reason').isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters and is required')
-  ],
-  auditSecurity('restaurant_status_reset', 'Reset restaurant approval status to pending', { severity: 'medium', impactLevel: 'moderate' }),
-  resetRestaurantApproval
 );
 
 // ================================

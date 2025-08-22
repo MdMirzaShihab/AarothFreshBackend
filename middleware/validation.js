@@ -367,31 +367,6 @@ const paginationValidation = [
   handleValidationErrors,
 ];
 
-/**
- * Approval action validation rules - Legacy support
- */
-const approvalValidation = [
-  body("approvalNotes")
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage("Approval notes cannot exceed 500 characters"),
-
-  handleValidationErrors,
-];
-
-/**
- * Rejection action validation rules - Legacy support
- */
-const rejectionValidation = [
-  body("rejectionReason")
-    .notEmpty()
-    .trim()
-    .isLength({ min: 10, max: 500 })
-    .withMessage("Rejection reason is required and must be between 10 and 500 characters"),
-
-  handleValidationErrors,
-];
 
 /**
  * Listing flagging validation rules
@@ -662,9 +637,7 @@ module.exports = {
   adminRestaurantManagerValidation,
   mongoIdValidation,
   paginationValidation,
-  // New admin feature validations
-  approvalValidation,
-  rejectionValidation,
+  // Admin feature validations
   flagListingValidation,
   vendorDeactivationValidation,
   settingsValidation,

@@ -8,6 +8,7 @@ const {
   getListing,
 } = require("../controllers/listingsController");
 const { protect, authorize } = require("../middleware/auth");
+const { requireVendorApproval } = require("../middleware/approval");
 const upload = require("../middleware/upload");
 const { uploadListingImages } = require("../middleware/upload");
 const { body } = require("express-validator");
@@ -52,6 +53,7 @@ router.get("/", authorize("restaurantOwner", "restaurantManager"), getListings);
 router.post(
   "/",
   authorize("vendor"),
+  requireVendorApproval("create listings"),
   ...uploadListingImages("images", 5), // <-- Use the new function
   listingValidation,
   createListing
@@ -79,6 +81,7 @@ router.get("/:id", getListing);
 router.put(
   "/:id",
   authorize("vendor"),
+  requireVendorApproval("update listings"),
   ...uploadListingImages("images", 5),
   [
     body("pricePerUnit")
@@ -103,6 +106,6 @@ router.put(
  * @desc    Delete a listing
  * @access  Private (Vendor who owns the listing)
  */
-router.delete("/:id", authorize("vendor"), deleteListing);
+router.delete("/:id", authorize("vendor"), requireVendorApproval("delete listings"), deleteListing);
 
 module.exports = router;
