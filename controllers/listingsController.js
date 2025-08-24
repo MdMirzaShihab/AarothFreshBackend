@@ -20,7 +20,20 @@ exports.createListing = async (req, res, next) => {
     // Check if vendor business is verified to create listings
     if (!canUserCreateListings(req.user)) {
       const businessName = req.user.vendorId?.businessName || 'your vendor business';
-      const statusMessage = `Your vendor business "${businessName}" is not verified. You cannot create listings until your business is verified by admin.`;
+      const verificationStatus = req.user.vendorId?.verificationStatus || 'pending';
+      const adminNotes = req.user.vendorId?.adminNotes;
+      
+      let statusMessage = `Your vendor business "${businessName}" is ${verificationStatus}.`;
+      
+      if (verificationStatus === 'rejected') {
+        statusMessage += adminNotes 
+          ? ` Admin feedback: "${adminNotes}". Please address the issues mentioned and resubmit your application.`
+          : ' Please review the issues mentioned by admin and resubmit your application.';
+      } else if (verificationStatus === 'pending') {
+        statusMessage += ' You cannot create listings until your business is verified by admin. Please wait for admin approval.';
+      }
+      
+      statusMessage += ' You cannot create listings until approved.';
       
       return next(new ErrorResponse(statusMessage, 403));
     }
@@ -115,7 +128,20 @@ exports.updateListing = async (req, res, next) => {
     // Check if vendor business is verified to modify listings
     if (!canUserCreateListings(req.user)) {
       const businessName = req.user.vendorId?.businessName || 'your vendor business';
-      const statusMessage = `Your vendor business "${businessName}" is not verified. You cannot modify listings until your business is verified by admin.`;
+      const verificationStatus = req.user.vendorId?.verificationStatus || 'pending';
+      const adminNotes = req.user.vendorId?.adminNotes;
+      
+      let statusMessage = `Your vendor business "${businessName}" is ${verificationStatus}.`;
+      
+      if (verificationStatus === 'rejected') {
+        statusMessage += adminNotes 
+          ? ` Admin feedback: "${adminNotes}". Please address the issues mentioned and resubmit your application.`
+          : ' Please review the issues mentioned by admin and resubmit your application.';
+      } else if (verificationStatus === 'pending') {
+        statusMessage += ' You cannot modify listings until your business is verified by admin. Please wait for admin approval.';
+      }
+      
+      statusMessage += ' You cannot modify listings until approved.';
       
       return next(new ErrorResponse(statusMessage, 403));
     }
@@ -164,7 +190,20 @@ exports.deleteListing = async (req, res, next) => {
     // Check if vendor business is verified to delete listings
     if (!canUserCreateListings(req.user)) {
       const businessName = req.user.vendorId?.businessName || 'your vendor business';
-      const statusMessage = `Your vendor business "${businessName}" is not verified. You cannot delete listings until your business is verified by admin.`;
+      const verificationStatus = req.user.vendorId?.verificationStatus || 'pending';
+      const adminNotes = req.user.vendorId?.adminNotes;
+      
+      let statusMessage = `Your vendor business "${businessName}" is ${verificationStatus}.`;
+      
+      if (verificationStatus === 'rejected') {
+        statusMessage += adminNotes 
+          ? ` Admin feedback: "${adminNotes}". Please address the issues mentioned and resubmit your application.`
+          : ' Please review the issues mentioned by admin and resubmit your application.';
+      } else if (verificationStatus === 'pending') {
+        statusMessage += ' You cannot delete listings until your business is verified by admin. Please wait for admin approval.';
+      }
+      
+      statusMessage += ' You cannot delete listings until approved.';
       
       return next(new ErrorResponse(statusMessage, 403));
     }

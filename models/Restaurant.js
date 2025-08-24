@@ -125,6 +125,12 @@ const RestaurantSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Three-state verification system
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -184,10 +190,12 @@ RestaurantSchema.virtual('orders', {
   justOne: false
 });
 
+
 // Indexes for better query performance
 RestaurantSchema.index({ 'address.coordinates': '2dsphere' });
 RestaurantSchema.index({ name: 'text', cuisineType: 'text' });
-RestaurantSchema.index({ isActive: 1, isVerified: 1 });
+RestaurantSchema.index({ isActive: 1, verificationStatus: 1 });
+RestaurantSchema.index({ verificationStatus: 1, statusUpdatedAt: -1 });
 RestaurantSchema.index({ email: 1 });
 RestaurantSchema.index({ isDeleted: 1, isActive: 1 });
 RestaurantSchema.index({ statusUpdatedBy: 1, statusUpdatedAt: -1 });

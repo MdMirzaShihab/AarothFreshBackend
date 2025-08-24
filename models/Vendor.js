@@ -111,6 +111,12 @@ const VendorSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Three-state verification system
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -180,10 +186,12 @@ VendorSchema.virtual('listings', {
   justOne: false
 });
 
+
 // Indexes for better query performance
 VendorSchema.index({ 'address.coordinates': '2dsphere' });
 VendorSchema.index({ businessName: 'text', specialties: 'text' });
-VendorSchema.index({ isActive: 1, isVerified: 1 });
+VendorSchema.index({ isActive: 1, verificationStatus: 1 });
+VendorSchema.index({ verificationStatus: 1, statusUpdatedAt: -1 });
 VendorSchema.index({ email: 1 });
 VendorSchema.index({ isDeleted: 1, isActive: 1 });
 VendorSchema.index({ performanceScore: -1 });

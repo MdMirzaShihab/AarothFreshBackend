@@ -213,7 +213,7 @@ exports.getPublicListing = async (req, res, next) => {
           select: 'name description'
         }
       })
-      .populate('vendorId', 'businessName phone address rating isVerified');
+      .populate('vendorId', 'businessName phone address rating verificationStatus');
 
     if (!listing) {
       return next(new ErrorResponse(`Listing not found with id of ${req.params.id}`, 404));
@@ -260,7 +260,7 @@ exports.getFeaturedListings = async (req, res, next) => {
           select: 'name'
         }
       })
-      .populate('vendorId', 'businessName rating isVerified')
+      .populate('vendorId', 'businessName rating verificationStatus')
       .select('productId vendorId pricing qualityGrade availability images createdAt rating featured')
       .sort({ createdAt: -1 }) // Newest featured first
       .skip(skip)

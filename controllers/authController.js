@@ -215,25 +215,28 @@ exports.getUserStatus = async (req, res, next) => {
 
     // Get business verification status and next steps
     const getBusinessStatusAndSteps = (user) => {
-      let isVerified = false;
+      let verificationStatus = 'pending';
       let businessType = '';
       let businessName = '';
       let verificationDate = null;
+      let adminNotes = null;
 
       if (user.role === 'vendor' && user.vendorId) {
-        isVerified = user.vendorId.isVerified;
+        verificationStatus = user.vendorId.verificationStatus || 'pending';
         businessType = 'vendor business';
         businessName = user.vendorId.businessName;
         verificationDate = user.vendorId.verificationDate;
+        adminNotes = user.vendorId.adminNotes;
       } else if (['restaurantOwner', 'restaurantManager'].includes(user.role) && user.restaurantId) {
-        isVerified = user.restaurantId.isVerified;
+        verificationStatus = user.restaurantId.verificationStatus || 'pending';
         businessType = 'restaurant';
         businessName = user.restaurantId.name;
         verificationDate = user.restaurantId.verificationDate;
+        adminNotes = user.restaurantId.adminNotes;
       }
 
       let nextSteps = [];
-      if (isVerified) {
+      if (verificationStatus === 'approved') {
         const roleSpecificSteps = {
           vendor: [
             'Your vendor business is verified',
@@ -255,7 +258,15 @@ exports.getUserStatus = async (req, res, next) => {
           ]
         };
         nextSteps = roleSpecificSteps[user.role] || ['You have full access to all platform features'];
-      } else {
+      } else if (verificationStatus === 'rejected') {
+        nextSteps = [
+          `Your ${businessType} verification was rejected`,
+          adminNotes ? `Admin feedback: ${adminNotes}` : 'Please review the issues mentioned by admin',
+          'Address all the issues mentioned in the feedback',
+          'Contact admin for clarification if needed',
+          'Resubmit your application after making required changes'
+        ];
+      } else { // pending
         nextSteps = [
           `Wait for admin verification of your ${businessType}`,
           'Ensure all required business documents are uploaded',
@@ -266,10 +277,11 @@ exports.getUserStatus = async (req, res, next) => {
       }
 
       return {
-        isVerified,
+        verificationStatus,
         businessType,
         businessName,
         verificationDate,
+        adminNotes,
         nextSteps
       };
     };
@@ -288,23 +300,24 @@ exports.getUserStatus = async (req, res, next) => {
         isActive: user.isActive
       },
       businessVerification: {
-        isVerified: businessStatus.isVerified,
+        verificationStatus: businessStatus.verificationStatus,
         businessType: businessStatus.businessType,
         businessName: businessStatus.businessName,
-        verificationDate: businessStatus.verificationDate
+        verificationDate: businessStatus.verificationDate,
+        adminNotes: businessStatus.adminNotes
       },
       capabilities: {
         canCreateListings: canUserCreateListings(user),
         canPlaceOrders: canUserPlaceOrders(user),
         canManageRestaurant: canUserManageRestaurant(user),
-        canAccessDashboard: businessStatus.isVerified || user.role === 'admin',
+        canAccessDashboard: businessStatus.verificationStatus === 'approved' || user.role === 'admin',
         canUpdateProfile: true // Everyone can update basic profile
       },
       restrictions: {
-        hasRestrictions: !businessStatus.isVerified && user.role !== 'admin',
-        reason: businessStatus.isVerified 
+        hasRestrictions: businessStatus.verificationStatus !== 'approved' && user.role !== 'admin',
+        reason: businessStatus.verificationStatus === 'approved' 
           ? null
-          : `${businessStatus.businessType} "${businessStatus.businessName}" is not verified`
+          : `${businessStatus.businessType} "${businessStatus.businessName}" is ${businessStatus.verificationStatus}`
       },
       nextSteps: businessStatus.nextSteps,
       businessInfo: {}
@@ -316,8 +329,9 @@ exports.getUserStatus = async (req, res, next) => {
         id: user.vendorId._id,
         businessName: user.vendorId.businessName,
         tradeLicenseNo: user.vendorId.tradeLicenseNo,
-        isVerified: user.vendorId.isVerified,
+        verificationStatus: user.vendorId.verificationStatus || 'pending',
         verificationDate: user.vendorId.verificationDate,
+        adminNotes: user.vendorId.adminNotes,
         isActive: user.vendorId.isActive,
         address: user.vendorId.address
       };
@@ -328,8 +342,9 @@ exports.getUserStatus = async (req, res, next) => {
         id: user.restaurantId._id,
         name: user.restaurantId.name,
         tradeLicenseNo: user.restaurantId.tradeLicenseNo,
-        isVerified: user.restaurantId.isVerified,
+        verificationStatus: user.restaurantId.verificationStatus || 'pending',
         verificationDate: user.restaurantId.verificationDate,
+        adminNotes: user.restaurantId.adminNotes,
         isActive: user.restaurantId.isActive,
         address: user.restaurantId.address
       };

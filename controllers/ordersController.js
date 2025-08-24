@@ -20,7 +20,20 @@ exports.placeOrder = async (req, res, next) => {
     // Check if restaurant business is verified to place orders
     if (!canUserPlaceOrders(req.user)) {
       const restaurantName = req.user.restaurantId?.name || 'your restaurant';
-      const statusMessage = `Your restaurant "${restaurantName}" is not verified. You cannot place orders until your restaurant is verified by admin.`;
+      const verificationStatus = req.user.restaurantId?.verificationStatus || 'pending';
+      const adminNotes = req.user.restaurantId?.adminNotes;
+      
+      let statusMessage = `Your restaurant "${restaurantName}" is ${verificationStatus}.`;
+      
+      if (verificationStatus === 'rejected') {
+        statusMessage += adminNotes 
+          ? ` Admin feedback: "${adminNotes}". Please address the issues mentioned and resubmit your application.`
+          : ' Please review the issues mentioned by admin and resubmit your application.';
+      } else if (verificationStatus === 'pending') {
+        statusMessage += ' You cannot place orders until your restaurant is verified by admin. Please wait for admin approval.';
+      }
+      
+      statusMessage += ' You cannot place orders until approved.';
       
       return next(new ErrorResponse(statusMessage, 403));
     }

@@ -143,6 +143,8 @@ router
 // Vendor routes
 router.route("/vendors").get(getAllVendors);
 router.route("/vendors/pending").get(getPendingVendors);
+router.route("/vendors/rejected").get(getAllVendors); // Filtered by rejected status
+router.route("/vendors/approved").get(getAllVendors); // Filtered by approved status
 
 // Vendor deactivation
 router.put("/vendors/:id/deactivate",
@@ -160,6 +162,8 @@ router.put("/vendors/:id/deactivate",
 // Restaurant routes
 router.route("/restaurants").get(getAllRestaurants);
 router.route("/restaurants/pending").get(getPendingRestaurants);
+router.route("/restaurants/rejected").get(getAllRestaurants); // Filtered by rejected status
+router.route("/restaurants/approved").get(getAllRestaurants); // Filtered by approved status
 
 // Restaurant owner and manager creation
 router.post("/restaurant-owners", 
@@ -333,7 +337,7 @@ router.post("/listings/bulk",
 router.put("/vendors/:id/verification",
   mongoIdValidation("id"),
   [
-    body('isVerified').isBoolean().withMessage('isVerified must be a boolean'),
+    body('status').isIn(['pending', 'approved', 'rejected']).withMessage('status must be one of: pending, approved, rejected'),
     body('reason').optional().isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters')
   ],
   auditSecurity('vendor_verification_toggle', 'Toggled vendor verification status', { severity: 'high', impactLevel: 'significant' }),
@@ -344,7 +348,7 @@ router.put("/vendors/:id/verification",
 router.put("/restaurants/:id/verification",
   mongoIdValidation("id"),
   [
-    body('isVerified').isBoolean().withMessage('isVerified must be a boolean'),
+    body('status').isIn(['pending', 'approved', 'rejected']).withMessage('status must be one of: pending, approved, rejected'),
     body('reason').optional().isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters')
   ],
   auditSecurity('restaurant_verification_toggle', 'Toggled restaurant verification status', { severity: 'high', impactLevel: 'significant' }),

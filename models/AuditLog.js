@@ -36,7 +36,9 @@ const AuditLogSchema = new mongoose.Schema({
       // Order management
       'order_approved', 'order_cancelled', 'order_status_changed',
       // System management
-      'settings_updated', 'bulk_operation', 'system_backup', 'system_maintenance', 'analytics_viewed'
+      'settings_updated', 'bulk_operation', 'system_backup', 'system_maintenance', 'analytics_viewed',
+      // Security and monitoring
+      'high_frequency_access', 'security_alert', 'suspicious_activity', 'rate_limit_exceeded'
     ]
   },
   

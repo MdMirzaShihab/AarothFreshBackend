@@ -221,8 +221,8 @@ exports.getAllUsers = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const users = await User.find(query)
-      .populate("vendorId", "businessName isVerified")
-      .populate("restaurantId", "name isVerified")
+      .populate("vendorId", "businessName verificationStatus")
+      .populate("restaurantId", "name verificationStatus")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -400,9 +400,19 @@ exports.getAllVendors = async (req, res, next) => {
   try {
     let query = {};
 
-    // Filter by verification status
-    if (req.query.isVerified !== undefined) {
-      query.isVerified = req.query.isVerified === "true";
+    // Handle route-based filtering (rejected, approved, pending)
+    const routePath = req.route.path;
+    if (routePath.includes('/rejected')) {
+      query.verificationStatus = 'rejected';
+    } else if (routePath.includes('/approved')) {
+      query.verificationStatus = 'approved';
+    } else if (routePath.includes('/pending')) {
+      query.verificationStatus = 'pending';
+    }
+
+    // Filter by verification status (three-state system)
+    if (req.query.verificationStatus) {
+      query.verificationStatus = req.query.verificationStatus;
     }
 
     // Search by business name
@@ -443,7 +453,7 @@ exports.getAllVendors = async (req, res, next) => {
  */
 exports.getPendingVendors = async (req, res, next) => {
   try {
-    const vendors = await Vendor.find({ isVerified: false })
+    const vendors = await Vendor.find({ verificationStatus: 'pending' })
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
 
@@ -553,9 +563,19 @@ exports.getAllRestaurants = async (req, res, next) => {
   try {
     let query = {};
 
-    // Filter by verification status
-    if (req.query.isVerified !== undefined) {
-      query.isVerified = req.query.isVerified === "true";
+    // Handle route-based filtering (rejected, approved, pending)
+    const routePath = req.route.path;
+    if (routePath.includes('/rejected')) {
+      query.verificationStatus = 'rejected';
+    } else if (routePath.includes('/approved')) {
+      query.verificationStatus = 'approved';
+    } else if (routePath.includes('/pending')) {
+      query.verificationStatus = 'pending';
+    }
+
+    // Filter by verification status (three-state system)
+    if (req.query.verificationStatus) {
+      query.verificationStatus = req.query.verificationStatus;
     }
 
     // Search by restaurant name
@@ -597,7 +617,7 @@ exports.getAllRestaurants = async (req, res, next) => {
  */
 exports.getPendingRestaurants = async (req, res, next) => {
   try {
-    const restaurants = await Restaurant.find({ isVerified: false })
+    const restaurants = await Restaurant.find({ verificationStatus: 'pending' })
       .populate('createdBy', 'name email')
       .populate('managers', 'name email')
       .sort({ createdAt: -1 });
@@ -2036,15 +2056,22 @@ exports.toggleVendorVerification = async (req, res, next) => {
   const session = await mongoose.startSession();
   
   try {
-    const { isVerified, reason } = req.body;
+    const { reason, status } = req.body;
 
-    if (typeof isVerified !== 'boolean') {
-      return next(new ErrorResponse('isVerified field must be a boolean', 400));
+    // Validate status parameter
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+      return next(new ErrorResponse('Status must be one of: pending, approved, rejected', 400));
+    }
+    
+    const verificationStatus = status;
+    const finalIsVerified = (status === 'approved');
+
+    if ((verificationStatus === 'rejected' || !finalIsVerified) && !reason) {
+      return next(new ErrorResponse('Reason is required when rejecting or revoking verification', 400));
     }
 
-    if (!isVerified && !reason) {
-      return next(new ErrorResponse('Reason is required when revoking verification', 400));
-    }
+    // Pre-calculate affected users count outside transaction for better performance
+    const affectedUsersCount = await User.countDocuments({ vendorId: req.params.id });
 
     const result = await session.withTransaction(async () => {
       const vendor = await Vendor.findById(req.params.id).session(session);
@@ -2052,49 +2079,72 @@ exports.toggleVendorVerification = async (req, res, next) => {
         throw new ErrorResponse(`Vendor not found with id of ${req.params.id}`, 404);
       }
 
-      const oldStatus = vendor.isVerified;
+      const oldVerificationStatus = vendor.verificationStatus;
       
-      // Update vendor verification
-      vendor.isVerified = isVerified;
-      vendor.verificationDate = isVerified ? new Date() : null;
+      // Update vendor verification with three-state system
+      vendor.verificationStatus = verificationStatus;
+      vendor.verificationDate = (verificationStatus === 'approved') ? new Date() : null;
       vendor.statusUpdatedBy = req.user.id;
       vendor.statusUpdatedAt = new Date();
       vendor.adminNotes = reason;
       await vendor.save({ session });
 
-      // Log the action
+      // Log the action with session
+      const actionMap = {
+        'approved': 'vendor_verified',
+        'rejected': 'vendor_verification_revoked',
+        'pending': 'vendor_status_reset'
+      };
+      
+      const descriptionMap = {
+        'approved': `Verified vendor: ${vendor.businessName}`,
+        'rejected': `Rejected vendor verification: ${vendor.businessName}`,
+        'pending': `Reset vendor to pending: ${vendor.businessName}`
+      };
+      
       await AuditLog.logAction({
         userId: req.user.id,
         userRole: req.user.role,
-        action: isVerified ? 'vendor_verified' : 'vendor_verification_revoked',
+        action: actionMap[verificationStatus],
         entityType: 'Vendor',
         entityId: vendor._id,
-        description: `${isVerified ? 'Verified' : 'Revoked verification for'} vendor: ${vendor.businessName}`,
+        description: descriptionMap[verificationStatus],
         reason,
         severity: 'high',
         impactLevel: 'significant',
         metadata: {
-          oldStatus,
-          newStatus: isVerified,
-          affectedUsers: await User.countDocuments({ vendorId: vendor._id })
+          oldVerificationStatus,
+          newVerificationStatus: verificationStatus,
+          affectedUsers: affectedUsersCount
         }
       }, session);
 
       return vendor;
     });
 
-    await session.commitTransaction();
-
+    // Move population query outside transaction for better performance
     const populatedVendor = await Vendor.findById(result._id)
       .populate('statusUpdatedBy', 'name email');
 
+    const messageMap = {
+      'approved': 'Vendor verified successfully',
+      'rejected': 'Vendor verification rejected',
+      'pending': 'Vendor status set to pending'
+    };
+
     res.status(200).json({
       success: true,
-      message: `Vendor verification ${isVerified ? 'enabled' : 'revoked'} successfully`,
+      message: messageMap[verificationStatus],
       data: populatedVendor
     });
   } catch (err) {
-    await session.abortTransaction();
+    // withTransaction handles abort automatically, only handle specific error cases
+    if (err.name === 'ValidationError') {
+      return next(new ErrorResponse('Validation failed', 400));
+    }
+    if (err.code === 11000) {
+      return next(new ErrorResponse('Duplicate key error', 409));
+    }
     next(err);
   } finally {
     session.endSession();
@@ -2110,15 +2160,22 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
   const session = await mongoose.startSession();
   
   try {
-    const { isVerified, reason } = req.body;
+    const { reason, status } = req.body;
 
-    if (typeof isVerified !== 'boolean') {
-      return next(new ErrorResponse('isVerified field must be a boolean', 400));
+    // Validate status parameter
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+      return next(new ErrorResponse('Status must be one of: pending, approved, rejected', 400));
+    }
+    
+    const verificationStatus = status;
+    const finalIsVerified = (status === 'approved');
+
+    if ((verificationStatus === 'rejected' || !finalIsVerified) && !reason) {
+      return next(new ErrorResponse('Reason is required when rejecting or revoking verification', 400));
     }
 
-    if (!isVerified && !reason) {
-      return next(new ErrorResponse('Reason is required when revoking verification', 400));
-    }
+    // Pre-calculate affected users count outside transaction for better performance
+    const affectedUsersCount = await User.countDocuments({ restaurantId: req.params.id });
 
     const result = await session.withTransaction(async () => {
       const restaurant = await Restaurant.findById(req.params.id).session(session);
@@ -2126,50 +2183,77 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
         throw new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404);
       }
 
-      const oldStatus = restaurant.isVerified;
+      const oldVerificationStatus = restaurant.verificationStatus;
       
-      // Update restaurant verification
-      restaurant.isVerified = isVerified;
-      restaurant.verificationDate = isVerified ? new Date() : null;
+      // Update restaurant verification with three-state system
+      restaurant.verificationStatus = verificationStatus;
+      restaurant.verificationDate = (verificationStatus === 'approved') ? new Date() : null;
       restaurant.statusUpdatedBy = req.user.id;
       restaurant.statusUpdatedAt = new Date();
       restaurant.adminNotes = reason;
       await restaurant.save({ session });
 
-      // Log the action
+      // Log the action with session
+      const actionMap = {
+        'approved': 'restaurant_verified',
+        'rejected': 'restaurant_verification_revoked',
+        'pending': 'restaurant_status_reset'
+      };
+      
+      const descriptionMap = {
+        'approved': `Verified restaurant: ${restaurant.name}`,
+        'rejected': `Rejected restaurant verification: ${restaurant.name}`,
+        'pending': `Reset restaurant to pending: ${restaurant.name}`
+      };
+      
       await AuditLog.logAction({
         userId: req.user.id,
         userRole: req.user.role,
-        action: isVerified ? 'restaurant_verified' : 'restaurant_verification_revoked',
+        action: actionMap[verificationStatus],
         entityType: 'Restaurant',
         entityId: restaurant._id,
-        description: `${isVerified ? 'Verified' : 'Revoked verification for'} restaurant: ${restaurant.name}`,
+        description: descriptionMap[verificationStatus],
         reason,
         severity: 'high',
         impactLevel: 'significant',
         metadata: {
-          oldStatus,
-          newStatus: isVerified,
-          affectedUsers: await User.countDocuments({ restaurantId: restaurant._id })
+          oldVerificationStatus,
+          newVerificationStatus: verificationStatus,
+          affectedUsers: affectedUsersCount
         }
       }, session);
 
       return restaurant;
     });
 
-    await session.commitTransaction();
-
+    // Move population queries outside transaction for better performance
     const populatedRestaurant = await Restaurant.findById(result._id)
       .populate('statusUpdatedBy', 'name email')
       .populate('managers', 'name email');
 
+    // Create appropriate response message based on verification status
+    const messageMap = {
+      'approved': 'Restaurant verification approved successfully',
+      'rejected': 'Restaurant verification rejected successfully', 
+      'pending': 'Restaurant status reset to pending successfully'
+    };
+    
+    const responseMessage = messageMap[result.verificationStatus] || 
+      `Restaurant verification status updated to ${result.verificationStatus} successfully`;
+
     res.status(200).json({
       success: true,
-      message: `Restaurant verification ${isVerified ? 'enabled' : 'revoked'} successfully`,
+      message: responseMessage,
       data: populatedRestaurant
     });
   } catch (err) {
-    await session.abortTransaction();
+    // withTransaction handles abort automatically, only handle specific error cases
+    if (err.name === 'ValidationError') {
+      return next(new ErrorResponse('Validation failed', 400));
+    }
+    if (err.code === 11000) {
+      return next(new ErrorResponse('Duplicate key error', 409));
+    }
     next(err);
   } finally {
     session.endSession();
