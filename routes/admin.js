@@ -18,8 +18,6 @@ const {
   getAllVendors,
   getAllRestaurants,
   getDashboardOverview,
-  getPendingVendors,
-  getPendingRestaurants,
   createRestaurantOwner,
   createRestaurantManager,
   // Business Entity Verification Management
@@ -140,11 +138,9 @@ router
 // VENDOR MANAGEMENT  
 // ================================
 
-// Vendor routes
+// Unified vendor route with query parameter filtering
+// Query params: ?status=pending|approved|rejected&page=1&limit=20&search=businessName
 router.route("/vendors").get(getAllVendors);
-router.route("/vendors/pending").get(getPendingVendors);
-router.route("/vendors/rejected").get(getAllVendors); // Filtered by rejected status
-router.route("/vendors/approved").get(getAllVendors); // Filtered by approved status
 
 // Vendor deactivation
 router.put("/vendors/:id/deactivate",
@@ -159,11 +155,9 @@ router.put("/vendors/:id/deactivate",
 // RESTAURANT MANAGEMENT
 // ================================
 
-// Restaurant routes
+// Unified restaurant route with query parameter filtering
+// Query params: ?status=pending|approved|rejected&page=1&limit=20&search=name
 router.route("/restaurants").get(getAllRestaurants);
-router.route("/restaurants/pending").get(getPendingRestaurants);
-router.route("/restaurants/rejected").get(getAllRestaurants); // Filtered by rejected status
-router.route("/restaurants/approved").get(getAllRestaurants); // Filtered by approved status
 
 // Restaurant owner and manager creation
 router.post("/restaurant-owners", 

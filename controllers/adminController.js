@@ -392,75 +392,80 @@ exports.deleteUser = async (req, res, next) => {
 // ================================
 
 /**
- * @desc    Get all vendors
- * @route   GET /api/v1/admin/vendors
+ * @desc    Get all vendors with filtering
+ * @route   GET /api/v1/admin/vendors?status=pending|approved|rejected&page=1&limit=20&search=businessName
  * @access  Private/Admin
  */
 exports.getAllVendors = async (req, res, next) => {
   try {
-    let query = {};
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
 
-    // Handle route-based filtering (rejected, approved, pending)
-    const routePath = req.route.path;
-    if (routePath.includes('/rejected')) {
-      query.verificationStatus = 'rejected';
-    } else if (routePath.includes('/approved')) {
-      query.verificationStatus = 'approved';
-    } else if (routePath.includes('/pending')) {
-      query.verificationStatus = 'pending';
-    }
+    // Build query
+    let query = { isDeleted: { $ne: true } };
 
     // Filter by verification status (three-state system)
-    if (req.query.verificationStatus) {
-      query.verificationStatus = req.query.verificationStatus;
+    if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+      query.verificationStatus = status;
     }
 
     // Search by business name
-    if (req.query.search) {
-      query.businessName = { $regex: req.query.search, $options: "i" };
+    if (search) {
+      query.businessName = { $regex: search, $options: "i" };
     }
 
     // Pagination
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
     const vendors = await Vendor.find(query)
       .populate("createdBy", "name email")
-      .sort({ createdAt: -1 })
+      .sort(sortOptions)
       .skip(skip)
-      .limit(limit);
+      .limit(parseInt(limit));
 
     const total = await Vendor.countDocuments(query);
+
+    // Calculate statistics
+    const stats = await Vendor.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $group: {
+          _id: null,
+          totalVendors: { $sum: 1 },
+          pendingVendors: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'pending'] }, 1, 0] }
+          },
+          approvedVendors: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'approved'] }, 1, 0] }
+          },
+          rejectedVendors: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'rejected'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
 
     res.status(200).json({
       success: true,
       count: vendors.length,
       total,
-      page,
-      pages: Math.ceil(total / limit),
+      page: parseInt(page),
+      pages: Math.ceil(total / parseInt(limit)),
+      stats: stats[0] || {
+        totalVendors: 0,
+        pendingVendors: 0,
+        approvedVendors: 0,
+        rejectedVendors: 0
+      },
       data: vendors,
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * @desc    Get all vendors pending verification
- * @route   GET /api/v1/admin/vendors/pending
- * @access  Private/Admin
- */
-exports.getPendingVendors = async (req, res, next) => {
-  try {
-    const vendors = await Vendor.find({ verificationStatus: 'pending' })
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: vendors.length,
-      data: vendors
     });
   } catch (err) {
     next(err);
@@ -555,77 +560,81 @@ exports.deactivateVendor = async (req, res, next) => {
 // ================================
 
 /**
- * @desc    Get all restaurants
- * @route   GET /api/v1/admin/restaurants
+ * @desc    Get all restaurants with filtering
+ * @route   GET /api/v1/admin/restaurants?status=pending|approved|rejected&page=1&limit=20&search=name
  * @access  Private/Admin
  */
 exports.getAllRestaurants = async (req, res, next) => {
   try {
-    let query = {};
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
 
-    // Handle route-based filtering (rejected, approved, pending)
-    const routePath = req.route.path;
-    if (routePath.includes('/rejected')) {
-      query.verificationStatus = 'rejected';
-    } else if (routePath.includes('/approved')) {
-      query.verificationStatus = 'approved';
-    } else if (routePath.includes('/pending')) {
-      query.verificationStatus = 'pending';
-    }
+    // Build query
+    let query = { isDeleted: { $ne: true } };
 
     // Filter by verification status (three-state system)
-    if (req.query.verificationStatus) {
-      query.verificationStatus = req.query.verificationStatus;
+    if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+      query.verificationStatus = status;
     }
 
     // Search by restaurant name
-    if (req.query.search) {
-      query.name = { $regex: req.query.search, $options: "i" };
+    if (search) {
+      query.name = { $regex: search, $options: "i" };
     }
 
     // Pagination
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
     const restaurants = await Restaurant.find(query)
       .populate("createdBy", "name email")
       .populate("managers", "name email")
-      .sort({ createdAt: -1 })
+      .sort(sortOptions)
       .skip(skip)
-      .limit(limit);
+      .limit(parseInt(limit));
 
     const total = await Restaurant.countDocuments(query);
+
+    // Calculate statistics
+    const stats = await Restaurant.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $group: {
+          _id: null,
+          totalRestaurants: { $sum: 1 },
+          pendingRestaurants: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'pending'] }, 1, 0] }
+          },
+          approvedRestaurants: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'approved'] }, 1, 0] }
+          },
+          rejectedRestaurants: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'rejected'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
 
     res.status(200).json({
       success: true,
       count: restaurants.length,
       total,
-      page,
-      pages: Math.ceil(total / limit),
+      page: parseInt(page),
+      pages: Math.ceil(total / parseInt(limit)),
+      stats: stats[0] || {
+        totalRestaurants: 0,
+        pendingRestaurants: 0,
+        approvedRestaurants: 0,
+        rejectedRestaurants: 0
+      },
       data: restaurants,
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * @desc    Get all restaurants pending verification
- * @route   GET /api/v1/admin/restaurants/pending
- * @access  Private/Admin
- */
-exports.getPendingRestaurants = async (req, res, next) => {
-  try {
-    const restaurants = await Restaurant.find({ verificationStatus: 'pending' })
-      .populate('createdBy', 'name email')
-      .populate('managers', 'name email')
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: restaurants.length,
-      data: restaurants
     });
   } catch (err) {
     next(err);
