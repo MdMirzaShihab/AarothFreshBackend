@@ -223,6 +223,139 @@ Comprehensive API endpoint reference for the Aaroth Fresh B2B marketplace backen
 }
 ```
 
+### Get Single Vendor
+**GET** `/api/v1/admin/vendors/{id}`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "data": {
+    "vendor": {
+      "id": "vendor_id",
+      "businessName": "Fresh Farm Co",
+      "verificationStatus": "approved",
+      "createdBy": {
+        "name": "John Smith",
+        "email": "john@freshfarm.com"
+      },
+      "businessAddress": {
+        "street": "123 Farm Road",
+        "city": "Dhaka"
+      }
+    },
+    "recentOrders": [
+      {
+        "id": "order_id",
+        "status": "completed",
+        "totalAmount": 250.00,
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ],
+    "orderStats": {
+      "totalOrders": 45,
+      "totalAmount": 5000.00,
+      "activeOrders": 2,
+      "completedOrders": 43
+    },
+    "listingStats": {
+      "totalListings": 12,
+      "activeListings": 10,
+      "featuredListings": 3,
+      "inactiveListings": 2
+    }
+  }
+}
+```
+
+### Update Vendor
+**PUT** `/api/v1/admin/vendors/{id}`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Request Body**:
+```json
+{
+  "businessName": "Updated Farm Co",
+  "email": "newemail@farm.com",
+  "phone": "+8801234567890",
+  "businessAddress": {
+    "street": "456 New Farm Road",
+    "city": "Dhaka",
+    "area": "Gulshan"
+  },
+  "tradeLicenseNo": "VL123456789"
+}
+```
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "message": "Vendor updated successfully",
+  "data": {
+    "id": "vendor_id",
+    "businessName": "Updated Farm Co",
+    "email": "newemail@farm.com",
+    "updatedBy": {
+      "name": "Admin Name",
+      "email": "admin@aarothfresh.com"
+    }
+  }
+}
+```
+
+### Deactivate Vendor
+**PUT** `/api/v1/admin/vendors/{id}/deactivate`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Request Body**:
+```json
+{
+  "reason": "Violation of terms and conditions"
+}
+```
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "message": "Vendor deactivated successfully",
+  "data": {
+    "id": "vendor_id",
+    "businessName": "Vendor Name",
+    "isActive": false,
+    "adminNotes": "Violation of terms and conditions"
+  }
+}
+```
+
+### Delete Vendor (Soft Delete)
+**DELETE** `/api/v1/admin/vendors/{id}/safe-delete`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Request Body**:
+```json
+{
+  "reason": "Business permanently closed"
+}
+```
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "message": "Vendor deleted successfully",
+  "data": {
+    "deletedId": "vendor_id"
+  }
+}
+```
+
 ### Update Vendor Verification
 **PUT** `/api/v1/admin/vendors/{id}/verification`
 
@@ -281,6 +414,277 @@ Comprehensive API endpoint reference for the Aaroth Fresh B2B marketplace backen
       "email": "admin@aarothfresh.com"
     },
     "adminNotes": "Trade license documents not clear - please resubmit"
+  }
+}
+```
+
+### Get Single Restaurant 
+**GET** `/api/v1/admin/restaurants/{id}`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "data": {
+    "restaurant": {
+      "id": "restaurant_id",
+      "name": "Green Restaurant",
+      "verificationStatus": "approved",
+      "createdBy": {
+        "name": "Jane Doe",
+        "email": "jane@greenrest.com"
+      },
+      "managers": [
+        {
+          "name": "Manager Name",
+          "email": "manager@greenrest.com"
+        }
+      ]
+    },
+    "recentOrders": [
+      {
+        "id": "order_id",
+        "status": "completed",
+        "totalAmount": 150.00,
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ],
+    "orderStats": {
+      "totalOrders": 25,
+      "totalAmount": 2500.00,
+      "activeOrders": 3,
+      "completedOrders": 22
+    }
+  }
+}
+```
+
+### Update Restaurant
+**PUT** `/api/v1/admin/restaurants/{id}`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Request Body**:
+```json
+{
+  "name": "Updated Restaurant Name",
+  "email": "newemail@restaurant.com",
+  "phone": "+8801234567890",
+  "address": {
+    "street": "456 New Street",
+    "city": "Dhaka",
+    "area": "Gulshan"
+  },
+  "tradeLicenseNo": "TL123456789"
+}
+```
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "message": "Restaurant updated successfully",
+  "data": {
+    "id": "restaurant_id",
+    "name": "Updated Restaurant Name",
+    "email": "newemail@restaurant.com",
+    "updatedBy": {
+      "name": "Admin Name",
+      "email": "admin@aarothfresh.com"
+    }
+  }
+}
+```
+
+### Deactivate Restaurant
+**PUT** `/api/v1/admin/restaurants/{id}/deactivate`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Request Body**:
+```json
+{
+  "reason": "Violation of terms and conditions"
+}
+```
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "message": "Restaurant deactivated successfully",
+  "data": {
+    "id": "restaurant_id",
+    "name": "Restaurant Name",
+    "isActive": false,
+    "adminNotes": "Violation of terms and conditions"
+  }
+}
+```
+
+### Delete Restaurant (Soft Delete)
+**DELETE** `/api/v1/admin/restaurants/{id}/safe-delete`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Request Body**:
+```json
+{
+  "reason": "Business permanently closed"
+}
+```
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "message": "Restaurant deleted successfully",
+  "data": {
+    "deletedId": "restaurant_id"
+  }
+}
+```
+
+## Admin Performance Monitoring (`/api/v1/admin/performance`)
+
+### Get Performance Dashboard
+**GET** `/api/v1/admin/performance/dashboard`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Query Parameters**:
+- `period`: Period type (`daily`, `weekly`, `monthly` - default: `monthly`)
+- `adminId`: Filter by specific admin (optional)
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "data": {
+    "period": "2024-01",
+    "periodType": "monthly",
+    "overview": {
+      "totalAdmins": 5,
+      "totalActions": 250,
+      "avgResponseTime": 8.5,
+      "avgApprovalRate": 85.2,
+      "avgSLACompliance": 92.1,
+      "totalSLAViolations": 12,
+      "highPerformers": 3
+    },
+    "currentMetrics": [
+      {
+        "adminId": {
+          "name": "Admin Name",
+          "email": "admin@aarothfresh.com"
+        },
+        "metrics": {
+          "totalActions": 45,
+          "approvals": 38,
+          "rejections": 7,
+          "approvalRate": 84.4,
+          "avgResponseTime": 6.2
+        },
+        "performanceGrade": {
+          "overall": "A",
+          "responseTime": "A",
+          "slaCompliance": "B+",
+          "qualityScore": "A"
+        }
+      }
+    ],
+    "topPerformers": [],
+    "performanceDistribution": {
+      "excellent": 2,
+      "good": 2,
+      "average": 1,
+      "poor": 0
+    },
+    "trendData": []
+  }
+}
+```
+
+### Get SLA Violations
+**GET** `/api/v1/admin/performance/sla-violations`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Query Parameters**:
+- `adminId`: Filter by admin (optional)
+- `entityType`: Filter by entity type (`vendor`, `restaurant`, etc.)
+- `violationType`: Filter by violation type
+- `startDate`: Start date (ISO 8601)
+- `endDate`: End date (ISO 8601)
+- `page`: Page number (default: 1)
+- `limit`: Items per page (default: 50)
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "count": 10,
+  "total": 25,
+  "page": 1,
+  "pages": 3,
+  "stats": {
+    "totalViolations": 25
+  },
+  "data": [
+    {
+      "adminName": "Admin Name",
+      "violation": {
+        "entityType": "vendor",
+        "entityId": "vendor_id",
+        "submittedAt": "2024-01-01T00:00:00.000Z",
+        "actionTakenAt": "2024-01-01T12:00:00.000Z",
+        "responseTime": 12.5,
+        "slaTarget": 8.0,
+        "violationType": "late_approval",
+        "severityLevel": "medium"
+      }
+    }
+  ]
+}
+```
+
+### Generate Performance Report
+**POST** `/api/v1/admin/performance/generate-report`
+
+**Headers**: `Authorization: Bearer {admin_token}`
+
+**Request Body**:
+```json
+{
+  "reportType": "comprehensive",
+  "period": "monthly",
+  "startDate": "2024-01-01",
+  "endDate": "2024-01-31",
+  "adminIds": ["admin_id_1", "admin_id_2"],
+  "includeCharts": false
+}
+```
+
+**Response (200)**:
+```json
+{
+  "success": true,
+  "message": "Performance report generated successfully",
+  "data": {
+    "reportType": "comprehensive",
+    "period": "monthly",
+    "dateRange": {
+      "startDate": "2024-01-01",
+      "endDate": "2024-01-31"
+    },
+    "generatedAt": "2024-02-01T00:00:00.000Z",
+    "generatedBy": "admin_id",
+    "metrics": [],
+    "violations": [],
+    "trends": [],
+    "teamComparison": []
   }
 }
 ```

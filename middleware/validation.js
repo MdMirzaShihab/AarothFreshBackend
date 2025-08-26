@@ -388,19 +388,6 @@ const flagListingValidation = [
 ];
 
 /**
- * Vendor deactivation validation rules
- */
-const vendorDeactivationValidation = [
-  body("reason")
-    .notEmpty()
-    .trim()
-    .isLength({ min: 10, max: 500 })
-    .withMessage("Deactivation reason is required and must be between 10 and 500 characters"),
-
-  handleValidationErrors,
-];
-
-/**
  * Settings validation rules
  */
 const settingsValidation = [
@@ -551,51 +538,6 @@ const adminListingFlagValidation = [
 ];
 
 /**
- * Admin bulk listing operations validation
- */
-const adminListingBulkValidation = [
-  body("listingIds")
-    .isArray({ min: 1, max: 50 })
-    .withMessage("Listing IDs array is required and must contain 1-50 items"),
-
-  body("listingIds.*")
-    .isMongoId()
-    .withMessage("Each listing ID must be a valid MongoDB ObjectId"),
-
-  body("operation")
-    .notEmpty()
-    .isIn(['updateStatus', 'toggleFeatured', 'updateFlag', 'softDelete'])
-    .withMessage("Operation must be one of: updateStatus, toggleFeatured, updateFlag, softDelete"),
-
-  // Conditional validation for different operations
-  body("operationData.status")
-    .if(body("operation").equals("updateStatus"))
-    .notEmpty()
-    .isIn(['active', 'inactive', 'out_of_stock', 'discontinued'])
-    .withMessage("Status is required for updateStatus operation"),
-
-  body("operationData.isFlagged")
-    .if(body("operation").equals("updateFlag"))
-    .isBoolean()
-    .withMessage("isFlagged is required for updateFlag operation"),
-
-  body("operationData.flagReason")
-    .if(body("operation").equals("updateFlag"))
-    .if(body("operationData.isFlagged").equals(true))
-    .notEmpty()
-    .isIn(['inappropriate_content', 'misleading_information', 'quality_issues', 'pricing_violation', 'spam', 'other'])
-    .withMessage("Flag reason is required when flagging listings"),
-
-  body("reason")
-    .optional()
-    .trim()
-    .isLength({ max: 1000 })
-    .withMessage("Reason cannot exceed 1000 characters"),
-
-  handleValidationErrors,
-];
-
-/**
  * Category availability validation (flag system)
  */
 const categoryAvailabilityValidation = [
@@ -638,16 +580,12 @@ module.exports = {
   mongoIdValidation,
   paginationValidation,
   // Admin feature validations
-  flagListingValidation,
-  vendorDeactivationValidation,
   settingsValidation,
   bulkOperationValidation,
   dateRangeValidation,
   analyticsValidation,
   // Enhanced listing management validations
-  adminListingStatusValidation,
   adminListingFlagValidation,
-  adminListingBulkValidation,
   // Enhanced category management validations
   categoryAvailabilityValidation,
 };

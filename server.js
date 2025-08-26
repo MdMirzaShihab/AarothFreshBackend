@@ -99,8 +99,27 @@ app.use('*', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  
+  // Initialize SLA Monitoring Service
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const slaMonitorService = require('./services/slaMonitorService');
+      
+      // Initialize default SLA configurations if needed
+      // In production, you'd want to get a system admin ID
+      const systemAdminId = '507f1f77bcf86cd799439011'; // Placeholder - replace with actual admin ID
+      await slaMonitorService.initializeDefaultConfigs(systemAdminId);
+      
+      // Start the SLA monitoring service (check every 30 minutes)
+      await slaMonitorService.start(30);
+      console.log('SLA Monitoring Service started successfully');
+    } catch (error) {
+      console.error('Failed to start SLA Monitoring Service:', error);
+      // Don't exit the server if SLA monitoring fails to start
+    }
+  }
 });
 
 // Handle unhandled promise rejections

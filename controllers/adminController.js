@@ -5,7 +5,6 @@ const Vendor = require("../models/Vendor");
 const Restaurant = require("../models/Restaurant");
 const Order = require("../models/Order");
 const Listing = require("../models/Listing");
-const Settings = require("../models/Settings");
 const AuditLog = require("../models/AuditLog");
 const { ErrorResponse } = require("../middleware/error");
 const mongoose = require("mongoose");
@@ -473,7 +472,305 @@ exports.getAllVendors = async (req, res, next) => {
 };
 
 /**
+ * @desc    Get individual vendor with detailed information and statistics
+ * @route   GET /api/v1/admin/vendors/:id
+ * @access  Private/Admin
+ */
+exports.getVendor = async (req, res, next) => {
+  try {
+    const vendor = await Vendor.findById(req.params.id)
+      .populate('createdBy', 'name email')
+      .populate('statusUpdatedBy', 'name email');
+
+    if (!vendor) {
+      return next(
+        new ErrorResponse(`Vendor not found with id of ${req.params.id}`, 404)
+      );
+    }
+
+    // Get recent orders for this vendor
+    const recentOrders = await Order.find({
+      vendorId: req.params.id,
+      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
+    })
+    .select('status totalAmount createdAt')
+    .populate('restaurantId', 'name')
+    .sort({ createdAt: -1 })
+    .limit(10);
+
+    // Get order statistics
+    const orderStats = await Order.aggregate([
+      { $match: { vendorId: mongoose.Types.ObjectId(req.params.id) } },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalAmount: { $sum: '$totalAmount' },
+          activeOrders: {
+            $sum: { $cond: [{ $in: ['$status', ['pending', 'confirmed', 'preparing']] }, 1, 0] }
+          },
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Get listing statistics
+    const listingStats = await Listing.aggregate([
+      { $match: { vendorId: mongoose.Types.ObjectId(req.params.id) } },
+      {
+        $group: {
+          _id: null,
+          totalListings: { $sum: 1 },
+          activeListings: {
+            $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
+          },
+          featuredListings: {
+            $sum: { $cond: [{ $eq: ['$featured', true] }, 1, 0] }
+          },
+          inactiveListings: {
+            $sum: { $cond: [{ $ne: ['$status', 'active'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        vendor,
+        recentOrders,
+        orderStats: orderStats[0] || {
+          totalOrders: 0,
+          totalAmount: 0,
+          activeOrders: 0,
+          completedOrders: 0
+        },
+        listingStats: listingStats[0] || {
+          totalListings: 0,
+          activeListings: 0,
+          featuredListings: 0,
+          inactiveListings: 0
+        }
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Update vendor details
+ * @route   PUT /api/v1/admin/vendors/:id
+ * @access  Private/Admin
+ */
+exports.updateVendor = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    let vendor = await Vendor.findById(req.params.id);
+
+    if (!vendor) {
+      return next(
+        new ErrorResponse(`Vendor not found with id of ${req.params.id}`, 404)
+      );
+    }
+
+    if (vendor.isDeleted) {
+      return next(new ErrorResponse('Cannot update deleted vendor', 400));
+    }
+
+    // Store old values for audit log
+    const oldValues = {
+      businessName: vendor.businessName,
+      email: vendor.email,
+      phone: vendor.phone,
+      businessAddress: vendor.businessAddress,
+      tradeLicenseNo: vendor.tradeLicenseNo
+    };
+
+    // Update data
+    const updateData = {
+      ...req.body,
+      updatedBy: req.user.id,
+      updatedAt: new Date()
+    };
+
+    // Check if email/phone is being changed and ensure uniqueness
+    if (updateData.email && updateData.email !== vendor.email) {
+      const existingVendor = await Vendor.findOne({ 
+        email: updateData.email, 
+        _id: { $ne: req.params.id },
+        isDeleted: { $ne: true }
+      });
+      if (existingVendor) {
+        return next(new ErrorResponse('Vendor with this email already exists', 400));
+      }
+    }
+
+    if (updateData.phone && updateData.phone !== vendor.phone) {
+      const existingVendor = await Vendor.findOne({ 
+        phone: updateData.phone, 
+        _id: { $ne: req.params.id },
+        isDeleted: { $ne: true }
+      });
+      if (existingVendor) {
+        return next(new ErrorResponse('Vendor with this phone number already exists', 400));
+      }
+    }
+
+    vendor = await Vendor.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData },
+      {
+        new: true,
+        runValidators: true,
+      }
+    )
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email');
+
+    // Log significant changes
+    const changes = [];
+    if (oldValues.businessName !== vendor.businessName) changes.push(`business name changed from '${oldValues.businessName}' to '${vendor.businessName}'`);
+    if (oldValues.email !== vendor.email) changes.push(`email changed from '${oldValues.email}' to '${vendor.email}'`);
+    if (oldValues.phone !== vendor.phone) changes.push(`phone changed from '${oldValues.phone}' to '${vendor.phone}'`);
+    if (oldValues.tradeLicenseNo !== vendor.tradeLicenseNo) changes.push('trade license updated');
+
+    if (changes.length > 0) {
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: 'vendor_updated',
+        entityType: 'Vendor',
+        entityId: vendor._id,
+        description: `Updated vendor: ${changes.join(', ')}`,
+        severity: 'medium',
+        impactLevel: 'moderate',
+        metadata: { 
+          changes: oldValues,
+          adminId: req.user.id
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Vendor updated successfully',
+      data: vendor,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * @desc    Safe delete vendor with dependency check
+ * @route   DELETE /api/v1/admin/vendors/:id/safe-delete
+ * @access  Private/Admin
+ */
+exports.safeDeleteVendor = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+    const vendor = await Vendor.findById(req.params.id);
+    
+    if (!vendor) {
+      return next(new ErrorResponse('Vendor not found', 404));
+    }
+
+    if (vendor.isDeleted) {
+      return next(new ErrorResponse('Vendor is already deleted', 400));
+    }
+
+    // Check for incomplete orders (never allow deletion if incomplete orders exist)
+    const incompleteOrders = await Order.countDocuments({
+      vendorId: req.params.id,
+      status: { $in: ['pending', 'confirmed', 'preparing'] }
+    });
+
+    // Check for active listings
+    const activeListings = await Listing.countDocuments({
+      vendorId: req.params.id,
+      status: 'active',
+      isDeleted: { $ne: true }
+    });
+
+    if (incompleteOrders > 0 || activeListings > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete vendor with incomplete orders or active listings',
+        dependencies: {
+          incompleteOrders,
+          activeListings
+        },
+        suggestions: [
+          'Complete all pending orders first',
+          'Deactivate all active listings',
+          'Contact vendor to resolve ongoing operations'
+        ]
+      });
+    }
+
+    // Check for associated users
+    const associatedUsers = await User.countDocuments({
+      vendorId: req.params.id,
+      isDeleted: { $ne: true }
+    });
+
+    // Perform soft delete
+    vendor.isDeleted = true;
+    vendor.deletedAt = new Date();
+    vendor.deletedBy = req.user.id;
+    vendor.adminNotes = reason || 'Deleted by admin';
+    vendor.isActive = false;
+    await vendor.save();
+
+    // Soft delete associated users
+    await User.updateMany(
+      { vendorId: vendor._id },
+      { 
+        isDeleted: true,
+        deletedAt: new Date(),
+        deletedBy: req.user.id,
+        isActive: false,
+        adminNotes: reason || 'Vendor deleted by admin'
+      }
+    );
+
+    // Log the deletion
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'vendor_deleted',
+      entityType: 'Vendor',
+      entityId: vendor._id,
+      description: `Soft deleted vendor: ${vendor.businessName}`,
+      reason,
+      severity: 'high',
+      impactLevel: 'significant',
+      metadata: {
+        deletionReason: reason,
+        affectedUsers: associatedUsers,
+        adminId: req.user.id
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Vendor deleted successfully',
+      data: { deletedId: vendor._id }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Deactivate vendor with dependency check
  * @route   PUT /api/v1/admin/vendors/:id/deactivate
  * @access  Private/Admin
  */
@@ -789,6 +1086,356 @@ exports.createRestaurantManager = async (req, res, next) => {
       success: true,
       message: 'Restaurant manager created successfully',
       data: populatedManager
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Get single restaurant with full details
+ * @route   GET /api/v1/admin/restaurants/:id
+ * @access  Private/Admin
+ */
+exports.getRestaurant = async (req, res, next) => {
+  try {
+    const restaurant = await Restaurant.findById(req.params.id)
+      .populate('createdBy', 'name email')
+      .populate('managers', 'name email phone role')
+      .populate('statusUpdatedBy', 'name email');
+
+    if (!restaurant) {
+      return next(
+        new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404)
+      );
+    }
+
+    // Get recent orders for this restaurant
+    const recentOrders = await Order.find({
+      restaurantId: req.params.id,
+      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
+    })
+    .select('status totalAmount createdAt')
+    .sort({ createdAt: -1 })
+    .limit(10);
+
+    // Get order statistics
+    const orderStats = await Order.aggregate([
+      { $match: { restaurantId: mongoose.Types.ObjectId(req.params.id) } },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalAmount: { $sum: '$totalAmount' },
+          activeOrders: {
+            $sum: { $cond: [{ $in: ['$status', ['pending', 'confirmed', 'preparing']] }, 1, 0] }
+          },
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        restaurant,
+        recentOrders,
+        orderStats: orderStats[0] || {
+          totalOrders: 0,
+          totalAmount: 0,
+          activeOrders: 0,
+          completedOrders: 0
+        }
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Update restaurant details
+ * @route   PUT /api/v1/admin/restaurants/:id
+ * @access  Private/Admin
+ */
+exports.updateRestaurant = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    let restaurant = await Restaurant.findById(req.params.id);
+
+    if (!restaurant) {
+      return next(
+        new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404)
+      );
+    }
+
+    if (restaurant.isDeleted) {
+      return next(new ErrorResponse('Cannot update deleted restaurant', 400));
+    }
+
+    // Store old values for audit log
+    const oldValues = {
+      name: restaurant.name,
+      email: restaurant.email,
+      phone: restaurant.phone,
+      address: restaurant.address,
+      tradeLicenseNo: restaurant.tradeLicenseNo
+    };
+
+    // Update data
+    const updateData = {
+      ...req.body,
+      updatedBy: req.user.id,
+      updatedAt: new Date()
+    };
+
+    // Check if email/phone is being changed and ensure uniqueness
+    if (updateData.email && updateData.email !== restaurant.email) {
+      const existingRestaurant = await Restaurant.findOne({ 
+        email: updateData.email, 
+        _id: { $ne: req.params.id },
+        isDeleted: { $ne: true }
+      });
+      if (existingRestaurant) {
+        return next(new ErrorResponse('Restaurant with this email already exists', 400));
+      }
+    }
+
+    if (updateData.phone && updateData.phone !== restaurant.phone) {
+      const existingRestaurant = await Restaurant.findOne({ 
+        phone: updateData.phone, 
+        _id: { $ne: req.params.id },
+        isDeleted: { $ne: true }
+      });
+      if (existingRestaurant) {
+        return next(new ErrorResponse('Restaurant with this phone number already exists', 400));
+      }
+    }
+
+    restaurant = await Restaurant.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData },
+      {
+        new: true,
+        runValidators: true,
+      }
+    )
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
+      .populate('managers', 'name email');
+
+    // Log significant changes
+    const changes = [];
+    if (oldValues.name !== restaurant.name) changes.push(`name changed from '${oldValues.name}' to '${restaurant.name}'`);
+    if (oldValues.email !== restaurant.email) changes.push(`email changed from '${oldValues.email}' to '${restaurant.email}'`);
+    if (oldValues.phone !== restaurant.phone) changes.push(`phone changed from '${oldValues.phone}' to '${restaurant.phone}'`);
+    if (oldValues.tradeLicenseNo !== restaurant.tradeLicenseNo) changes.push('trade license updated');
+
+    if (changes.length > 0) {
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: 'restaurant_updated',
+        entityType: 'Restaurant',
+        entityId: restaurant._id,
+        description: `Updated restaurant: ${changes.join(', ')}`,
+        severity: 'medium',
+        impactLevel: 'moderate',
+        metadata: { 
+          changes: oldValues,
+          adminId: req.user.id
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant updated successfully',
+      data: restaurant,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Deactivate restaurant with dependency check
+ * @route   PUT /api/v1/admin/restaurants/:id/deactivate
+ * @access  Private/Admin
+ */
+exports.deactivateRestaurant = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+    const restaurant = await Restaurant.findById(req.params.id);
+    
+    if (!restaurant) {
+      return next(new ErrorResponse('Restaurant not found', 404));
+    }
+
+    if (restaurant.isDeleted) {
+      return next(new ErrorResponse('Cannot deactivate deleted restaurant', 400));
+    }
+
+    // Check for incomplete orders (only block for incomplete orders)
+    const incompleteOrders = await Order.countDocuments({
+      restaurantId: req.params.id,
+      status: { $in: ['pending', 'confirmed', 'preparing'] }
+    });
+
+    if (incompleteOrders > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot deactivate restaurant with incomplete orders',
+        dependencies: {
+          incompleteOrders
+        },
+        suggestions: [
+          'Complete all pending orders first',
+          'Contact restaurant to resolve ongoing orders',
+          'Use force deactivation if emergency (contact support)'
+        ]
+      });
+    }
+
+    // Deactivate restaurant
+    restaurant.isActive = false;
+    restaurant.statusUpdatedBy = req.user.id;
+    restaurant.statusUpdatedAt = new Date();
+    restaurant.adminNotes = reason;
+    await restaurant.save();
+
+    // Deactivate associated users
+    await User.updateMany(
+      { restaurantId: restaurant._id },
+      { 
+        isActive: false, 
+        lastModifiedBy: req.user.id,
+        adminNotes: reason
+      }
+    );
+
+    // Log the deactivation
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'restaurant_deactivated',
+      entityType: 'Restaurant',
+      entityId: restaurant._id,
+      description: `Deactivated restaurant: ${restaurant.name}`,
+      reason,
+      severity: 'high',
+      impactLevel: 'major',
+      metadata: {
+        adminId: req.user.id,
+        affectedUsers: await User.countDocuments({ restaurantId: restaurant._id })
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant deactivated successfully',
+      data: restaurant
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Safe delete restaurant with dependency check
+ * @route   DELETE /api/v1/admin/restaurants/:id/safe-delete
+ * @access  Private/Admin
+ */
+exports.safeDeleteRestaurant = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+    const restaurant = await Restaurant.findById(req.params.id);
+    
+    if (!restaurant) {
+      return next(new ErrorResponse('Restaurant not found', 404));
+    }
+
+    if (restaurant.isDeleted) {
+      return next(new ErrorResponse('Restaurant is already deleted', 400));
+    }
+
+    // Check for incomplete orders (only block for incomplete orders, not completed ones)
+    const incompleteOrders = await Order.countDocuments({
+      restaurantId: req.params.id,
+      status: { $in: ['pending', 'confirmed', 'preparing'] }
+    });
+
+    // Check for associated users
+    const associatedUsers = await User.countDocuments({
+      restaurantId: req.params.id,
+      isDeleted: { $ne: true }
+    });
+
+    if (incompleteOrders > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete restaurant with incomplete orders',
+        dependencies: {
+          type: 'incomplete_orders',
+          count: incompleteOrders,
+          associatedUsers
+        },
+        suggestions: [
+          'Complete all pending orders first',
+          'Contact restaurant to resolve ongoing orders',
+          'Use deactivation if you need to preserve incomplete order data'
+        ]
+      });
+    }
+
+    // Perform soft delete
+    restaurant.isDeleted = true;
+    restaurant.deletedAt = new Date();
+    restaurant.deletedBy = req.user.id;
+    restaurant.adminNotes = reason || 'Deleted by admin';
+    restaurant.isActive = false;
+    await restaurant.save();
+
+    // Soft delete associated users
+    await User.updateMany(
+      { restaurantId: restaurant._id },
+      { 
+        isDeleted: true,
+        deletedAt: new Date(),
+        deletedBy: req.user.id,
+        isActive: false,
+        adminNotes: reason || 'Restaurant deleted by admin'
+      }
+    );
+
+    // Log the deletion
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'restaurant_deleted',
+      entityType: 'Restaurant',
+      entityId: restaurant._id,
+      description: `Soft deleted restaurant: ${restaurant.name}`,
+      reason,
+      severity: 'high',
+      impactLevel: 'significant',
+      metadata: {
+        deletionReason: reason,
+        affectedUsers: associatedUsers,
+        adminId: req.user.id
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant deleted successfully',
+      data: { deletedId: restaurant._id }
     });
   } catch (err) {
     next(err);

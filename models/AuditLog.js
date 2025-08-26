@@ -5,11 +5,13 @@ const AuditLogSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'User ID is required']
+    required: function() {
+      return this.userRole !== 'system';
+    }
   },
   userRole: {
     type: String,
-    enum: ['admin', 'vendor', 'restaurantOwner', 'restaurantManager'],
+    enum: ['admin', 'vendor', 'restaurantOwner', 'restaurantManager', 'system'],
     required: [true, 'User role is required']
   },
   
@@ -21,7 +23,7 @@ const AuditLogSchema = new mongoose.Schema({
       // User management
       'user_created', 'user_updated', 'user_deleted', 'user_approved', 'user_rejected',
       // Vendor management
-      'vendor_created', 'vendor_updated', 'vendor_verified', 'vendor_deactivated',
+      'vendor_created', 'vendor_updated', 'vendor_verified', 'vendor_deactivated', 'vendor_deleted', 'vendor_viewed',
       'vendor_verification_toggle', 'vendor_verification_revoked', 'vendor_status_reset',
       // Restaurant management
       'restaurant_created', 'restaurant_updated', 'restaurant_verified', 'restaurant_deactivated',
@@ -38,7 +40,9 @@ const AuditLogSchema = new mongoose.Schema({
       // System management
       'settings_updated', 'bulk_operation', 'system_backup', 'system_maintenance', 'analytics_viewed',
       // Security and monitoring
-      'high_frequency_access', 'security_alert', 'suspicious_activity', 'rate_limit_exceeded'
+      'high_frequency_access', 'security_alert', 'suspicious_activity', 'rate_limit_exceeded',
+      // SLA and performance monitoring
+      'sla_violation_detected', 'sla_monitoring_started', 'sla_monitoring_error', 'sla_metrics_updated', 'performance_report_generated'
     ]
   },
   
@@ -46,11 +50,13 @@ const AuditLogSchema = new mongoose.Schema({
   entityType: {
     type: String,
     required: [true, 'Entity type is required'],
-    enum: ['User', 'Vendor', 'Restaurant', 'Product', 'ProductCategory', 'Listing', 'Order', 'Settings']
+    enum: ['User', 'Vendor', 'Restaurant', 'Product', 'ProductCategory', 'Listing', 'Order', 'Settings', 'System', 'AdminMetrics', 'SLAConfig']
   },
   entityId: {
     type: mongoose.Schema.Types.ObjectId,
-    required: [true, 'Entity ID is required']
+    required: function() {
+      return this.entityType !== 'System';
+    }
   },
   
   // Details of the change
@@ -83,7 +89,7 @@ const AuditLogSchema = new mongoose.Schema({
   },
   impactLevel: {
     type: String,
-    enum: ['none', 'minor', 'moderate', 'significant', 'major'],
+    enum: ['none', 'minor', 'moderate', 'significant', 'major', 'critical'],
     default: 'minor'
   },
   

@@ -537,6 +537,180 @@ class NotificationService {
   static async getUserNotifications(userId, options) {
     return await Notification.getUserNotifications(userId, options);
   }
+
+  /**
+   * Send SLA notification email
+   */
+  static async sendSLANotificationEmail(recipient, data) {
+    try {
+      const emailService = require('../utils/email');
+      
+      const subject = data.type === 'warning' 
+        ? `⚠️ SLA Warning: ${data.entityType} ${data.actionType}` 
+        : `🚨 SLA Violation: ${data.entityType} ${data.actionType}`;
+      
+      const message = `
+        <h3>${subject}</h3>
+        <p><strong>Entity:</strong> ${data.entityName} (${data.entityType})</p>
+        <p><strong>Action Required:</strong> ${data.actionType}</p>
+        <p><strong>Priority:</strong> ${data.priority}</p>
+        <p><strong>Response Time:</strong> ${data.responseTime} hours</p>
+        <p><strong>Target Time:</strong> ${data.targetTime} hours</p>
+        ${data.exceedanceHours ? `<p><strong>Exceeded by:</strong> ${data.exceedanceHours} hours</p>` : ''}
+        <p><strong>Action Required:</strong> Please review and take appropriate action immediately.</p>
+        <p><a href="${process.env.FRONTEND_URL}/admin/approvals/${data.entityId}" style="background-color: #006A4E; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Take Action</a></p>
+      `;
+
+      await emailService.sendEmail({
+        email: recipient,
+        subject,
+        message
+      });
+
+      console.log(`SLA notification email sent to ${recipient}`);
+    } catch (error) {
+      console.error('Error sending SLA notification email:', error);
+    }
+  }
+
+  /**
+   * Create system notification for SLA events
+   */
+  static async createSystemNotification(recipient, data) {
+    try {
+      // Find admin user by email or create system notification
+      const adminUser = await User.findOne({ email: recipient, role: 'admin' });
+      
+      if (adminUser) {
+        const title = data.type === 'warning' 
+          ? `SLA Warning: ${data.entityType}` 
+          : `SLA Violation: ${data.entityType}`;
+          
+        const message = data.type === 'warning'
+          ? `${data.entityName} is approaching SLA deadline (${data.responseTime}/${data.targetTime} hours)`
+          : `${data.entityName} has exceeded SLA target by ${data.exceedanceHours} hours`;
+
+        await this.createNotification({
+          recipientId: adminUser._id,
+          recipientType: 'admin',
+          type: 'sla_alert',
+          title,
+          message,
+          priority: data.type === 'violation' ? 'high' : 'medium',
+          isActionRequired: true,
+          actionUrl: `/admin/${data.entityType}s/${data.entityId}`,
+          actionText: 'Review Now',
+          relatedEntity: {
+            entityType: data.entityType,
+            entityId: data.entityId,
+            entityData: {
+              name: data.entityName,
+              responseTime: data.responseTime,
+              targetTime: data.targetTime,
+              violationType: data.type
+            }
+          },
+          metadata: {
+            slaViolation: true,
+            violationType: data.type,
+            exceedanceHours: data.exceedanceHours,
+            priority: data.priority
+          },
+          deliveryChannel: ['in-app', 'email']
+        });
+      }
+    } catch (error) {
+      console.error('Error creating SLA system notification:', error);
+    }
+  }
+
+  /**
+   * Send admin performance report notification
+   */
+  static async sendPerformanceReportNotification(adminId, reportData) {
+    try {
+      const admin = await User.findById(adminId);
+      if (!admin) return;
+
+      const title = `Monthly Performance Report - ${reportData.period}`;
+      const message = `Your admin performance report is ready. Approval Rate: ${reportData.approvalRate.toFixed(1)}%, SLA Compliance: ${reportData.slaCompliance.toFixed(1)}%`;
+
+      await this.createNotification({
+        recipientId: adminId,
+        recipientType: 'admin',
+        type: 'performance_report',
+        title,
+        message,
+        priority: 'medium',
+        isActionRequired: false,
+        actionUrl: `/admin/performance/trends/${adminId}`,
+        actionText: 'View Report',
+        relatedEntity: {
+          entityType: 'performance_report',
+          entityId: reportData.reportId,
+          entityData: reportData
+        },
+        metadata: {
+          reportType: 'monthly_performance',
+          period: reportData.period,
+          metrics: {
+            approvalRate: reportData.approvalRate,
+            slaCompliance: reportData.slaCompliance,
+            responseTime: reportData.avgResponseTime
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error sending performance report notification:', error);
+    }
+  }
+
+  /**
+   * Send escalation notification
+   */
+  static async sendEscalationNotification(escalationData) {
+    try {
+      // Find users with the required role
+      const targetUsers = await User.find({ role: escalationData.roleRequired });
+
+      for (const user of targetUsers) {
+        const title = `🚨 Escalation Required: ${escalationData.entityType}`;
+        const message = `${escalationData.entityName} requires Level ${escalationData.escalationLevel} escalation due to SLA violation`;
+
+        await this.createNotification({
+          recipientId: user._id,
+          recipientType: user.role,
+          type: 'escalation',
+          title,
+          message,
+          priority: 'critical',
+          isActionRequired: true,
+          actionUrl: `/admin/${escalationData.entityType}s/${escalationData.entityId}`,
+          actionText: 'Handle Escalation',
+          relatedEntity: {
+            entityType: escalationData.entityType,
+            entityId: escalationData.entityId,
+            entityData: {
+              name: escalationData.entityName,
+              escalationLevel: escalationData.escalationLevel,
+              roleRequired: escalationData.roleRequired
+            }
+          },
+          metadata: {
+            escalation: true,
+            level: escalationData.escalationLevel,
+            roleRequired: escalationData.roleRequired,
+            priority: escalationData.priority
+          },
+          deliveryChannel: ['in-app', 'email', 'sms']
+        });
+      }
+
+    } catch (error) {
+      console.error('Error sending escalation notification:', error);
+    }
+  }
 }
 
 module.exports = NotificationService;
