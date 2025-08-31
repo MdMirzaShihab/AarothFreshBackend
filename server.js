@@ -102,8 +102,8 @@ const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, async () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
   
-  // Initialize SLA Monitoring Service
-  if (process.env.NODE_ENV !== 'test') {
+  // Initialize SLA Monitoring Service (disabled for MVP)
+  if (process.env.NODE_ENV !== 'test' && process.env.ENABLE_SLA_MONITORING === 'true') {
     try {
       const slaMonitorService = require('./services/slaMonitorService');
       
@@ -119,6 +119,8 @@ const server = app.listen(PORT, async () => {
       console.error('Failed to start SLA Monitoring Service:', error);
       // Don't exit the server if SLA monitoring fails to start
     }
+  } else if (process.env.NODE_ENV !== 'test') {
+    console.log('SLA Monitoring Service disabled (set ENABLE_SLA_MONITORING=true to enable)');
   }
 });
 

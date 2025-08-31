@@ -109,7 +109,6 @@ router.use(protect, authorize("admin"));
 // ================================
 
 // Dashboard routes
-router.get("/dashboard", getDashboardOverview);
 router.get("/dashboard/overview", getDashboardOverview);
 
 // ================================  
