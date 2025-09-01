@@ -70,6 +70,17 @@ const RestaurantSchema = new mongoose.Schema({
     required: [true, 'Please add at least one cuisine type'],
     trim: true
   }],
+  logo: {
+    type: String, // Cloudinary URL to restaurant logo
+    default: null,
+    validate: {
+      validator: function(v) {
+        // If logo is provided, it should be a valid string
+        return !v || (typeof v === 'string' && v.length > 0);
+      },
+      message: 'Logo must be a valid URL'
+    }
+  },
   operatingHours: {
     monday: { open: String, close: String, closed: { type: Boolean, default: false }},
     tuesday: { open: String, close: String, closed: { type: Boolean, default: false }},

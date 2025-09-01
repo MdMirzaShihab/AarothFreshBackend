@@ -59,27 +59,39 @@ exports.register = async (req, res, next) => {
 
     if (role === 'vendor') {
       // Create vendor
-      const vendor = await Vendor.create({
+      const vendorData = {
         businessName,
         ownerName: ownerName || name,
         email,
         phone,
         address,
-        tradeLicenseNo, 
-      });
+        tradeLicenseNo
+      };
 
+      // Add logo if uploaded
+      if (req.file) {
+        vendorData.logo = req.file.path;
+      }
+
+      const vendor = await Vendor.create(vendorData);
       vendorId = vendor._id;
     } else if (role === 'restaurantOwner') {
       // Create restaurant
-      const restaurant = await Restaurant.create({
+      const restaurantData = {
         name: restaurantName,
         ownerName: ownerName || name,
         email,
         phone,
         address,
-        tradeLicenseNo,
-      });
+        tradeLicenseNo
+      };
 
+      // Add logo if uploaded
+      if (req.file) {
+        restaurantData.logo = req.file.path;
+      }
+
+      const restaurant = await Restaurant.create(restaurantData);
       restaurantId = restaurant._id;
     } else {
       return next(new ErrorResponse('Invalid role for registration', 400));

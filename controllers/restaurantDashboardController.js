@@ -1,4 +1,5 @@
 const { validationResult } = require('express-validator');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Restaurant = require('../models/Restaurant');
 const Order = require('../models/Order');
@@ -6,6 +7,7 @@ const Listing = require('../models/Listing');
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const Vendor = require('../models/Vendor');
+const Budget = require('../models/Budget');
 const { ErrorResponse } = require('../middleware/error');
 
 /**
@@ -360,15 +362,39 @@ exports.getSpendingAnalytics = async (req, res, next) => {
     ]);
 
     const totalSpending = dailySpending.reduce((sum, day) => sum + day.spent, 0);
+    const averageDailySpending = dailySpending.length ? totalSpending / dailySpending.length : 0;
+
+    // Calculate spending projections
+    const currentDate = new Date();
+    const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+    const daysPassed = currentDate.getDate();
+    const daysRemaining = daysInMonth - daysPassed;
+    
+    // Monthly projection based on current trend
+    const monthlyProjection = averageDailySpending * daysInMonth;
+    const projectedEndOfMonthSpending = totalSpending + (averageDailySpending * daysRemaining);
+    
+    // Get current month budget for comparison
+    const currentBudget = await Budget.getCurrentBudget(restaurantId, 'monthly');
+    const monthlyBudgetLimit = currentBudget ? currentBudget.totalBudgetLimit : 10000;
 
     const analytics = {
       summary: {
         totalSpent: Math.round(totalSpending * 100) / 100,
         totalOrders: dailySpending.reduce((sum, day) => sum + day.orders, 0),
-        averageDailySpending: dailySpending.length ? 
-          Math.round((totalSpending / dailySpending.length) * 100) / 100 : 0,
+        averageDailySpending: Math.round(averageDailySpending * 100) / 100,
         topVendorSpending: spendingByVendor[0] ? 
           Math.round(spendingByVendor[0].spent * 100) / 100 : 0
+      },
+      projections: {
+        monthlyProjection: Math.round(monthlyProjection * 100) / 100,
+        projectedEndOfMonth: Math.round(projectedEndOfMonthSpending * 100) / 100,
+        budgetLimit: monthlyBudgetLimit,
+        projectedBudgetUtilization: Math.round((projectedEndOfMonthSpending / monthlyBudgetLimit) * 100),
+        onTrackForBudget: projectedEndOfMonthSpending <= monthlyBudgetLimit,
+        daysRemaining: daysRemaining,
+        recommendedDailySpendingRemaining: daysRemaining > 0 ? 
+          Math.round(((monthlyBudgetLimit - totalSpending) / daysRemaining) * 100) / 100 : 0
       },
       dailyTrends: dailySpending.map(day => ({
         date: day._id,
@@ -392,11 +418,27 @@ exports.getSpendingAnalytics = async (req, res, next) => {
         percentage: totalSpending ? 
           Math.round((category.spent / totalSpending) * 100) : 0
       })),
-      monthlyTrends: monthlyTrends.map(month => ({
-        month: `${month._id.year}-${month._id.month.toString().padStart(2, '0')}`,
-        spent: Math.round(month.spent * 100) / 100,
-        orders: month.orders
-      }))
+      monthlyTrends: monthlyTrends.map((month, index) => {
+        const prevMonth = monthlyTrends[index - 1];
+        const monthOverMonthChange = prevMonth ? 
+          Math.round(((month.spent - prevMonth.spent) / prevMonth.spent) * 100) : 0;
+        
+        return {
+          month: `${month._id.year}-${month._id.month.toString().padStart(2, '0')}`,
+          spent: Math.round(month.spent * 100) / 100,
+          orders: month.orders,
+          monthOverMonthChange,
+          trend: monthOverMonthChange > 5 ? 'increasing' : 
+                monthOverMonthChange < -5 ? 'decreasing' : 'stable'
+        };
+      }),
+      trendAnalysis: {
+        overallTrend: monthlyTrends.length >= 2 ? 
+          (monthlyTrends[monthlyTrends.length - 1].spent > monthlyTrends[0].spent ? 'increasing' : 'decreasing') : 'stable',
+        avgMonthlyGrowth: monthlyTrends.length >= 2 ? 
+          Math.round(((monthlyTrends[monthlyTrends.length - 1].spent - monthlyTrends[0].spent) / monthlyTrends[0].spent / monthlyTrends.length) * 100) : 0,
+        seasonalPeaks: monthlyTrends.sort((a, b) => b.spent - a.spent).slice(0, 3).map(m => m.month)
+      }
     };
 
     res.status(200).json({
@@ -884,8 +926,11 @@ exports.getBudgetTracking = async (req, res, next) => {
     const { period = 'month', startDate, endDate, category } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
-    // Mock budget limits (in real implementation, these would be configurable)
-    const budgetLimits = {
+    // Get current budget from database
+    const currentBudget = await Budget.getCurrentBudget(restaurantId, period === 'quarter' ? 'quarterly' : 'monthly');
+    
+    // Default budget limits if no budget is set
+    const defaultBudgetLimits = {
       monthly: 10000,
       weekly: 2500,
       daily: 350,
@@ -897,6 +942,17 @@ exports.getBudgetTracking = async (req, res, next) => {
         spices: 500
       }
     };
+
+    // Use current budget or defaults
+    const budgetLimits = currentBudget ? {
+      monthly: currentBudget.totalBudgetLimit,
+      weekly: Math.round(currentBudget.totalBudgetLimit / 4.3),
+      daily: Math.round(currentBudget.totalBudgetLimit / 30),
+      categoryLimits: currentBudget.categoryLimits.reduce((acc, cat) => {
+        acc[cat.categoryName.toLowerCase()] = cat.budgetLimit;
+        return acc;
+      }, {})
+    } : defaultBudgetLimits;
 
     const [spendingByPeriod, spendingByCategory, dailySpending, alerts] = await Promise.all([
       // Current period spending
@@ -1127,7 +1183,425 @@ const generateBudgetRecommendations = (spending, limit, categorySpending) => {
   return recommendations;
 };
 
-// Continue with remaining controller methods...
+/**
+ * @desc    Create a new budget for restaurant
+ * @route   POST /api/v1/restaurant-dashboard/budget
+ * @access  Private (Restaurant Owner only)
+ */
+exports.createBudget = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    const restaurantId = req.user.restaurantId;
+    const { budgetPeriod, year, month, quarter, totalBudgetLimit, categoryLimits, notes } = req.body;
+
+    // Check if budget already exists for this period
+    const existingBudget = await Budget.findOne({
+      restaurantId,
+      budgetPeriod,
+      year,
+      ...(budgetPeriod === 'monthly' && { month }),
+      ...(budgetPeriod === 'quarterly' && { quarter }),
+      isActive: true
+    });
+
+    if (existingBudget) {
+      return next(new ErrorResponse('Budget already exists for this period', 400));
+    }
+
+    // Validate category limits don't exceed total budget
+    const totalCategoryLimits = categoryLimits ? 
+      categoryLimits.reduce((sum, cat) => sum + cat.budgetLimit, 0) : 0;
+    
+    if (totalCategoryLimits > totalBudgetLimit) {
+      return next(new ErrorResponse('Total category limits cannot exceed total budget limit', 400));
+    }
+
+    // Process category limits
+    let processedCategoryLimits = [];
+    if (categoryLimits && categoryLimits.length > 0) {
+      const categoryIds = categoryLimits.map(cat => cat.categoryId);
+      const categories = await ProductCategory.find({ _id: { $in: categoryIds } });
+      
+      processedCategoryLimits = categoryLimits.map(catLimit => {
+        const category = categories.find(cat => cat._id.toString() === catLimit.categoryId);
+        return {
+          categoryId: catLimit.categoryId,
+          categoryName: category ? category.name : 'Unknown',
+          budgetLimit: catLimit.budgetLimit,
+          priority: catLimit.priority || 'medium'
+        };
+      });
+    }
+
+    const budget = new Budget({
+      restaurantId,
+      budgetPeriod,
+      year,
+      ...(budgetPeriod === 'monthly' && { month }),
+      ...(budgetPeriod === 'quarterly' && { quarter }),
+      totalBudgetLimit,
+      categoryLimits: processedCategoryLimits,
+      notes,
+      createdBy: req.user.id,
+      status: 'active'
+    });
+
+    await budget.save();
+
+    res.status(201).json({
+      success: true,
+      data: budget
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Update an existing budget
+ * @route   PUT /api/v1/restaurant-dashboard/budget/:budgetId
+ * @access  Private (Restaurant Owner only)
+ */
+exports.updateBudget = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    const { budgetId } = req.params;
+    const restaurantId = req.user.restaurantId;
+    const { totalBudgetLimit, categoryLimits, notes, status } = req.body;
+
+    const budget = await Budget.findOne({ 
+      _id: budgetId, 
+      restaurantId: restaurantId 
+    });
+
+    if (!budget) {
+      return next(new ErrorResponse('Budget not found', 404));
+    }
+
+    // Validate category limits if provided
+    if (categoryLimits) {
+      const totalCategoryLimits = categoryLimits.reduce((sum, cat) => sum + cat.budgetLimit, 0);
+      const budgetTotal = totalBudgetLimit || budget.totalBudgetLimit;
+      
+      if (totalCategoryLimits > budgetTotal) {
+        return next(new ErrorResponse('Total category limits cannot exceed total budget limit', 400));
+      }
+
+      // Process category limits
+      const categoryIds = categoryLimits.map(cat => cat.categoryId);
+      const categories = await ProductCategory.find({ _id: { $in: categoryIds } });
+      
+      budget.categoryLimits = categoryLimits.map(catLimit => {
+        const category = categories.find(cat => cat._id.toString() === catLimit.categoryId);
+        return {
+          categoryId: catLimit.categoryId,
+          categoryName: category ? category.name : 'Unknown',
+          budgetLimit: catLimit.budgetLimit,
+          priority: catLimit.priority || 'medium'
+        };
+      });
+    }
+
+    // Update fields
+    if (totalBudgetLimit !== undefined) budget.totalBudgetLimit = totalBudgetLimit;
+    if (notes !== undefined) budget.notes = notes;
+    if (status !== undefined) budget.status = status;
+    budget.lastModifiedBy = req.user.id;
+
+    await budget.save();
+
+    res.status(200).json({
+      success: true,
+      data: budget
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get price analytics and average price tracking
+ * @route   GET /api/v1/restaurant-dashboard/price-analytics
+ * @access  Private (Restaurant Owner/Manager only)
+ */
+exports.getPriceAnalytics = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    const restaurantId = req.user.restaurantId;
+    const { groupBy = 'category', productId, categoryId, period = 'month', startDate, endDate } = req.query;
+    
+    // Get last 12 months for historical comparison
+    const currentDate = new Date();
+    const last12Months = new Date();
+    last12Months.setMonth(currentDate.getMonth() - 12);
+
+    const [monthlyPricesByCategory, monthlyPricesByProduct, currentPeriodPrices] = await Promise.all([
+      // Monthly average prices by category over last 12 months
+      Order.aggregate([
+        {
+          $match: {
+            restaurantId: restaurantId,
+            createdAt: { $gte: last12Months },
+            status: { $ne: 'cancelled' }
+          }
+        },
+        { $unwind: '$items' },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'items.productId',
+            foreignField: '_id',
+            as: 'product'
+          }
+        },
+        { $unwind: '$product' },
+        {
+          $lookup: {
+            from: 'productcategories',
+            localField: 'product.category',
+            foreignField: '_id',
+            as: 'category'
+          }
+        },
+        { $unwind: '$category' },
+        ...(categoryId ? [{ $match: { 'category._id': mongoose.Types.ObjectId(categoryId) } }] : []),
+        {
+          $group: {
+            _id: {
+              categoryId: '$category._id',
+              categoryName: '$category.name',
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' }
+            },
+            averagePrice: { $avg: '$items.unitPrice' },
+            totalQuantity: { $sum: '$items.quantity' },
+            totalSpent: { $sum: '$items.totalPrice' },
+            orderCount: { $sum: 1 }
+          }
+        },
+        {
+          $project: {
+            categoryId: '$_id.categoryId',
+            categoryName: '$_id.categoryName',
+            month: { $concat: [{ $toString: '$_id.year' }, '-', { $toString: '$_id.month' }] },
+            averagePrice: { $round: ['$averagePrice', 2] },
+            totalQuantity: '$totalQuantity',
+            totalSpent: { $round: ['$totalSpent', 2] },
+            averagePricePerUnit: { $round: [{ $divide: ['$totalSpent', '$totalQuantity'] }, 2] },
+            orderCount: '$orderCount'
+          }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1, categoryName: 1 } }
+      ]),
+      
+      // Monthly average prices by product over last 12 months
+      Order.aggregate([
+        {
+          $match: {
+            restaurantId: restaurantId,
+            createdAt: { $gte: last12Months },
+            status: { $ne: 'cancelled' }
+          }
+        },
+        { $unwind: '$items' },
+        ...(productId ? [{ $match: { 'items.productId': mongoose.Types.ObjectId(productId) } }] : []),
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'items.productId',
+            foreignField: '_id',
+            as: 'product'
+          }
+        },
+        { $unwind: '$product' },
+        {
+          $group: {
+            _id: {
+              productId: '$items.productId',
+              productName: '$items.productName',
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' }
+            },
+            averagePrice: { $avg: '$items.unitPrice' },
+            totalQuantity: { $sum: '$items.quantity' },
+            totalSpent: { $sum: '$items.totalPrice' },
+            orderCount: { $sum: 1 },
+            minPrice: { $min: '$items.unitPrice' },
+            maxPrice: { $max: '$items.unitPrice' }
+          }
+        },
+        {
+          $project: {
+            productId: '$_id.productId',
+            productName: '$_id.productName',
+            month: { $concat: [{ $toString: '$_id.year' }, '-', { $toString: '$_id.month' }] },
+            averagePrice: { $round: ['$averagePrice', 2] },
+            minPrice: { $round: ['$minPrice', 2] },
+            maxPrice: { $round: ['$maxPrice', 2] },
+            totalQuantity: '$totalQuantity',
+            totalSpent: { $round: ['$totalSpent', 2] },
+            orderCount: '$orderCount',
+            priceVolatility: { $round: [{ $subtract: ['$maxPrice', '$minPrice'] }, 2] }
+          }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1, productName: 1 } },
+        { $limit: 100 }
+      ]),
+
+      // Current period detailed pricing
+      Order.aggregate([
+        {
+          $match: {
+            restaurantId: restaurantId,
+            createdAt: { $gte: start, $lte: end },
+            status: { $ne: 'cancelled' }
+          }
+        },
+        { $unwind: '$items' },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'items.productId',
+            foreignField: '_id',
+            as: 'product'
+          }
+        },
+        { $unwind: '$product' },
+        {
+          $lookup: {
+            from: 'productcategories',
+            localField: 'product.category',
+            foreignField: '_id',
+            as: 'category'
+          }
+        },
+        { $unwind: '$category' },
+        {
+          $group: {
+            _id: groupBy === 'product' ? '$items.productId' : '$category._id',
+            name: { $first: groupBy === 'product' ? '$items.productName' : '$category.name' },
+            categoryName: { $first: '$category.name' },
+            currentAveragePrice: { $avg: '$items.unitPrice' },
+            currentMinPrice: { $min: '$items.unitPrice' },
+            currentMaxPrice: { $max: '$items.unitPrice' },
+            totalQuantity: { $sum: '$items.quantity' },
+            totalSpent: { $sum: '$items.totalPrice' },
+            orderCount: { $sum: 1 }
+          }
+        },
+        { $sort: { totalSpent: -1 } },
+        { $limit: 50 }
+      ])
+    ]);
+
+    // Process historical price trends
+    const priceHistory = groupBy === 'category' ? monthlyPricesByCategory : monthlyPricesByProduct;
+    const priceAnalytics = {};
+
+    // Group by entity (category or product)
+    priceHistory.forEach(item => {
+      const entityId = groupBy === 'category' ? item.categoryId : item.productId;
+      const entityName = groupBy === 'category' ? item.categoryName : item.productName;
+      
+      if (!priceAnalytics[entityId]) {
+        priceAnalytics[entityId] = {
+          entityId,
+          name: entityName,
+          monthlyPrices: [],
+          priceChangePercentage: 0,
+          trend: 'stable'
+        };
+      }
+      
+      priceAnalytics[entityId].monthlyPrices.push({
+        month: item.month,
+        averagePrice: item.averagePrice,
+        totalSpent: item.totalSpent,
+        totalQuantity: item.totalQuantity,
+        orderCount: item.orderCount
+      });
+    });
+
+    // Calculate price trends
+    Object.values(priceAnalytics).forEach(entity => {
+      const prices = entity.monthlyPrices.sort((a, b) => a.month.localeCompare(b.month));
+      if (prices.length >= 2) {
+        const firstPrice = prices[0].averagePrice;
+        const lastPrice = prices[prices.length - 1].averagePrice;
+        entity.priceChangePercentage = Math.round(((lastPrice - firstPrice) / firstPrice) * 100);
+        entity.trend = entity.priceChangePercentage > 5 ? 'increasing' : 
+                     entity.priceChangePercentage < -5 ? 'decreasing' : 'stable';
+      }
+    });
+
+
+    // Build the final response  
+    const priceData = {
+      groupBy,
+      period: { start: last12Months, end: currentDate },
+      currentPeriod: currentPeriodPrices.map(item => ({
+        entityId: item._id,
+        name: item.name,
+        categoryName: item.categoryName,
+        currentAveragePrice: Math.round(item.currentAveragePrice * 100) / 100,
+        priceRange: {
+          min: Math.round(item.currentMinPrice * 100) / 100,
+          max: Math.round(item.currentMaxPrice * 100) / 100
+        },
+        totalQuantity: item.totalQuantity,
+        totalSpent: Math.round(item.totalSpent * 100) / 100,
+        orderCount: item.orderCount
+      })),
+      historicalTrends: Object.values(priceAnalytics).map(entity => ({
+        entityId: entity.entityId,
+        name: entity.name,
+        priceChangePercentage: entity.priceChangePercentage,
+        trend: entity.trend,
+        monthlyPrices: entity.monthlyPrices,
+        averageMonthlyPrice: entity.monthlyPrices.length ? 
+          Math.round(entity.monthlyPrices.reduce((sum, p) => sum + p.averagePrice, 0) / entity.monthlyPrices.length * 100) / 100 : 0
+      })),
+      insights: {
+        mostVolatilePrices: Object.values(priceAnalytics)
+          .filter(entity => entity.monthlyPrices.length >= 3)
+          .sort((a, b) => Math.abs(b.priceChangePercentage) - Math.abs(a.priceChangePercentage))
+          .slice(0, 5)
+          .map(entity => ({
+            name: entity.name,
+            priceChangePercentage: entity.priceChangePercentage,
+            trend: entity.trend
+          })),
+        risingPrices: Object.values(priceAnalytics)
+          .filter(entity => entity.priceChangePercentage > 10)
+          .sort((a, b) => b.priceChangePercentage - a.priceChangePercentage)
+          .slice(0, 5),
+        fallingPrices: Object.values(priceAnalytics)
+          .filter(entity => entity.priceChangePercentage < -10)
+          .sort((a, b) => a.priceChangePercentage - b.priceChangePercentage)
+          .slice(0, 5)
+      }
+    };
+
+    res.status(200).json({
+      success: true,
+      data: priceData
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 /**
  * @desc    Get inventory planning and consumption insights

@@ -12,6 +12,7 @@ const {
   logout
 } = require('../controllers/authController');
 const { protect, authorize } = require('../middleware/auth');
+const { uploadRegistrationLogo } = require('../middleware/upload');
 const {
   registerValidation,
   loginValidation,
@@ -22,7 +23,7 @@ const {
 
 const router = express.Router();
 
-router.post('/register', registerValidation, register);
+router.post('/register', uploadRegistrationLogo('logo'), registerValidation, register);
 router.post('/login', loginValidation, login);
 router.post('/logout', protect, logout);
 router.get('/me', protect, getMe);

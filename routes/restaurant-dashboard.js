@@ -5,6 +5,9 @@ const {
   getOrderAnalytics,
   getVendorInsights,
   getBudgetTracking,
+  createBudget,
+  updateBudget,
+  getPriceAnalytics,
   getInventoryPlanning,
   getOrderHistory,
   getFavoriteVendors,
@@ -16,7 +19,7 @@ const {
   getReorderSuggestions
 } = require('../controllers/restaurantDashboardController');
 const { protect, authorize } = require('../middleware/auth');
-const { query } = require('express-validator');
+const { query, body } = require('express-validator');
 
 const router = express.Router();
 
@@ -98,6 +101,71 @@ router.get('/budget',
 );
 
 /**
+ * @route   POST /api/v1/restaurant-dashboard/budget
+ * @desc    Create a new monthly/quarterly budget
+ * @access  Private (Restaurant Owner only)
+ */
+router.post('/budget',
+  authorize('restaurantOwner'),
+  [
+    body('budgetPeriod')
+      .isIn(['monthly', 'quarterly', 'yearly'])
+      .withMessage('Budget period must be monthly, quarterly, or yearly'),
+    body('year')
+      .isInt({ min: 2020, max: 2050 })
+      .withMessage('Year must be between 2020 and 2050'),
+    body('month')
+      .optional()
+      .isInt({ min: 1, max: 12 })
+      .withMessage('Month must be between 1 and 12'),
+    body('quarter')
+      .optional()
+      .isInt({ min: 1, max: 4 })
+      .withMessage('Quarter must be between 1 and 4'),
+    body('totalBudgetLimit')
+      .isFloat({ min: 0 })
+      .withMessage('Total budget limit must be a positive number'),
+    body('categoryLimits')
+      .optional()
+      .isArray()
+      .withMessage('Category limits must be an array'),
+    body('categoryLimits.*.categoryId')
+      .optional()
+      .isMongoId()
+      .withMessage('Category ID must be valid'),
+    body('categoryLimits.*.budgetLimit')
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage('Category budget limit must be positive')
+  ],
+  createBudget
+);
+
+/**
+ * @route   PUT /api/v1/restaurant-dashboard/budget/:budgetId
+ * @desc    Update an existing budget
+ * @access  Private (Restaurant Owner only)
+ */
+router.put('/budget/:budgetId',
+  authorize('restaurantOwner'),
+  [
+    body('totalBudgetLimit')
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage('Total budget limit must be a positive number'),
+    body('categoryLimits')
+      .optional()
+      .isArray()
+      .withMessage('Category limits must be an array'),
+    body('status')
+      .optional()
+      .isIn(['draft', 'active', 'expired', 'archived'])
+      .withMessage('Status must be draft, active, expired, or archived')
+  ],
+  updateBudget
+);
+
+/**
  * @route   GET /api/v1/restaurant-dashboard/inventory-planning
  * @desc    Get inventory planning and consumption insights
  * @access  Private (Restaurant Owner/Manager only)
@@ -153,6 +221,30 @@ router.get('/favorite-vendors',
  * @access  Private (Restaurant Owner/Manager only)
  */
 router.get('/cost-analysis', dateRangeValidation, getCostAnalysis);
+
+/**
+ * @route   GET /api/v1/restaurant-dashboard/price-analytics
+ * @desc    Get average price tracking and price trends by product/category
+ * @access  Private (Restaurant Owner/Manager only)
+ */
+router.get('/price-analytics',
+  [
+    ...dateRangeValidation,
+    query('groupBy')
+      .optional()
+      .isIn(['product', 'category'])
+      .withMessage('GroupBy must be product or category'),
+    query('productId')
+      .optional()
+      .isMongoId()
+      .withMessage('Product ID must be valid'),
+    query('categoryId')
+      .optional()
+      .isMongoId()
+      .withMessage('Category ID must be valid')
+  ],
+  getPriceAnalytics
+);
 
 /**
  * @route   GET /api/v1/restaurant-dashboard/purchase-patterns

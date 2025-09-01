@@ -9,6 +9,7 @@ const AuditLog = require("../models/AuditLog");
 const { ErrorResponse } = require("../middleware/error");
 const mongoose = require("mongoose");
 const { validationResult } = require("express-validator");
+const { cloudinary } = require("../middleware/upload");
 
 // ================================
 // DASHBOARD & ANALYTICS MANAGEMENT
@@ -590,8 +591,22 @@ exports.updateVendor = async (req, res, next) => {
       email: vendor.email,
       phone: vendor.phone,
       businessAddress: vendor.businessAddress,
-      tradeLicenseNo: vendor.tradeLicenseNo
+      tradeLicenseNo: vendor.tradeLicenseNo,
+      logo: vendor.logo
     };
+
+    // Handle logo upload if provided
+    if (req.file) {
+      // If vendor has an existing logo, delete it from Cloudinary
+      if (vendor.logo) {
+        try {
+          const publicId = vendor.logo.split('/').pop().split('.')[0];
+          await cloudinary.uploader.destroy(`aaroth-fresh/vendor-logos/${publicId}`);
+        } catch (deleteError) {
+          console.error('Error deleting old vendor logo:', deleteError);
+        }
+      }
+    }
 
     // Update data
     const updateData = {
@@ -599,6 +614,11 @@ exports.updateVendor = async (req, res, next) => {
       updatedBy: req.user.id,
       updatedAt: new Date()
     };
+
+    // Add logo URL if file was uploaded
+    if (req.file) {
+      updateData.logo = req.file.path;
+    }
 
     // Check if email/phone is being changed and ensure uniqueness
     if (updateData.email && updateData.email !== vendor.email) {
@@ -640,6 +660,7 @@ exports.updateVendor = async (req, res, next) => {
     if (oldValues.email !== vendor.email) changes.push(`email changed from '${oldValues.email}' to '${vendor.email}'`);
     if (oldValues.phone !== vendor.phone) changes.push(`phone changed from '${oldValues.phone}' to '${vendor.phone}'`);
     if (oldValues.tradeLicenseNo !== vendor.tradeLicenseNo) changes.push('trade license updated');
+    if (oldValues.logo !== vendor.logo) changes.push('logo updated');
 
     if (changes.length > 0) {
       await AuditLog.logAction({
@@ -1185,8 +1206,22 @@ exports.updateRestaurant = async (req, res, next) => {
       email: restaurant.email,
       phone: restaurant.phone,
       address: restaurant.address,
-      tradeLicenseNo: restaurant.tradeLicenseNo
+      tradeLicenseNo: restaurant.tradeLicenseNo,
+      logo: restaurant.logo
     };
+
+    // Handle logo upload if provided
+    if (req.file) {
+      // If restaurant has an existing logo, delete it from Cloudinary
+      if (restaurant.logo) {
+        try {
+          const publicId = restaurant.logo.split('/').pop().split('.')[0];
+          await cloudinary.uploader.destroy(`aaroth-fresh/restaurant-logos/${publicId}`);
+        } catch (deleteError) {
+          console.error('Error deleting old restaurant logo:', deleteError);
+        }
+      }
+    }
 
     // Update data
     const updateData = {
@@ -1194,6 +1229,11 @@ exports.updateRestaurant = async (req, res, next) => {
       updatedBy: req.user.id,
       updatedAt: new Date()
     };
+
+    // Add logo URL if file was uploaded
+    if (req.file) {
+      updateData.logo = req.file.path;
+    }
 
     // Check if email/phone is being changed and ensure uniqueness
     if (updateData.email && updateData.email !== restaurant.email) {
@@ -1236,6 +1276,7 @@ exports.updateRestaurant = async (req, res, next) => {
     if (oldValues.email !== restaurant.email) changes.push(`email changed from '${oldValues.email}' to '${restaurant.email}'`);
     if (oldValues.phone !== restaurant.phone) changes.push(`phone changed from '${oldValues.phone}' to '${restaurant.phone}'`);
     if (oldValues.tradeLicenseNo !== restaurant.tradeLicenseNo) changes.push('trade license updated');
+    if (oldValues.logo !== restaurant.logo) changes.push('logo updated');
 
     if (changes.length > 0) {
       await AuditLog.logAction({
@@ -2805,7 +2846,8 @@ exports.toggleVendorVerification = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+}
+
 
 /**
  * @desc    Toggle restaurant verification status
@@ -2915,4 +2957,3 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
     session.endSession();
   }
 };
-

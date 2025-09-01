@@ -50,6 +50,26 @@ const profileStorage = new CloudinaryStorage({
   }
 });
 
+// Create storage engine for restaurant logos
+const restaurantLogoStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/restaurant-logos',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 500, height: 500, crop: 'limit' }]
+  }
+});
+
+// Create storage engine for vendor logos
+const vendorLogoStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/vendor-logos',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 500, height: 500, crop: 'limit' }]
+  }
+});
+
 // Create storage engine for other general purposes
 const generalStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
@@ -141,6 +161,30 @@ module.exports = {
     return [upload.single(fieldName), handleMulterError];
   },
 
+  // Use this for restaurant logo uploads
+  uploadRestaurantLogo: (fieldName) => {
+    const upload = multer({
+      storage: restaurantLogoStorage,
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024 // 1MB
+      }
+    });
+    return [upload.single(fieldName), handleMulterError];
+  },
+
+  // Use this for vendor logo uploads
+  uploadVendorLogo: (fieldName) => {
+    const upload = multer({
+      storage: vendorLogoStorage,
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024 // 1MB
+      }
+    });
+    return [upload.single(fieldName), handleMulterError];
+  },
+
   // General purpose uploads
   uploadGeneralImage: (fieldName) => {
     const upload = multer({
@@ -151,6 +195,39 @@ module.exports = {
       }
     });
     return [upload.single(fieldName), handleMulterError];
+  },
+
+  // Dynamic logo upload for registration (determines storage based on role)
+  uploadRegistrationLogo: (fieldName) => {
+    return (req, res, next) => {
+      const role = req.body.role;
+      let storage;
+      
+      if (role === 'vendor') {
+        storage = vendorLogoStorage;
+      } else if (role === 'restaurantOwner') {
+        storage = restaurantLogoStorage;
+      } else {
+        // Skip file upload for non-business roles
+        return next();
+      }
+
+      const upload = multer({
+        storage,
+        fileFilter,
+        limits: {
+          fileSize: 1 * 1024 * 1024 // 1MB
+        }
+      });
+
+      const middleware = upload.single(fieldName);
+      middleware(req, res, (err) => {
+        if (err) {
+          return handleMulterError(err, req, res, next);
+        }
+        next();
+      });
+    };
   },
 
   // Cloudinary instance for manual operations

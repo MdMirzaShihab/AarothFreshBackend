@@ -77,7 +77,8 @@ const {
 const { protect, authorize } = require("../middleware/auth");
 const { 
   uploadCategoryImage, 
-  uploadProductImages 
+  uploadRestaurantLogo,
+  uploadVendorLogo
 } = require("../middleware/upload");
 const {
   auditLog,
@@ -150,6 +151,7 @@ router.route("/vendors/:id")
   )
   .put(
     mongoIdValidation("id"),
+    uploadVendorLogo('logo'),
     [
       body('businessName').optional().isLength({ min: 2 }).withMessage('Business name must be at least 2 characters'),
       body('email').optional().isEmail().withMessage('Valid email is required'),
@@ -180,6 +182,7 @@ router.delete("/vendors/:id/safe-delete",
   safeDeleteVendor
 );
 
+
 // ================================
 // RESTAURANT MANAGEMENT
 // ================================
@@ -197,6 +200,7 @@ router.route("/restaurants/:id")
   )
   .put(
     mongoIdValidation("id"),
+    uploadRestaurantLogo('logo'),
     [
       body('name').optional().isLength({ min: 2 }).withMessage('Restaurant name must be at least 2 characters'),
       body('email').optional().isEmail().withMessage('Valid email is required'),
@@ -226,6 +230,7 @@ router.delete("/restaurants/:id/safe-delete",
   auditSecurity('restaurant_deleted', 'Deleted restaurant account', { severity: 'critical', impactLevel: 'major' }),
   safeDeleteRestaurant
 );
+
 
 // Restaurant owner and manager creation
 router.post("/restaurant-owners", 
