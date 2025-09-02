@@ -235,8 +235,7 @@ const protectApprovalFields = (req, res, next) => {
     'verificationDate',
     'statusUpdatedBy',
     'statusUpdatedAt',
-    'adminNotes',
-    'isVerified'
+    'adminNotes'
   ];
 
   // Remove protected fields from request body to prevent tampering

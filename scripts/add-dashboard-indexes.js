@@ -239,7 +239,7 @@ async function addDashboardIndexes() {
     console.log('Adding indexes for Vendors collection...');
     
     await db.collection('vendors').createIndex({ 
-      isVerified: 1, 
+      verificationStatus: 1, 
       isActive: 1, 
       createdAt: -1 
     }, { name: 'vendor_status_analytics' });
@@ -256,7 +256,7 @@ async function addDashboardIndexes() {
     console.log('Adding indexes for Restaurants collection...');
     
     await db.collection('restaurants').createIndex({ 
-      isVerified: 1, 
+      verificationStatus: 1, 
       isActive: 1, 
       createdAt: -1 
     }, { name: 'restaurant_status_analytics' });

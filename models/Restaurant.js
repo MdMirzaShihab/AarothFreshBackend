@@ -131,12 +131,7 @@ const RestaurantSchema = new mongoose.Schema({
       default: 0
     }
   },
-  // Status flags
-  isVerified: {
-    type: Boolean,
-    default: false
-  },
-  // Three-state verification system
+  // Three-state verification system  
   verificationStatus: {
     type: String,
     enum: ['pending', 'approved', 'rejected'],

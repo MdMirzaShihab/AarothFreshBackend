@@ -118,10 +118,6 @@ const VendorSchema = new mongoose.Schema({
       default: 0
     }
   },
-  isVerified: {
-    type: Boolean,
-    default: false
-  },
   // Three-state verification system
   verificationStatus: {
     type: String,
