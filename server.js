@@ -122,6 +122,25 @@ const server = app.listen(PORT, async () => {
   } else if (process.env.NODE_ENV !== 'test') {
     console.log('SLA Monitoring Service disabled (set ENABLE_SLA_MONITORING=true to enable)');
   }
+
+  // Initialize Inventory Monitoring Service
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const inventoryMonitoringService = require('./services/inventoryMonitoringService');
+      
+      // Start the inventory monitoring service
+      inventoryMonitoringService.start();
+      console.log('Inventory Monitoring Service started successfully');
+      
+      // Set check interval from environment (default: 60 minutes)
+      const checkIntervalMinutes = parseInt(process.env.INVENTORY_CHECK_INTERVAL) || 60;
+      inventoryMonitoringService.setCheckInterval(checkIntervalMinutes);
+      
+    } catch (error) {
+      console.error('Failed to start Inventory Monitoring Service:', error);
+      // Don't exit the server if inventory monitoring fails to start
+    }
+  }
 });
 
 // Handle unhandled promise rejections

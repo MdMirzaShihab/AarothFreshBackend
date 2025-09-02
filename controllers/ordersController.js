@@ -1,5 +1,6 @@
 const Order = require("../models/Order");
 const Listing = require("../models/Listing");
+const VendorInventory = require("../models/VendorInventory");
 const { ErrorResponse } = require("../middleware/error");
 const { validationResult } = require("express-validator");
 const { canUserPlaceOrders } = require("../middleware/approval");
@@ -158,10 +159,16 @@ exports.updateOrderStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
 
-    const order = await Order.findById(req.params.id).populate({
-      path: "items.listingId",
-      select: "vendorId",
-    });
+    const order = await Order.findById(req.params.id)
+      .populate({
+        path: "items.listingId",
+        select: "vendorId inventoryId profitAnalytics",
+        populate: {
+          path: 'inventoryId',
+          select: 'currentStock analytics'
+        }
+      })
+      .populate('items.productId', 'name');
 
     if (!order) {
       return next(
@@ -181,14 +188,74 @@ exports.updateOrderStatus = async (req, res, next) => {
       );
     }
 
+    const previousStatus = order.status;
     order.status = status;
     order.updatedBy = req.user.id;
-    await order.save();
 
-    res.status(200).json({
-      success: true,
-      data: order,
-    });
+    // If order is being marked as delivered, update inventory and listing analytics
+    if (status === 'delivered' && previousStatus !== 'delivered') {
+      const inventoryUpdates = [];
+      const listingUpdates = [];
+
+      for (let item of order.items) {
+        try {
+          // Get the listing
+          const listing = await Listing.findById(item.listingId._id);
+          if (listing && listing.inventoryId) {
+            // Record the sale in the listing (this will also update inventory)
+            const saleResult = await listing.recordSale(
+              item.quantity,
+              item.unitPrice,
+              order._id.toString()
+            );
+
+            inventoryUpdates.push({
+              itemId: item._id,
+              productName: item.productName,
+              quantitySold: item.quantity,
+              salePrice: item.unitPrice,
+              success: true
+            });
+
+            listingUpdates.push({
+              listingId: listing._id,
+              newAvailableQuantity: saleResult.updatedListing.availability.quantityAvailable,
+              success: true
+            });
+          }
+        } catch (inventoryError) {
+          console.error(`Failed to update inventory for item ${item._id}:`, inventoryError.message);
+          
+          inventoryUpdates.push({
+            itemId: item._id,
+            productName: item.productName,
+            error: inventoryError.message,
+            success: false
+          });
+
+          // Continue processing other items even if one fails
+        }
+      }
+
+      await order.save();
+
+      res.status(200).json({
+        success: true,
+        message: 'Order status updated and inventory synchronized',
+        data: {
+          order,
+          inventoryUpdates,
+          listingUpdates
+        }
+      });
+    } else {
+      await order.save();
+
+      res.status(200).json({
+        success: true,
+        data: order,
+      });
+    }
   } catch (err) {
     next(err);
   }

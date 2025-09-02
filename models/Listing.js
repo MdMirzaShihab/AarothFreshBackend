@@ -11,6 +11,13 @@ const ListingSchema = new mongoose.Schema({
     ref: 'Product',
     required: [true, 'Product ID is required']
   },
+  
+  // Inventory relationship for tracking stock and costs
+  inventoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'VendorInventory',
+    required: [true, 'Inventory ID is required for listing creation']
+  },
 
   // Pricing information
   pricing: [{
@@ -186,6 +193,33 @@ const ListingSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  
+  // Profit and performance tracking
+  profitAnalytics: {
+    totalRevenue: {
+      type: Number,
+      default: 0,
+      min: [0, 'Total revenue cannot be negative']
+    },
+    totalCost: {
+      type: Number,
+      default: 0,
+      min: [0, 'Total cost cannot be negative']
+    },
+    grossProfit: {
+      type: Number,
+      default: 0
+    },
+    profitMargin: {
+      type: Number,
+      default: 0,
+      min: [0, 'Profit margin cannot be negative']
+    },
+    averageProfitPerUnit: {
+      type: Number,
+      default: 0
+    }
+  },
   rating: {
     average: {
       type: Number,
@@ -245,6 +279,47 @@ ListingSchema.pre('save', function(next) {
   next();
 });
 
+// Sync with inventory when availability changes
+ListingSchema.pre('save', async function(next) {
+  if (this.isModified('availability.quantityAvailable') && this.inventoryId) {
+    try {
+      const VendorInventory = require('./VendorInventory');
+      const inventory = await VendorInventory.findById(this.inventoryId);
+      
+      if (inventory) {
+        // Check if we have enough stock in inventory
+        if (this.availability.quantityAvailable > inventory.currentStock.totalQuantity) {
+          const error = new Error(`Cannot list ${this.availability.quantityAvailable} ${this.availability.unit}. Only ${inventory.currentStock.totalQuantity} available in inventory.`);
+          error.name = 'InsufficientInventoryError';
+          return next(error);
+        }
+      }
+    } catch (error) {
+      return next(error);
+    }
+  }
+  next();
+});
+
+// Update profit analytics when sales occur
+ListingSchema.pre('save', function(next) {
+  if (this.isModified('totalQuantitySold') || this.isModified('profitAnalytics.totalRevenue')) {
+    // Calculate gross profit
+    this.profitAnalytics.grossProfit = this.profitAnalytics.totalRevenue - this.profitAnalytics.totalCost;
+    
+    // Calculate profit margin percentage
+    if (this.profitAnalytics.totalRevenue > 0) {
+      this.profitAnalytics.profitMargin = (this.profitAnalytics.grossProfit / this.profitAnalytics.totalRevenue) * 100;
+    }
+    
+    // Calculate average profit per unit
+    if (this.totalQuantitySold > 0) {
+      this.profitAnalytics.averageProfitPerUnit = this.profitAnalytics.grossProfit / this.totalQuantitySold;
+    }
+  }
+  next();
+});
+
 // Virtual for primary image
 ListingSchema.virtual('primaryImage').get(function() {
   if (this.images && this.images.length > 0) {
@@ -278,6 +353,132 @@ ListingSchema.methods.isAvailableForOrder = function(quantity = 1) {
     this.availability.quantityAvailable >= quantity &&
     (!this.availability.expiryDate || this.availability.expiryDate > new Date())
   );
+};
+
+// Method to record a sale and update inventory
+ListingSchema.methods.recordSale = async function(quantitySold, salePrice, orderId) {
+  try {
+    const VendorInventory = require('./VendorInventory');
+    const inventory = await VendorInventory.findById(this.inventoryId);
+    
+    if (!inventory) {
+      throw new Error('Inventory record not found for this listing');
+    }
+
+    // Check if we have enough stock
+    if (quantitySold > this.availability.quantityAvailable) {
+      throw new Error('Cannot sell more than available quantity in listing');
+    }
+
+    // Update listing statistics
+    this.totalQuantitySold += quantitySold;
+    this.totalOrders += 1;
+    this.availability.quantityAvailable -= quantitySold;
+
+    // Update profit analytics
+    const saleRevenue = salePrice * quantitySold;
+    this.profitAnalytics.totalRevenue += saleRevenue;
+
+    // Consume stock from inventory (this will update cost and profit calculations)
+    await inventory.consumeStock(quantitySold, salePrice, orderId);
+
+    // Update cost analytics from inventory
+    this.profitAnalytics.totalCost = inventory.analytics.totalPurchaseValue - 
+      (inventory.currentStock.totalQuantity * inventory.currentStock.averagePurchasePrice);
+
+    // Save the listing
+    await this.save();
+
+    return {
+      success: true,
+      message: 'Sale recorded successfully',
+      updatedListing: this,
+      updatedInventory: inventory
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Method to sync listing quantity with inventory
+ListingSchema.methods.syncWithInventory = async function() {
+  try {
+    const VendorInventory = require('./VendorInventory');
+    const inventory = await VendorInventory.findById(this.inventoryId);
+    
+    if (!inventory) {
+      throw new Error('Inventory record not found for this listing');
+    }
+
+    // Update availability to match inventory (or keep current if less than inventory)
+    const maxAvailable = inventory.currentStock.totalQuantity;
+    if (this.availability.quantityAvailable > maxAvailable) {
+      this.availability.quantityAvailable = maxAvailable;
+    }
+
+    // Update unit to match inventory
+    this.availability.unit = inventory.currentStock.unit;
+
+    await this.save();
+    return this;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Method to check if listing needs inventory attention
+ListingSchema.methods.checkInventoryHealth = async function() {
+  try {
+    const VendorInventory = require('./VendorInventory');
+    const inventory = await VendorInventory.findById(this.inventoryId);
+    
+    if (!inventory) {
+      return { status: 'error', message: 'Inventory record not found' };
+    }
+
+    const alerts = [];
+
+    // Check if listing quantity exceeds inventory
+    if (this.availability.quantityAvailable > inventory.currentStock.totalQuantity) {
+      alerts.push({
+        type: 'overselling_risk',
+        severity: 'high',
+        message: `Listing quantity (${this.availability.quantityAvailable}) exceeds inventory stock (${inventory.currentStock.totalQuantity})`
+      });
+    }
+
+    // Check if inventory is running low
+    if (inventory.status === 'low_stock' || inventory.status === 'out_of_stock') {
+      alerts.push({
+        type: 'low_inventory',
+        severity: inventory.status === 'out_of_stock' ? 'critical' : 'medium',
+        message: `Inventory status: ${inventory.status}`
+      });
+    }
+
+    // Check profit margins
+    const currentPrice = this.pricing[0]?.pricePerUnit || 0;
+    const averageCost = inventory.currentStock.averagePurchasePrice || 0;
+    const profitMargin = averageCost > 0 ? ((currentPrice - averageCost) / currentPrice) * 100 : 0;
+
+    if (profitMargin < 10) { // Less than 10% profit margin
+      alerts.push({
+        type: 'low_profit_margin',
+        severity: profitMargin < 0 ? 'critical' : 'medium',
+        message: `Low profit margin: ${profitMargin.toFixed(2)}%`
+      });
+    }
+
+    return {
+      status: alerts.length > 0 ? 'attention_needed' : 'healthy',
+      alerts,
+      inventoryStatus: inventory.status,
+      profitMargin: profitMargin.toFixed(2),
+      stockLevel: inventory.currentStock.totalQuantity
+    };
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
 };
 
 // Static method for advanced search
@@ -391,11 +592,13 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
 // Indexes for better query performance
 ListingSchema.index({ vendorId: 1, status: 1 });
 ListingSchema.index({ productId: 1, status: 1 });
+ListingSchema.index({ inventoryId: 1 });
 ListingSchema.index({ status: 1, featured: 1, createdAt: -1 });
 ListingSchema.index({ 'pricing.pricePerUnit': 1 });
 ListingSchema.index({ qualityGrade: 1 });
 ListingSchema.index({ description: 'text' });
 ListingSchema.index({ isFlagged: 1, status: 1 });
+ListingSchema.index({ 'profitAnalytics.profitMargin': -1 }); // For profit analytics queries
 ListingSchema.index({ isDeleted: 1, status: 1 });
 ListingSchema.index({ moderatedBy: 1, lastStatusUpdate: -1 });
 

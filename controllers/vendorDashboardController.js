@@ -7,6 +7,53 @@ const Product = require('../models/Product');
 const { ErrorResponse } = require('../middleware/error');
 
 /**
+ * Helper function to calculate profit margin distribution
+ */
+const calculateProfitMarginDistribution = (profitByProduct) => {
+  if (!profitByProduct || profitByProduct.length === 0) {
+    return {
+      highMargin: { count: 0, percentage: 0, range: '> 30%' },
+      mediumMargin: { count: 0, percentage: 0, range: '10-30%' },
+      lowMargin: { count: 0, percentage: 0, range: '0-10%' },
+      negative: { count: 0, percentage: 0, range: '< 0%' }
+    };
+  }
+
+  const total = profitByProduct.length;
+  const distribution = profitByProduct.reduce((acc, product) => {
+    const margin = product.averageProfitMargin || 0;
+    if (margin > 30) acc.highMargin++;
+    else if (margin >= 10) acc.mediumMargin++;
+    else if (margin >= 0) acc.lowMargin++;
+    else acc.negative++;
+    return acc;
+  }, { highMargin: 0, mediumMargin: 0, lowMargin: 0, negative: 0 });
+
+  return {
+    highMargin: { 
+      count: distribution.highMargin, 
+      percentage: Math.round((distribution.highMargin / total) * 100), 
+      range: '> 30%' 
+    },
+    mediumMargin: { 
+      count: distribution.mediumMargin, 
+      percentage: Math.round((distribution.mediumMargin / total) * 100), 
+      range: '10-30%' 
+    },
+    lowMargin: { 
+      count: distribution.lowMargin, 
+      percentage: Math.round((distribution.lowMargin / total) * 100), 
+      range: '0-10%' 
+    },
+    negative: { 
+      count: distribution.negative, 
+      percentage: Math.round((distribution.negative / total) * 100), 
+      range: '< 0%' 
+    }
+  };
+};
+
+/**
  * Helper function to get date range based on period or custom dates
  */
 const getDateRange = (period, startDate, endDate) => {
@@ -68,13 +115,17 @@ exports.getDashboardOverview = async (req, res, next) => {
     const [
       currentStats,
       previousStats,
+      currentProfitStats,
+      previousProfitStats,
       totalListings,
       activeListings,
       totalProducts,
       averageRating,
+      inventoryHealth,
+      inventoryAlerts,
       recentOrders
     ] = await Promise.all([
-      // Current period stats
+      // Current period order stats
       Order.aggregate([
         {
           $match: {
@@ -92,7 +143,7 @@ exports.getDashboardOverview = async (req, res, next) => {
           }
         }
       ]),
-      // Previous period stats for comparison
+      // Previous period order stats for comparison
       Order.aggregate([
         {
           $match: {
@@ -108,6 +159,111 @@ exports.getDashboardOverview = async (req, res, next) => {
           }
         }
       ]),
+      // Current period profit analytics from listings
+      Listing.aggregate([
+        { $match: { vendorId, 'profitAnalytics.totalRevenue': { $gt: 0 } } },
+        {
+          $addFields: {
+            periodRevenue: {
+              $reduce: {
+                input: '$profitAnalytics.salesHistory',
+                initialValue: 0,
+                in: {
+                  $cond: {
+                    if: {
+                      $and: [
+                        { $gte: ['$$this.date', start] },
+                        { $lte: ['$$this.date', end] }
+                      ]
+                    },
+                    then: { $add: ['$$value', '$$this.revenue'] },
+                    else: '$$value'
+                  }
+                }
+              }
+            },
+            periodCost: {
+              $reduce: {
+                input: '$profitAnalytics.salesHistory',
+                initialValue: 0,
+                in: {
+                  $cond: {
+                    if: {
+                      $and: [
+                        { $gte: ['$$this.date', start] },
+                        { $lte: ['$$this.date', end] }
+                      ]
+                    },
+                    then: { $add: ['$$value', '$$this.totalCost'] },
+                    else: '$$value'
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: '$periodRevenue' },
+            totalCost: { $sum: '$periodCost' },
+            grossProfit: { $sum: { $subtract: ['$periodRevenue', '$periodCost'] } },
+            profitableListings: { $sum: { $cond: [{ $gt: ['$profitAnalytics.profitMargin', 0] }, 1, 0] } }
+          }
+        }
+      ]),
+      // Previous period profit analytics
+      Listing.aggregate([
+        { $match: { vendorId, 'profitAnalytics.totalRevenue': { $gt: 0 } } },
+        {
+          $addFields: {
+            prevPeriodRevenue: {
+              $reduce: {
+                input: '$profitAnalytics.salesHistory',
+                initialValue: 0,
+                in: {
+                  $cond: {
+                    if: {
+                      $and: [
+                        { $gte: ['$$this.date', prevStart] },
+                        { $lte: ['$$this.date', prevEnd] }
+                      ]
+                    },
+                    then: { $add: ['$$value', '$$this.revenue'] },
+                    else: '$$value'
+                  }
+                }
+              }
+            },
+            prevPeriodCost: {
+              $reduce: {
+                input: '$profitAnalytics.salesHistory',
+                initialValue: 0,
+                in: {
+                  $cond: {
+                    if: {
+                      $and: [
+                        { $gte: ['$$this.date', prevStart] },
+                        { $lte: ['$$this.date', prevEnd] }
+                      ]
+                    },
+                    then: { $add: ['$$value', '$$this.totalCost'] },
+                    else: '$$value'
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: '$prevPeriodRevenue' },
+            totalCost: { $sum: '$prevPeriodCost' },
+            grossProfit: { $sum: { $subtract: ['$prevPeriodRevenue', '$prevPeriodCost'] } }
+          }
+        }
+      ]),
       // Total listings
       Listing.countDocuments({ vendorId }),
       // Active listings
@@ -119,6 +275,30 @@ exports.getDashboardOverview = async (req, res, next) => {
         { $match: { vendorId } },
         { $group: { _id: null, avgRating: { $avg: '$rating.average' } } }
       ]),
+      // Inventory health summary
+      VendorInventory.aggregate([
+        { $match: { vendorId } },
+        {
+          $group: {
+            _id: null,
+            totalInventoryItems: { $sum: 1 },
+            totalValue: { $sum: { $multiply: ['$availableQuantity', '$averagePurchasePrice'] } },
+            activeItems: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
+            lowStockItems: { $sum: { $cond: [{ $eq: ['$status', 'low_stock'] }, 1, 0] } },
+            outOfStockItems: { $sum: { $cond: [{ $eq: ['$status', 'out_of_stock'] }, 1, 0] } },
+            overstockedItems: { $sum: { $cond: [{ $eq: ['$status', 'overstocked'] }, 1, 0] } }
+          }
+        }
+      ]),
+      // Critical inventory alerts count
+      VendorInventory.countDocuments({
+        vendorId,
+        $or: [
+          { 'alerts.severity': 'critical' },
+          { 'alerts.severity': 'high' }
+        ],
+        'alerts.isRead': false
+      }),
       // Recent orders
       Order.find({ vendorId })
         .populate('restaurantId', 'name')
@@ -129,12 +309,35 @@ exports.getDashboardOverview = async (req, res, next) => {
 
     const current = currentStats[0] || { totalRevenue: 0, totalOrders: 0, totalQuantity: 0, averageOrderValue: 0 };
     const previous = previousStats[0] || { totalRevenue: 0, totalOrders: 0 };
+    
+    const currentProfit = currentProfitStats[0] || { totalRevenue: 0, totalCost: 0, grossProfit: 0, profitableListings: 0 };
+    const previousProfit = previousProfitStats[0] || { totalRevenue: 0, totalCost: 0, grossProfit: 0 };
+    
+    const inventoryStats = inventoryHealth[0] || {
+      totalInventoryItems: 0,
+      totalValue: 0,
+      activeItems: 0,
+      lowStockItems: 0,
+      outOfStockItems: 0,
+      overstockedItems: 0
+    };
 
     // Calculate growth percentages
     const revenueGrowth = previous.totalRevenue ? 
       ((current.totalRevenue - previous.totalRevenue) / previous.totalRevenue * 100) : 0;
     const orderGrowth = previous.totalOrders ? 
       ((current.totalOrders - previous.totalOrders) / previous.totalOrders * 100) : 0;
+    const profitGrowth = previousProfit.grossProfit ? 
+      ((currentProfit.grossProfit - previousProfit.grossProfit) / previousProfit.grossProfit * 100) : 0;
+
+    // Calculate profit margin
+    const overallProfitMargin = currentProfit.totalRevenue ? 
+      ((currentProfit.grossProfit / currentProfit.totalRevenue) * 100) : 0;
+
+    // Calculate inventory health score (0-100)
+    const totalItems = inventoryStats.totalInventoryItems;
+    const healthyItems = inventoryStats.activeItems;
+    const inventoryHealthScore = totalItems ? Math.round((healthyItems / totalItems) * 100) : 100;
 
     const overview = {
       period: {
@@ -151,6 +354,11 @@ exports.getDashboardOverview = async (req, res, next) => {
           current: current.totalOrders,
           growth: Math.round(orderGrowth * 100) / 100
         },
+        profit: {
+          current: currentProfit.grossProfit,
+          growth: Math.round(profitGrowth * 100) / 100,
+          margin: Math.round(overallProfitMargin * 100) / 100
+        },
         averageOrderValue: Math.round(current.averageOrderValue * 100) / 100,
         totalQuantitySold: current.totalQuantity
       },
@@ -158,8 +366,35 @@ exports.getDashboardOverview = async (req, res, next) => {
         totalListings,
         activeListings,
         totalProducts,
+        profitableListings: currentProfit.profitableListings,
         averageRating: averageRating[0]?.avgRating || 0,
-        listingActivationRate: totalListings ? Math.round((activeListings / totalListings) * 100) : 0
+        listingActivationRate: totalListings ? Math.round((activeListings / totalListings) * 100) : 0,
+        profitabilityRate: totalListings ? Math.round((currentProfit.profitableListings / totalListings) * 100) : 0
+      },
+      inventoryHealth: {
+        totalItems: inventoryStats.totalInventoryItems,
+        totalValue: Math.round(inventoryStats.totalValue * 100) / 100,
+        healthScore: inventoryHealthScore,
+        activeItems: inventoryStats.activeItems,
+        lowStockItems: inventoryStats.lowStockItems,
+        outOfStockItems: inventoryStats.outOfStockItems,
+        overstockedItems: inventoryStats.overstockedItems,
+        criticalAlerts: inventoryAlerts,
+        statusDistribution: {
+          active: inventoryStats.activeItems,
+          lowStock: inventoryStats.lowStockItems,
+          outOfStock: inventoryStats.outOfStockItems,
+          overstocked: inventoryStats.overstockedItems
+        }
+      },
+      financialSummary: {
+        totalRevenue: currentProfit.totalRevenue,
+        totalCosts: currentProfit.totalCost,
+        grossProfit: currentProfit.grossProfit,
+        profitMargin: overallProfitMargin,
+        inventoryValue: inventoryStats.totalValue,
+        returnOnInventory: inventoryStats.totalValue ? 
+          Math.round((currentProfit.grossProfit / inventoryStats.totalValue) * 100 * 100) / 100 : 0
       },
       recentActivity: {
         recentOrders: recentOrders.map(order => ({
@@ -184,7 +419,7 @@ exports.getDashboardOverview = async (req, res, next) => {
 };
 
 /**
- * @desc    Get revenue analytics and trends
+ * @desc    Get comprehensive revenue and profit analytics with inventory cost integration
  * @route   GET /api/v1/vendor-dashboard/revenue
  * @access  Private (Vendor only)
  */
@@ -198,8 +433,11 @@ exports.getRevenueAnalytics = async (req, res, next) => {
     const vendorId = req.user.vendorId;
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
+    
+    // Get inventory analytics for cost calculations
+    const VendorInventory = require('../models/VendorInventory');
 
-    const [dailyRevenue, revenueByStatus, revenueByProduct, monthlyTrends] = await Promise.all([
+    const [dailyRevenue, revenueByStatus, revenueByProduct, monthlyTrends, inventoryAnalytics, profitByProduct] = await Promise.all([
       // Daily revenue breakdown
       Order.aggregate([
         {
@@ -290,13 +528,76 @@ exports.getRevenueAnalytics = async (req, res, next) => {
           }
         },
         { $sort: { '_id.year': 1, '_id.month': 1 } }
+      ]),
+      
+      // Get comprehensive inventory analytics for profit calculations
+      VendorInventory.getInventoryAnalytics(vendorId, start, end),
+      
+      // Get profit by product using listings profit analytics
+      Listing.aggregate([
+        {
+          $match: {
+            vendorId: vendorId,
+            inventoryId: { $exists: true }
+          }
+        },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'productId',
+            foreignField: '_id',
+            as: 'product'
+          }
+        },
+        { $unwind: '$product' },
+        {
+          $lookup: {
+            from: 'productcategories', 
+            localField: 'product.category',
+            foreignField: '_id',
+            as: 'category'
+          }
+        },
+        { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: {
+              productId: '$productId',
+              productName: '$product.name',
+              categoryName: '$category.name'
+            },
+            totalRevenue: { $sum: '$profitAnalytics.totalRevenue' },
+            totalCost: { $sum: '$profitAnalytics.totalCost' },
+            grossProfit: { $sum: '$profitAnalytics.grossProfit' },
+            averageProfitMargin: { $avg: '$profitAnalytics.profitMargin' },
+            totalQuantitySold: { $sum: '$totalQuantitySold' }
+          }
+        },
+        { $sort: { grossProfit: -1 } },
+        { $limit: 20 }
       ])
     ]);
 
+    // Calculate profit metrics from inventory analytics and profit by product
+    const inventoryData = inventoryAnalytics[0] || {
+      totalGrossProfit: 0,
+      totalStockValue: 0,
+      averageProfitMargin: 0
+    };
+
+    const totalRevenue = dailyRevenue.reduce((sum, day) => sum + day.revenue, 0);
+    const totalCost = profitByProduct.reduce((sum, product) => sum + product.totalCost, 0);
+    const totalGrossProfit = profitByProduct.reduce((sum, product) => sum + product.grossProfit, 0);
+    const overallProfitMargin = totalRevenue > 0 ? (totalGrossProfit / totalRevenue) * 100 : 0;
+
     const analytics = {
       summary: {
-        totalRevenue: dailyRevenue.reduce((sum, day) => sum + day.revenue, 0),
+        totalRevenue,
         totalOrders: dailyRevenue.reduce((sum, day) => sum + day.orders, 0),
+        totalCost: Math.round(totalCost * 100) / 100,
+        totalGrossProfit: Math.round(totalGrossProfit * 100) / 100,
+        profitMargin: Math.round(overallProfitMargin * 100) / 100,
+        netProfitMargin: Math.round(overallProfitMargin * 100) / 100, // Same as gross for now, could subtract operational costs
         averageDailyRevenue: dailyRevenue.length ? 
           dailyRevenue.reduce((sum, day) => sum + day.revenue, 0) / dailyRevenue.length : 0
       },
@@ -322,7 +623,37 @@ exports.getRevenueAnalytics = async (req, res, next) => {
         month: `${month._id.year}-${month._id.month.toString().padStart(2, '0')}`,
         revenue: Math.round(month.revenue * 100) / 100,
         orders: month.orders
-      }))
+      })),
+      // New profit analytics sections
+      profitAnalytics: {
+        topProfitableProducts: profitByProduct.slice(0, 10).map(product => ({
+          productId: product._id.productId,
+          productName: product._id.productName,
+          category: product._id.categoryName || 'Uncategorized',
+          totalRevenue: Math.round(product.totalRevenue * 100) / 100,
+          totalCost: Math.round(product.totalCost * 100) / 100,
+          grossProfit: Math.round(product.grossProfit * 100) / 100,
+          profitMargin: Math.round(product.averageProfitMargin * 100) / 100,
+          quantitySold: product.totalQuantitySold,
+          profitPerUnit: product.totalQuantitySold > 0 ? 
+            Math.round((product.grossProfit / product.totalQuantitySold) * 100) / 100 : 0
+        })),
+        profitMarginDistribution: calculateProfitMarginDistribution(profitByProduct),
+        costBreakdown: {
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+          totalCost: Math.round(totalCost * 100) / 100,
+          grossProfit: Math.round(totalGrossProfit * 100) / 100,
+          costOfGoodsSold: Math.round(totalCost * 100) / 100,
+          profitMargin: Math.round(overallProfitMargin * 100) / 100
+        }
+      },
+      inventoryImpact: {
+        totalStockValue: Math.round(inventoryData.totalStockValue * 100) / 100,
+        averageInventoryProfitMargin: Math.round(inventoryData.averageProfitMargin * 100) / 100,
+        totalInventoryProfit: Math.round(inventoryData.totalGrossProfit * 100) / 100,
+        inventoryTurnoverInsight: profitByProduct.length > 0 ? 
+          'Based on current sales and inventory levels' : 'No inventory data available'
+      }
     };
 
     // Calculate percentages for revenue by status
@@ -493,7 +824,7 @@ exports.getOrderAnalytics = async (req, res, next) => {
 };
 
 /**
- * @desc    Get product performance analytics
+ * @desc    Get enhanced product performance analytics with profit metrics
  * @route   GET /api/v1/vendor-dashboard/products
  * @access  Private (Vendor only)
  */
@@ -505,94 +836,36 @@ exports.getProductPerformance = async (req, res, next) => {
     }
 
     const vendorId = req.user.vendorId;
-    const { period = 'month', startDate, endDate, sort = 'revenue', limit = 20 } = req.query;
+    const { period = 'month', startDate, endDate, sort = 'profit', limit = 20 } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
+    
+    const VendorInventory = require('../models/VendorInventory');
 
+    // Enhanced sort mapping to include profit-based metrics
     const sortMapping = {
-      revenue: { revenue: -1 },
-      quantity: { totalQuantity: -1 },
+      revenue: { totalRevenue: -1 },
+      profit: { grossProfit: -1 },
+      profitMargin: { profitMargin: -1 },
+      quantity: { totalQuantitySold: -1 },
       orders: { totalOrders: -1 },
-      rating: { averageRating: -1 }
+      rating: { rating: -1 },
+      roi: { roi: -1 }
     };
 
-    const [productPerformance, categoryPerformance] = await Promise.all([
-      // Individual product performance
-      Order.aggregate([
+    // Get comprehensive product performance with profit integration
+    const [listingPerformance, categoryPerformance, inventoryData] = await Promise.all([
+      // Enhanced product performance with profit analytics from listings
+      Listing.aggregate([
         {
           $match: {
             vendorId: vendorId,
-            createdAt: { $gte: start, $lte: end }
-          }
-        },
-        { $unwind: '$items' },
-        {
-          $group: {
-            _id: '$items.productId',
-            totalOrders: { $sum: 1 },
-            totalQuantity: { $sum: '$items.quantity' },
-            revenue: { $sum: '$items.totalPrice' },
-            avgUnitPrice: { $avg: '$items.unitPrice' }
+            inventoryId: { $exists: true }
           }
         },
         {
           $lookup: {
             from: 'products',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'product'
-          }
-        },
-        { $unwind: '$product' },
-        {
-          $lookup: {
-            from: 'listings',
-            let: { productId: '$_id', vendorId: vendorId },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$productId', '$$productId'] },
-                      { $eq: ['$vendorId', '$$vendorId'] }
-                    ]
-                  }
-                }
-              }
-            ],
-            as: 'listing'
-          }
-        },
-        { $unwind: '$listing' },
-        {
-          $project: {
-            productId: '$_id',
-            productName: '$product.name',
-            category: '$product.category',
-            totalOrders: 1,
-            totalQuantity: 1,
-            revenue: 1,
-            avgUnitPrice: 1,
-            averageRating: '$listing.rating.average',
-            views: '$listing.views',
-            status: '$listing.status'
-          }
-        },
-        { $sort: sortMapping[sort] || { revenue: -1 } },
-        { $limit: parseInt(limit) }
-      ]),
-      // Category performance
-      Order.aggregate([
-        {
-          $match: {
-            vendorId: vendorId,
-            createdAt: { $gte: start, $lte: end }
-          }
-        },
-        { $unwind: '$items' },
-        {
-          $lookup: {
-            from: 'products',
-            localField: 'items.productId',
+            localField: 'productId',
             foreignField: '_id',
             as: 'product'
           }
@@ -606,58 +879,217 @@ exports.getProductPerformance = async (req, res, next) => {
             as: 'category'
           }
         },
-        { $unwind: '$category' },
+        { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'vendorinventories',
+            localField: 'inventoryId',
+            foreignField: '_id',
+            as: 'inventory'
+          }
+        },
+        { $unwind: { path: '$inventory', preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            productId: '$productId',
+            productName: '$product.name',
+            category: '$category.name',
+            // Revenue & Sales data
+            totalRevenue: '$profitAnalytics.totalRevenue',
+            totalCost: '$profitAnalytics.totalCost', 
+            grossProfit: '$profitAnalytics.grossProfit',
+            profitMargin: '$profitAnalytics.profitMargin',
+            averageProfitPerUnit: '$profitAnalytics.averageProfitPerUnit',
+            totalQuantitySold: '$totalQuantitySold',
+            totalOrders: '$totalOrders',
+            // Inventory data
+            currentStock: '$inventory.currentStock.totalQuantity',
+            averagePurchasePrice: '$inventory.currentStock.averagePurchasePrice',
+            inventoryValue: '$inventory.currentStock.totalValue',
+            // Calculated metrics
+            roi: {
+              $cond: {
+                if: { $gt: ['$profitAnalytics.totalCost', 0] },
+                then: { $multiply: [{ $divide: ['$profitAnalytics.grossProfit', '$profitAnalytics.totalCost'] }, 100] },
+                else: 0
+              }
+            },
+            turnoverRate: '$inventory.analytics.turnoverRate',
+            // Listing performance
+            rating: '$rating.average',
+            views: '$views',
+            status: '$status',
+            // Pricing info
+            currentPrice: { $arrayElemAt: ['$pricing.pricePerUnit', 0] },
+            lastUpdated: '$updatedAt'
+          }
+        },
+        { $sort: sortMapping[sort] || sortMapping.profit },
+        { $limit: parseInt(limit) }
+      ]),
+      
+      // Category performance with profit integration
+      Listing.aggregate([
+        {
+          $match: {
+            vendorId: vendorId,
+            inventoryId: { $exists: true }
+          }
+        },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'productId', 
+            foreignField: '_id',
+            as: 'product'
+          }
+        },
+        { $unwind: '$product' },
+        {
+          $lookup: {
+            from: 'productcategories',
+            localField: 'product.category',
+            foreignField: '_id',
+            as: 'category'
+          }
+        },
+        { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
         {
           $group: {
             _id: '$category._id',
             categoryName: { $first: '$category.name' },
-            totalOrders: { $sum: 1 },
-            totalQuantity: { $sum: '$items.quantity' },
-            revenue: { $sum: '$items.totalPrice' },
-            uniqueProducts: { $addToSet: '$items.productId' }
+            totalProducts: { $sum: 1 },
+            totalRevenue: { $sum: '$profitAnalytics.totalRevenue' },
+            totalCost: { $sum: '$profitAnalytics.totalCost' },
+            grossProfit: { $sum: '$profitAnalytics.grossProfit' },
+            totalQuantitySold: { $sum: '$totalQuantitySold' },
+            totalOrders: { $sum: '$totalOrders' },
+            averageRating: { $avg: '$rating.average' }
           }
         },
         {
           $project: {
             categoryId: '$_id',
             categoryName: 1,
+            totalProducts: 1,
+            totalRevenue: 1,
+            totalCost: 1,
+            grossProfit: 1,
+            profitMargin: {
+              $cond: {
+                if: { $gt: ['$totalRevenue', 0] },
+                then: { $multiply: [{ $divide: ['$grossProfit', '$totalRevenue'] }, 100] },
+                else: 0
+              }
+            },
+            totalQuantitySold: 1,
             totalOrders: 1,
-            totalQuantity: 1,
-            revenue: 1,
-            uniqueProducts: { $size: '$uniqueProducts' }
+            averageRating: 1,
+            roi: {
+              $cond: {
+                if: { $gt: ['$totalCost', 0] },
+                then: { $multiply: [{ $divide: ['$grossProfit', '$totalCost'] }, 100] },
+                else: 0
+              }
+            }
           }
         },
-        { $sort: { revenue: -1 } }
-      ])
+        { $sort: { grossProfit: -1 } }
+      ]),
+      
+      // Get overall inventory analytics
+      VendorInventory.getInventoryAnalytics(vendorId)
     ]);
 
+    const inventoryAnalytics = inventoryData[0] || {};
+
     const analytics = {
-      topProducts: productPerformance.map(product => ({
+      topProducts: listingPerformance.map(product => ({
         productId: product.productId,
         name: product.productName,
-        category: product.category,
-        orders: product.totalOrders,
-        quantitySold: product.totalQuantity,
-        revenue: Math.round(product.revenue * 100) / 100,
-        averageUnitPrice: Math.round(product.avgUnitPrice * 100) / 100,
-        rating: product.averageRating || 0,
+        category: product.category || 'Uncategorized',
+        // Financial metrics
+        revenue: Math.round((product.totalRevenue || 0) * 100) / 100,
+        cost: Math.round((product.totalCost || 0) * 100) / 100,
+        grossProfit: Math.round((product.grossProfit || 0) * 100) / 100,
+        profitMargin: Math.round((product.profitMargin || 0) * 100) / 100,
+        profitPerUnit: Math.round((product.averageProfitPerUnit || 0) * 100) / 100,
+        roi: Math.round((product.roi || 0) * 100) / 100,
+        // Sales metrics
+        orders: product.totalOrders || 0,
+        quantitySold: product.totalQuantitySold || 0,
+        currentPrice: Math.round((product.currentPrice || 0) * 100) / 100,
+        averagePurchasePrice: Math.round((product.averagePurchasePrice || 0) * 100) / 100,
+        // Inventory metrics
+        currentStock: product.currentStock || 0,
+        inventoryValue: Math.round((product.inventoryValue || 0) * 100) / 100,
+        turnoverRate: product.turnoverRate || 0,
+        // Performance metrics
+        rating: product.rating || 0,
         views: product.views || 0,
-        status: product.status
+        status: product.status || 'inactive',
+        lastUpdated: product.lastUpdated,
+        // Health indicators
+        stockHealth: product.currentStock > 0 ? 'in_stock' : 'out_of_stock',
+        profitHealth: product.profitMargin > 10 ? 'healthy' : product.profitMargin > 0 ? 'low' : 'negative'
       })),
       categoryPerformance: categoryPerformance.map(category => ({
         categoryId: category.categoryId,
-        name: category.categoryName,
+        name: category.categoryName || 'Uncategorized',
+        totalProducts: category.totalProducts,
+        // Financial metrics
+        revenue: Math.round((category.totalRevenue || 0) * 100) / 100,
+        cost: Math.round((category.totalCost || 0) * 100) / 100,
+        grossProfit: Math.round((category.grossProfit || 0) * 100) / 100,
+        profitMargin: Math.round((category.profitMargin || 0) * 100) / 100,
+        roi: Math.round((category.roi || 0) * 100) / 100,
+        // Sales metrics
         orders: category.totalOrders,
-        quantitySold: category.totalQuantity,
-        revenue: Math.round(category.revenue * 100) / 100,
-        uniqueProducts: category.uniqueProducts
+        quantitySold: category.totalQuantitySold,
+        averageRating: Math.round((category.averageRating || 0) * 100) / 100
       })),
       summary: {
-        totalProducts: productPerformance.length,
-        totalRevenue: productPerformance.reduce((sum, p) => sum + p.revenue, 0),
-        totalQuantitySold: productPerformance.reduce((sum, p) => sum + p.totalQuantity, 0),
-        averageRating: productPerformance.reduce((sum, p, _, arr) => 
-          sum + (p.averageRating || 0) / arr.length, 0)
+        totalProducts: listingPerformance.length,
+        totalRevenue: Math.round(listingPerformance.reduce((sum, p) => sum + (p.totalRevenue || 0), 0) * 100) / 100,
+        totalCost: Math.round(listingPerformance.reduce((sum, p) => sum + (p.totalCost || 0), 0) * 100) / 100,
+        totalGrossProfit: Math.round(listingPerformance.reduce((sum, p) => sum + (p.grossProfit || 0), 0) * 100) / 100,
+        averageProfitMargin: listingPerformance.length > 0 
+          ? Math.round((listingPerformance.reduce((sum, p) => sum + (p.profitMargin || 0), 0) / listingPerformance.length) * 100) / 100
+          : 0,
+        totalQuantitySold: listingPerformance.reduce((sum, p) => sum + (p.totalQuantitySold || 0), 0),
+        averageRating: listingPerformance.length > 0
+          ? Math.round((listingPerformance.reduce((sum, p) => sum + (p.rating || 0), 0) / listingPerformance.length) * 100) / 100
+          : 0,
+        // Performance indicators
+        profitableProducts: listingPerformance.filter(p => (p.grossProfit || 0) > 0).length,
+        highMarginProducts: listingPerformance.filter(p => (p.profitMargin || 0) > 20).length,
+        totalInventoryValue: Math.round((inventoryAnalytics.totalStockValue || 0) * 100) / 100
+      },
+      profitInsights: {
+        topProfitMakers: listingPerformance
+          .filter(p => (p.grossProfit || 0) > 0)
+          .slice(0, 5)
+          .map(p => ({
+            name: p.productName,
+            profit: Math.round((p.grossProfit || 0) * 100) / 100,
+            margin: Math.round((p.profitMargin || 0) * 100) / 100
+          })),
+        lowMarginAlert: listingPerformance
+          .filter(p => (p.profitMargin || 0) < 10 && (p.profitMargin || 0) > 0)
+          .slice(0, 5)
+          .map(p => ({
+            name: p.productName,
+            margin: Math.round((p.profitMargin || 0) * 100) / 100,
+            suggestion: 'Consider adjusting pricing or reducing costs'
+          })),
+        lossmakers: listingPerformance
+          .filter(p => (p.grossProfit || 0) < 0)
+          .slice(0, 3)
+          .map(p => ({
+            name: p.productName,
+            loss: Math.abs(Math.round((p.grossProfit || 0) * 100) / 100),
+            suggestion: 'Review pricing strategy or discontinue'
+          }))
       }
     };
 
@@ -875,85 +1307,157 @@ exports.getCustomerInsights = async (req, res, next) => {
 
 // Additional controller methods will be implemented next...
 /**
- * @desc    Get inventory status and alerts
+ * @desc    Get comprehensive inventory status and analytics
  * @route   GET /api/v1/vendor-dashboard/inventory
  * @access  Private (Vendor only)
  */
 exports.getInventoryStatus = async (req, res, next) => {
   try {
     const vendorId = req.user.vendorId;
+    const VendorInventory = require('../models/VendorInventory');
 
-    const [listings, lowStockItems, outOfStockItems] = await Promise.all([
-      // All vendor listings with stock info
-      Listing.find({ vendorId })
-        .populate('productId', 'name category')
+    const [inventoryItems, listings, inventoryAnalytics] = await Promise.all([
+      // Get all inventory items with complete data
+      VendorInventory.find({ vendorId })
+        .populate('productId', 'name category images')
         .populate({
           path: 'productId',
           populate: {
             path: 'category',
             select: 'name'
           }
-        })
-        .select('productId availability status pricing createdAt updatedAt'),
+        }),
       
-      // Low stock items (less than 10% of initial stock or less than 10 units)
-      Listing.find({
-        vendorId,
-        status: 'active',
-        'availability.quantityAvailable': { $lt: 10, $gt: 0 }
-      })
-        .populate('productId', 'name')
-        .select('productId availability'),
+      // Get listings with inventory references
+      Listing.find({ vendorId })
+        .populate('inventoryId')
+        .populate('productId', 'name category')
+        .select('productId inventoryId availability status pricing profitAnalytics createdAt updatedAt'),
       
-      // Out of stock items
-      Listing.find({
-        vendorId,
-        $or: [
-          { 'availability.quantityAvailable': 0 },
-          { status: 'out_of_stock' }
-        ]
-      })
-        .populate('productId', 'name')
-        .select('productId availability status')
+      // Get comprehensive inventory analytics
+      VendorInventory.getInventoryAnalytics(vendorId)
     ]);
+
+    const analytics = inventoryAnalytics[0] || {
+      totalProducts: 0,
+      totalStockValue: 0,
+      totalStockQuantity: 0,
+      averageProfitMargin: 0,
+      totalGrossProfit: 0,
+      lowStockItems: 0,
+      outOfStockItems: 0,
+      overstockedItems: 0
+    };
+
+    // Categorize inventory items
+    const categorizedItems = {
+      healthy: inventoryItems.filter(item => item.status === 'active'),
+      lowStock: inventoryItems.filter(item => item.status === 'low_stock'),
+      outOfStock: inventoryItems.filter(item => item.status === 'out_of_stock'),
+      overstocked: inventoryItems.filter(item => item.status === 'overstocked'),
+      inactive: inventoryItems.filter(item => item.status === 'inactive')
+    };
+
+    // Get items with unread alerts
+    const alertsCount = inventoryItems.reduce((total, item) => {
+      return total + item.alerts.filter(alert => !alert.isRead).length;
+    }, 0);
+
+    // Calculate total purchase and sale values
+    const purchaseAnalytics = inventoryItems.reduce((acc, item) => {
+      acc.totalPurchaseValue += item.analytics.totalPurchaseValue;
+      acc.totalSoldValue += item.analytics.totalSoldValue;
+      acc.totalGrossProfit += item.analytics.grossProfit;
+      return acc;
+    }, { totalPurchaseValue: 0, totalSoldValue: 0, totalGrossProfit: 0 });
+
+    // Get recent stock movements (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const recentMovements = inventoryItems.reduce((movements, item) => {
+      const recentItemMovements = item.analytics.stockMovements.filter(
+        movement => new Date(movement.date) >= sevenDaysAgo
+      );
+      return movements.concat(recentItemMovements.map(movement => ({
+        ...movement.toObject(),
+        productName: item.productId.name,
+        inventoryId: item._id
+      })));
+    }, []).sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const inventory = {
       summary: {
-        totalListings: listings.length,
-        activeListings: listings.filter(l => l.status === 'active').length,
-        lowStockItems: lowStockItems.length,
-        outOfStockItems: outOfStockItems.length,
-        totalValue: listings.reduce((sum, listing) => {
-          const price = listing.pricing[0]?.pricePerUnit || 0;
-          const quantity = listing.availability.quantityAvailable || 0;
-          return sum + (price * quantity);
-        }, 0)
+        totalProducts: analytics.totalProducts,
+        totalStockValue: Math.round(analytics.totalStockValue * 100) / 100,
+        totalStockQuantity: analytics.totalStockQuantity,
+        averageProfitMargin: Math.round(analytics.averageProfitMargin * 100) / 100,
+        totalGrossProfit: Math.round(analytics.totalGrossProfit * 100) / 100,
+        stockDistribution: {
+          healthy: categorizedItems.healthy.length,
+          lowStock: categorizedItems.lowStock.length,
+          outOfStock: categorizedItems.outOfStock.length,
+          overstocked: categorizedItems.overstocked.length,
+          inactive: categorizedItems.inactive.length
+        },
+        alertsCount,
+        totalPurchaseValue: Math.round(purchaseAnalytics.totalPurchaseValue * 100) / 100,
+        totalSoldValue: Math.round(purchaseAnalytics.totalSoldValue * 100) / 100,
+        overallProfitMargin: purchaseAnalytics.totalSoldValue > 0 
+          ? Math.round((purchaseAnalytics.totalGrossProfit / purchaseAnalytics.totalSoldValue) * 100 * 100) / 100 
+          : 0
       },
-      stockAlerts: {
-        lowStock: lowStockItems.map(item => ({
-          listingId: item._id,
-          productName: item.productId.name,
-          currentStock: item.availability.quantityAvailable,
-          unit: item.availability.unit,
-          status: 'low_stock'
-        })),
-        outOfStock: outOfStockItems.map(item => ({
-          listingId: item._id,
-          productName: item.productId.name,
-          currentStock: item.availability.quantityAvailable,
-          unit: item.availability.unit,
-          status: 'out_of_stock'
+      inventoryItems: inventoryItems.map(item => ({
+        inventoryId: item._id,
+        productId: item.productId._id,
+        productName: item.productId.name,
+        category: item.productId.category?.name || 'Uncategorized',
+        currentStock: item.currentStock.totalQuantity,
+        unit: item.currentStock.unit,
+        averagePurchasePrice: Math.round(item.currentStock.averagePurchasePrice * 100) / 100,
+        totalValue: Math.round(item.currentStock.totalValue * 100) / 100,
+        status: item.status,
+        reorderLevel: item.inventorySettings.reorderLevel,
+        maxStockLevel: item.inventorySettings.maxStockLevel,
+        grossProfit: Math.round(item.analytics.grossProfit * 100) / 100,
+        profitMargin: Math.round(item.analytics.profitMargin * 100) / 100,
+        lastStockUpdate: item.lastStockUpdate,
+        alertsCount: item.alerts.filter(alert => !alert.isRead).length,
+        activeBatches: item.purchases.filter(p => p.status === 'active').length,
+        totalPurchases: item.purchases.length
+      })),
+      stockAlerts: inventoryItems.filter(item => 
+        item.status === 'low_stock' || 
+        item.status === 'out_of_stock' || 
+        item.alerts.some(alert => !alert.isRead)
+      ).map(item => ({
+        inventoryId: item._id,
+        productName: item.productId.name,
+        status: item.status,
+        currentStock: item.currentStock.totalQuantity,
+        reorderLevel: item.inventorySettings.reorderLevel,
+        unreadAlerts: item.alerts.filter(alert => !alert.isRead).map(alert => ({
+          type: alert.type,
+          message: alert.message,
+          severity: alert.severity,
+          createdAt: alert.createdAt
         }))
-      },
-      inventoryList: listings.map(listing => ({
+      })),
+      recentMovements: recentMovements.slice(0, 20), // Last 20 movements
+      listings: listings.map(listing => ({
         listingId: listing._id,
+        inventoryId: listing.inventoryId,
         productName: listing.productId.name,
         category: listing.productId.category?.name || 'Uncategorized',
-        currentStock: listing.availability.quantityAvailable,
+        availableQuantity: listing.availability.quantityAvailable,
         unit: listing.availability.unit,
         pricePerUnit: listing.pricing[0]?.pricePerUnit || 0,
         status: listing.status,
-        stockValue: (listing.pricing[0]?.pricePerUnit || 0) * (listing.availability.quantityAvailable || 0),
+        profitAnalytics: {
+          totalRevenue: Math.round((listing.profitAnalytics?.totalRevenue || 0) * 100) / 100,
+          grossProfit: Math.round((listing.profitAnalytics?.grossProfit || 0) * 100) / 100,
+          profitMargin: Math.round((listing.profitAnalytics?.profitMargin || 0) * 100) / 100
+        },
         lastUpdated: listing.updatedAt
       }))
     };
@@ -1480,7 +1984,7 @@ exports.getSeasonalTrends = async (req, res, next) => {
 };
 
 /**
- * @desc    Get financial summary and payment tracking
+ * @desc    Get comprehensive financial summary with COGS, inventory valuation, and true P&L
  * @route   GET /api/v1/vendor-dashboard/financial-summary
  * @access  Private (Vendor only)
  */
@@ -1495,8 +1999,16 @@ exports.getFinancialSummary = async (req, res, next) => {
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
-    const [financialStats, paymentStatusBreakdown] = await Promise.all([
-      // Financial statistics
+    const [
+      orderStats,
+      paymentStatusBreakdown,
+      cogsData,
+      inventoryValuation,
+      operationalCosts,
+      profitAnalytics,
+      cashFlowData
+    ] = await Promise.all([
+      // Order and revenue statistics
       Order.aggregate([
         {
           $match: {
@@ -1523,6 +2035,7 @@ exports.getFinancialSummary = async (req, res, next) => {
           }
         }
       ]),
+
       // Payment status breakdown
       Order.aggregate([
         {
@@ -1538,10 +2051,175 @@ exports.getFinancialSummary = async (req, res, next) => {
             amount: { $sum: '$totalAmount' }
           }
         }
+      ]),
+
+      // Cost of Goods Sold (COGS) from inventory consumption
+      VendorInventory.aggregate([
+        { 
+          $match: { 
+            vendorId,
+            'stockConsumption.date': { $gte: start, $lte: end }
+          } 
+        },
+        {
+          $unwind: '$stockConsumption'
+        },
+        {
+          $match: {
+            'stockConsumption.date': { $gte: start, $lte: end }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalCOGS: { $sum: '$stockConsumption.costOfGoods' },
+            totalQuantitySold: { $sum: '$stockConsumption.quantity' },
+            totalTransactions: { $sum: 1 }
+          }
+        }
+      ]),
+
+      // Current inventory valuation
+      VendorInventory.aggregate([
+        { $match: { vendorId, status: { $in: ['active', 'low_stock', 'overstocked'] } } },
+        {
+          $group: {
+            _id: null,
+            currentInventoryValue: { 
+              $sum: { $multiply: ['$availableQuantity', '$averagePurchasePrice'] } 
+            },
+            totalItems: { $sum: 1 },
+            totalQuantity: { $sum: '$availableQuantity' },
+            averageCostPerUnit: { $avg: '$averagePurchasePrice' }
+          }
+        }
+      ]),
+
+      // Operational costs from inventory purchases in period
+      VendorInventory.aggregate([
+        { 
+          $match: { 
+            vendorId,
+            'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
+          } 
+        },
+        {
+          $unwind: '$purchaseHistory'
+        },
+        {
+          $match: {
+            'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalPurchases: { $sum: '$purchaseHistory.totalCost' },
+            transportationCosts: { $sum: '$purchaseHistory.transportationCost' },
+            storageCosts: { $sum: '$purchaseHistory.storageCost' },
+            otherCosts: { $sum: '$purchaseHistory.otherCosts' },
+            purchaseVolume: { $sum: '$purchaseHistory.purchasedQuantity' }
+          }
+        }
+      ]),
+
+      // Profit analytics from listings
+      Listing.aggregate([
+        { 
+          $match: { 
+            vendorId,
+            'profitAnalytics.totalRevenue': { $gt: 0 }
+          } 
+        },
+        {
+          $addFields: {
+            periodProfitData: {
+              $filter: {
+                input: '$profitAnalytics.salesHistory',
+                cond: {
+                  $and: [
+                    { $gte: ['$$this.date', start] },
+                    { $lte: ['$$this.date', end] }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          $addFields: {
+            periodRevenue: { $sum: '$periodProfitData.revenue' },
+            periodCost: { $sum: '$periodProfitData.totalCost' },
+            periodProfit: { $subtract: [{ $sum: '$periodProfitData.revenue' }, { $sum: '$periodProfitData.totalCost' }] }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: '$periodRevenue' },
+            totalCost: { $sum: '$periodCost' },
+            grossProfit: { $sum: '$periodProfit' },
+            profitableProducts: { 
+              $sum: { $cond: [{ $gt: ['$periodProfit', 0] }, 1, 0] } 
+            },
+            avgProfitMargin: { 
+              $avg: { 
+                $cond: [
+                  { $gt: ['$periodRevenue', 0] },
+                  { $multiply: [{ $divide: ['$periodProfit', '$periodRevenue'] }, 100] },
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]),
+
+      // Cash flow analysis (delivered orders vs purchases)
+      Promise.all([
+        Order.aggregate([
+          {
+            $match: {
+              vendorId: vendorId,
+              status: 'delivered',
+              paymentStatus: 'paid',
+              createdAt: { $gte: start, $lte: end }
+            }
+          },
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+              dailyInflow: { $sum: '$totalAmount' }
+            }
+          }
+        ]),
+        VendorInventory.aggregate([
+          { 
+            $match: { 
+              vendorId,
+              'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
+            } 
+          },
+          {
+            $unwind: '$purchaseHistory'
+          },
+          {
+            $match: {
+              'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
+            }
+          },
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$purchaseHistory.purchaseDate' } },
+              dailyOutflow: { $sum: '$purchaseHistory.totalCost' }
+            }
+          }
+        ])
       ])
     ]);
 
-    const stats = financialStats[0] || {
+    // Process results with null checks
+    const orderMetrics = orderStats[0] || {
       grossRevenue: 0,
       totalOrders: 0,
       averageOrderValue: 0,
@@ -1549,38 +2227,148 @@ exports.getFinancialSummary = async (req, res, next) => {
       deliveredOrders: 0
     };
 
-    // Calculate commission (assuming 5% platform fee)
-    const platformCommissionRate = 0.05;
-    const estimatedCommission = stats.deliveredRevenue * platformCommissionRate;
-    const netRevenue = stats.deliveredRevenue - estimatedCommission;
+    const cogs = cogsData[0] || {
+      totalCOGS: 0,
+      totalQuantitySold: 0,
+      totalTransactions: 0
+    };
 
+    const inventory = inventoryValuation[0] || {
+      currentInventoryValue: 0,
+      totalItems: 0,
+      totalQuantity: 0,
+      averageCostPerUnit: 0
+    };
+
+    const opCosts = operationalCosts[0] || {
+      totalPurchases: 0,
+      transportationCosts: 0,
+      storageCosts: 0,
+      otherCosts: 0,
+      purchaseVolume: 0
+    };
+
+    const profitData = profitAnalytics[0] || {
+      totalRevenue: 0,
+      totalCost: 0,
+      grossProfit: 0,
+      profitableProducts: 0,
+      avgProfitMargin: 0
+    };
+
+    const [cashInflows, cashOutflows] = cashFlowData;
+
+    // Financial calculations
+    const platformCommissionRate = 0.05;
+    const estimatedCommission = orderMetrics.deliveredRevenue * platformCommissionRate;
+    const netRevenue = orderMetrics.deliveredRevenue - estimatedCommission;
+    
+    // True P&L calculation
+    const grossProfit = profitData.grossProfit || (orderMetrics.deliveredRevenue - cogs.totalCOGS);
+    const operatingExpenses = opCosts.transportationCosts + opCosts.storageCosts + opCosts.otherCosts;
+    const netProfit = grossProfit - operatingExpenses - estimatedCommission;
+    
+    // Margin calculations
+    const grossMargin = orderMetrics.deliveredRevenue ? (grossProfit / orderMetrics.deliveredRevenue * 100) : 0;
+    const netMargin = orderMetrics.deliveredRevenue ? (netProfit / orderMetrics.deliveredRevenue * 100) : 0;
+    
+    // Inventory metrics
+    const inventoryTurnover = inventory.currentInventoryValue ? (cogs.totalCOGS / inventory.currentInventoryValue) : 0;
+    const daysInPeriod = (end - start) / (1000 * 60 * 60 * 24);
+    const daysSalesInInventory = inventoryTurnover ? (daysInPeriod / inventoryTurnover) : 0;
+
+    // Build comprehensive financial summary
     const financialSummary = {
-      period: { start, end },
+      period: { 
+        start, 
+        end, 
+        label: period,
+        daysInPeriod: Math.round(daysInPeriod)
+      },
+      
+      // Revenue breakdown
       revenue: {
-        gross: Math.round(stats.grossRevenue * 100) / 100,
-        delivered: Math.round(stats.deliveredRevenue * 100) / 100,
+        gross: Math.round(orderMetrics.grossRevenue * 100) / 100,
+        delivered: Math.round(orderMetrics.deliveredRevenue * 100) / 100,
         net: Math.round(netRevenue * 100) / 100,
-        pendingPayment: Math.round((stats.grossRevenue - stats.deliveredRevenue) * 100) / 100
+        pendingPayment: Math.round((orderMetrics.grossRevenue - orderMetrics.deliveredRevenue) * 100) / 100
       },
-      orders: {
-        total: stats.totalOrders,
-        delivered: stats.deliveredOrders,
-        pending: stats.totalOrders - stats.deliveredOrders
+
+      // True P&L Statement
+      profitAndLoss: {
+        revenue: Math.round(orderMetrics.deliveredRevenue * 100) / 100,
+        costOfGoodsSold: Math.round(cogs.totalCOGS * 100) / 100,
+        grossProfit: Math.round(grossProfit * 100) / 100,
+        grossMargin: Math.round(grossMargin * 100) / 100,
+        
+        operatingExpenses: {
+          transportation: Math.round(opCosts.transportationCosts * 100) / 100,
+          storage: Math.round(opCosts.storageCosts * 100) / 100,
+          other: Math.round(opCosts.otherCosts * 100) / 100,
+          total: Math.round(operatingExpenses * 100) / 100
+        },
+        
+        platformFees: Math.round(estimatedCommission * 100) / 100,
+        netProfit: Math.round(netProfit * 100) / 100,
+        netMargin: Math.round(netMargin * 100) / 100
       },
-      metrics: {
-        averageOrderValue: Math.round(stats.averageOrderValue * 100) / 100,
-        fulfillmentRate: stats.totalOrders ? 
-          Math.round((stats.deliveredOrders / stats.totalOrders) * 100) : 0,
-        estimatedCommission: Math.round(estimatedCommission * 100) / 100,
-        commissionRate: platformCommissionRate * 100
+
+      // Inventory valuation and metrics
+      inventory: {
+        currentValue: Math.round(inventory.currentInventoryValue * 100) / 100,
+        totalItems: inventory.totalItems,
+        totalQuantity: inventory.totalQuantity,
+        averageCostPerUnit: Math.round(inventory.averageCostPerUnit * 100) / 100,
+        turnoverRate: Math.round(inventoryTurnover * 100) / 100,
+        daysSalesInInventory: Math.round(daysSalesInInventory),
+        purchaseVolume: opCosts.purchaseVolume,
+        totalPurchaseValue: Math.round(opCosts.totalPurchases * 100) / 100
       },
+
+      // Operational metrics
+      operations: {
+        totalOrders: orderMetrics.totalOrders,
+        deliveredOrders: orderMetrics.deliveredOrders,
+        fulfillmentRate: orderMetrics.totalOrders ? 
+          Math.round((orderMetrics.deliveredOrders / orderMetrics.totalOrders) * 100) : 0,
+        averageOrderValue: Math.round(orderMetrics.averageOrderValue * 100) / 100,
+        quantitySold: cogs.totalQuantitySold,
+        averageCostPerSale: cogs.totalQuantitySold ? 
+          Math.round((cogs.totalCOGS / cogs.totalQuantitySold) * 100) / 100 : 0
+      },
+
+      // Financial health indicators
+      financialHealth: {
+        profitabilityScore: Math.max(0, Math.min(100, netMargin + 50)), // 0-100 scale
+        inventoryHealth: inventoryTurnover > 0 ? Math.min(100, inventoryTurnover * 50) : 0,
+        cashFlowHealth: netProfit > 0 ? 'Positive' : netProfit < 0 ? 'Negative' : 'Break-even',
+        returnOnInventory: inventory.currentInventoryValue ? 
+          Math.round((netProfit / inventory.currentInventoryValue * 100) * 100) / 100 : 0,
+        profitableProductsRatio: profitData.profitableProducts && orderMetrics.totalOrders ? 
+          Math.round((profitData.profitableProducts / orderMetrics.totalOrders) * 100) : 0
+      },
+
+      // Payment breakdown
       paymentBreakdown: paymentStatusBreakdown.reduce((acc, payment) => {
         acc[payment._id || 'pending'] = {
           count: payment.count,
           amount: Math.round(payment.amount * 100) / 100
         };
         return acc;
-      }, {})
+      }, {}),
+
+      // Cash flow summary
+      cashFlow: {
+        inflows: cashInflows.map(flow => ({
+          date: flow._id,
+          amount: Math.round(flow.dailyInflow * 100) / 100
+        })),
+        outflows: cashOutflows.map(flow => ({
+          date: flow._id,
+          amount: Math.round(flow.dailyOutflow * 100) / 100
+        })),
+        netCashFlow: Math.round(netProfit * 100) / 100
+      }
     };
 
     res.status(200).json({
@@ -1593,7 +2381,7 @@ exports.getFinancialSummary = async (req, res, next) => {
 };
 
 /**
- * @desc    Get vendor notifications and alerts
+ * @desc    Get unified vendor notifications and inventory alerts
  * @route   GET /api/v1/vendor-dashboard/notifications
  * @access  Private (Vendor only)
  */
@@ -1605,6 +2393,7 @@ exports.getNotifications = async (req, res, next) => {
     }
 
     const userId = req.user.id;
+    const vendorId = req.user.vendorId;
     const { type, unreadOnly, page = 1, limit = 20 } = req.query;
 
     const NotificationService = require('../services/notificationService');
@@ -1614,21 +2403,114 @@ exports.getNotifications = async (req, res, next) => {
       limit: parseInt(limit)
     };
 
-    if (type && type !== 'all') {
+    // Build inventory alerts query
+    let inventoryQuery = { vendorId };
+    if (unreadOnly === 'true') {
+      inventoryQuery['alerts.isRead'] = false;
+    }
+    if (type && type === 'inventory') {
+      // Only inventory alerts
+    } else if (type && type !== 'all' && type !== 'inventory') {
       options.type = type;
     }
 
-    if (unreadOnly === 'true') {
-      options.isRead = false;
-    }
-
-    const [notificationsData, stats] = await Promise.all([
-      NotificationService.getUserNotifications(userId, options),
-      NotificationService.getUserNotificationStats(userId)
+    const [notificationsData, stats, inventoryAlerts] = await Promise.all([
+      // Regular notifications (excluding inventory type if specifically filtering)
+      type === 'inventory' ? 
+        { notifications: [], pagination: { total: 0, pages: 0, page: 1, limit } } :
+        NotificationService.getUserNotifications(userId, options),
+      
+      // Regular notification stats
+      type === 'inventory' ? 
+        { total: 0, unread: 0, urgent: 0, actionRequired: 0 } :
+        NotificationService.getUserNotificationStats(userId),
+      
+      // Inventory alerts from VendorInventory
+      type && type !== 'inventory' && type !== 'all' ? 
+        [] : // Skip inventory alerts if filtering for non-inventory types
+        VendorInventory.aggregate([
+          { $match: inventoryQuery },
+          { $unwind: '$alerts' },
+          { $match: unreadOnly === 'true' ? { 'alerts.isRead': false } : {} },
+          { $sort: { 'alerts.createdAt': -1 } },
+          {
+            $project: {
+              _id: '$alerts._id',
+              type: 'inventory',
+              title: {
+                $switch: {
+                  branches: [
+                    { case: { $eq: ['$alerts.type', 'low_stock'] }, then: 'Low Stock Alert' },
+                    { case: { $eq: ['$alerts.type', 'out_of_stock'] }, then: 'Out of Stock Alert' },
+                    { case: { $eq: ['$alerts.type', 'expiry_warning'] }, then: 'Product Expiry Warning' },
+                    { case: { $eq: ['$alerts.type', 'quality_decline'] }, then: 'Quality Decline Alert' },
+                    { case: { $eq: ['$alerts.type', 'overstock'] }, then: 'Overstock Alert' }
+                  ],
+                  default: 'Inventory Alert'
+                }
+              },
+              message: '$alerts.message',
+              priority: {
+                $switch: {
+                  branches: [
+                    { case: { $eq: ['$alerts.severity', 'critical'] }, then: 'urgent' },
+                    { case: { $eq: ['$alerts.severity', 'high'] }, then: 'high' },
+                    { case: { $eq: ['$alerts.severity', 'medium'] }, then: 'normal' },
+                    { case: { $eq: ['$alerts.severity', 'low'] }, then: 'low' }
+                  ],
+                  default: 'normal'
+                }
+              },
+              isRead: '$alerts.isRead',
+              isActionRequired: {
+                $in: ['$alerts.type', ['low_stock', 'out_of_stock', 'expiry_warning']]
+              },
+              actionUrl: {
+                $concat: ['/vendor/inventory/', { $toString: '$_id' }]
+              },
+              actionText: {
+                $switch: {
+                  branches: [
+                    { case: { $eq: ['$alerts.type', 'low_stock'] }, then: 'Restock Now' },
+                    { case: { $eq: ['$alerts.type', 'out_of_stock'] }, then: 'Add Stock' },
+                    { case: { $eq: ['$alerts.type', 'expiry_warning'] }, then: 'Check Expiry' },
+                    { case: { $eq: ['$alerts.type', 'quality_decline'] }, then: 'Review Quality' },
+                    { case: { $eq: ['$alerts.type', 'overstock'] }, then: 'Review Stock Levels' }
+                  ],
+                  default: 'View Details'
+                }
+              },
+              relatedEntity: {
+                type: 'inventory',
+                id: '$_id'
+              },
+              metadata: {
+                productName: '$productId',
+                currentStock: '$availableQuantity',
+                reorderLevel: '$reorderLevel',
+                alertType: '$alerts.type',
+                severity: '$alerts.severity'
+              },
+              createdAt: '$alerts.createdAt',
+              readAt: '$alerts.readAt',
+              age: {
+                $divide: [
+                  { $subtract: [new Date(), '$alerts.createdAt'] },
+                  1000 * 60 * 60 * 24 // Convert to days
+                ]
+              }
+            }
+          },
+          ...(page && limit ? [
+            { $skip: (parseInt(page) - 1) * parseInt(limit) },
+            { $limit: parseInt(limit) }
+          ] : [])
+        ])
     ]);
 
-    const response = {
-      notifications: notificationsData.notifications.map(notification => ({
+    // Combine and sort all notifications
+    let allNotifications = [
+      ...notificationsData.notifications.map(notification => ({
         id: notification._id,
         type: notification.type,
         title: notification.title,
@@ -1642,14 +2524,112 @@ exports.getNotifications = async (req, res, next) => {
         metadata: notification.metadata,
         age: notification.age,
         createdAt: notification.createdAt,
-        readAt: notification.readAt
+        readAt: notification.readAt,
+        source: 'notification'
       })),
-      pagination: notificationsData.pagination,
+      ...inventoryAlerts.map(alert => ({
+        id: alert._id,
+        type: alert.type,
+        title: alert.title,
+        message: alert.message,
+        priority: alert.priority,
+        isRead: alert.isRead,
+        isActionRequired: alert.isActionRequired,
+        actionUrl: alert.actionUrl,
+        actionText: alert.actionText,
+        relatedEntity: alert.relatedEntity,
+        metadata: alert.metadata,
+        age: Math.round(alert.age * 100) / 100,
+        createdAt: alert.createdAt,
+        readAt: alert.readAt,
+        source: 'inventory'
+      }))
+    ];
+
+    // Sort by priority and recency
+    const priorityOrder = { urgent: 4, high: 3, normal: 2, low: 1 };
+    allNotifications.sort((a, b) => {
+      // First by read status (unread first)
+      if (a.isRead !== b.isRead) {
+        return a.isRead ? 1 : -1;
+      }
+      // Then by priority
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[b.priority] - priorityOrder[a.priority];
+      }
+      // Finally by creation date (newest first)
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    // Calculate pagination for combined results
+    const totalNotifications = notificationsData.pagination.total + inventoryAlerts.length;
+    const totalPages = Math.ceil(totalNotifications / parseInt(limit));
+
+    // Apply pagination to combined results if not already applied
+    if (!type || type === 'all') {
+      const startIndex = (parseInt(page) - 1) * parseInt(limit);
+      allNotifications = allNotifications.slice(startIndex, startIndex + parseInt(limit));
+    }
+
+    // Get inventory alert stats
+    const inventoryStats = await VendorInventory.aggregate([
+      { $match: { vendorId } },
+      { $unwind: '$alerts' },
+      {
+        $group: {
+          _id: null,
+          totalInventoryAlerts: { $sum: 1 },
+          unreadInventoryAlerts: { $sum: { $cond: [{ $eq: ['$alerts.isRead', false] }, 1, 0] } },
+          urgentInventoryAlerts: { 
+            $sum: { 
+              $cond: [
+                { $in: ['$alerts.severity', ['critical', 'high']] }, 
+                1, 
+                0
+              ] 
+            } 
+          },
+          actionRequiredAlerts: {
+            $sum: {
+              $cond: [
+                { $in: ['$alerts.type', ['low_stock', 'out_of_stock', 'expiry_warning']] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    const inventoryStatsData = inventoryStats[0] || {
+      totalInventoryAlerts: 0,
+      unreadInventoryAlerts: 0,
+      urgentInventoryAlerts: 0,
+      actionRequiredAlerts: 0
+    };
+
+    const response = {
+      notifications: allNotifications,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalNotifications,
+        pages: totalPages,
+        hasNext: parseInt(page) < totalPages,
+        hasPrev: parseInt(page) > 1
+      },
       summary: {
-        total: stats.total,
-        unread: stats.unread,
-        urgent: stats.urgent,
-        actionRequired: stats.actionRequired
+        total: stats.total + inventoryStatsData.totalInventoryAlerts,
+        unread: stats.unread + inventoryStatsData.unreadInventoryAlerts,
+        urgent: stats.urgent + inventoryStatsData.urgentInventoryAlerts,
+        actionRequired: stats.actionRequired + inventoryStatsData.actionRequiredAlerts,
+        byType: {
+          system: stats.total,
+          inventory: inventoryStatsData.totalInventoryAlerts,
+          order: 0, // This could be calculated from system notifications if needed
+          payment: 0 // This could be calculated from system notifications if needed
+        }
       }
     };
 
