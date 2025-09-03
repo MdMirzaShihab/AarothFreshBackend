@@ -869,7 +869,7 @@ All endpoints are prefixed with: `/api/v1/orders`
 ### 8. Update Delivery Status
 
 **Endpoint**: `PUT /:id/delivery/status`  
-**Description**: Update delivery status with real-time tracking
+**Description**: Update delivery status
 
 #### Path Parameters
 - `id` (required): Order ID

@@ -1,5 +1,7 @@
 # Aaroth Fresh Vendor Interface Design Documentation
 
+**Navigation**: [Components & Technical Guidelines →](./vendor-interface-components.md)
+
 ## Executive Overview
 
 This comprehensive documentation provides frontend developers with complete specifications for building the Aaroth Fresh vendor interface - a cutting-edge B2B marketplace portal that embodies "Organic Futurism" design philosophy while delivering exceptional user experience for vegetable vendors.
@@ -18,44 +20,68 @@ The vendor interface merges the natural essence of fresh produce with minimalist
 
 ---
 
-## Technology Stack
+## Technology Stack & Integration
 
-- **Frontend**: React.js + TypeScript + Vite
-- **Styling**: Tailwind CSS with Aaroth Fresh custom colors
-- **State Management**: Zustand + TanStack Query
-- **Authentication**: JWT with phone-based login
-- **Real-time**: WebSocket connections for live updates
-- **Charts**: Recharts with custom olive-themed styling
+**Frontend Foundation (Already Configured):**
+- **Framework**: Vanilla JavaScript + React.js + Vite build system
+- **Styling**: TailwindCSS with custom Aaroth Fresh color palette (see config below)
+- **Components**: Extend existing components in `src/components/ui/`, `src/components/forms/`, `src/components/layout/`
+- **API Integration**: REST API integration with existing frontend patterns
+- **Authentication**: JWT Bearer tokens with phone-based vendor login
+- **File Structure**: Follow existing `src/` directory structure and naming conventions
+
+**Integration Notes:**
+- Build vendor interfaces by **extending existing components** rather than creating new ones
+- Use **existing routing patterns** and add vendor-specific routes
+- Follow **established API integration patterns** from current frontend
+- Maintain **consistent styling** with existing TailwindCSS configuration
 
 ---
 
-## Brand Color System (Vendor Interface)
+## TailwindCSS Color System (Pre-configured)
 
-### Primary Olive-Centered Palette
-```css
-/* Primary Earth-Tech Colors */
---earthy-brown: #8C644A;      /* Dark accents, emphasis elements */
---earthy-beige: #F5ECD9;      /* Soft backgrounds, cards */
---earthy-yellow: #D4A373;     /* Warm highlights, success states */
---earthy-tan: #E6D5B8;        /* Subtle differentiation */
+**Important**: Use the exact color names from the frontend's TailwindCSS configuration. All colors below are already defined and available:
 
-/* Secondary Sophisticated Olive Palette */
---muted-olive: #7f8966;       /* Primary brand color, buttons, links */
---sage-green: #9CAF88;        /* Success indicators, positive metrics */
---dusty-cedar: #A0826D;       /* Warning states, attention elements */
+### Primary Colors
+```javascript
+// Use these exact Tailwind classes in your components:
+// Brown variants
+'brown-600'        // #8C644A - Dark accents, emphasis
+'amber-100'        // #F5ECD9 - Soft backgrounds, cards  
+'amber-400'        // #D4A373 - Warm highlights
+'stone-200'        // #E6D5B8 - Subtle differentiation
 
-/* Enhanced Utility Colors */
---text-dark: #3A2A1F;         /* Primary text */
---text-light: #FFFFFF;        /* Text on dark surfaces */
---text-muted: #6B7280;        /* Secondary information */
---tomato-red: #E94B3C;        /* Critical actions, alerts */
---amber-warm: #F59E0B;        /* Warning states */
+// Olive-centered palette (primary brand colors)
+'olive-600'        // #7f8966 - Primary brand color
+'olive-400'        // #9CAF88 - Success indicators
+'orange-400'       // #A0826D - Warning states
 
-/* Glassmorphism Enhancements */
---glass-white: rgba(255, 255, 255, 0.1);
---glass-dark: rgba(31, 41, 55, 0.8);
---glow-olive: #7f896620;      /* Subtle olive glow effects */
---shadow-soft: rgba(60, 42, 31, 0.08);
+// Text colors (standard Tailwind)
+'gray-800'         // #1F2937 - Primary text
+'white'            // #FFFFFF - Light text
+'gray-600'         // #4B5563 - Secondary text
+'red-500'          // #EF4444 - Critical alerts
+'amber-500'        // #F59E0B - Warnings
+```
+
+### Glassmorphism & Effects with Standard TailwindCSS
+```javascript
+// Use standard Tailwind classes for glass effects:
+'bg-white/80 backdrop-blur-sm'        // Light glassmorphism
+'bg-white/60 backdrop-blur-md'        // Medium glassmorphism
+'bg-white/40 backdrop-blur-lg'        // Strong glassmorphism
+'bg-gray-900/80 backdrop-blur-sm'     // Dark mode glass
+
+// Shadow & Glow Effects using standard Tailwind:
+'shadow-lg shadow-olive-200/40'       // Olive glow effect
+'shadow-md shadow-olive-100/30'       // Soft olive shadow
+'shadow-xl shadow-gray-900/10'        // Professional depth
+'hover:shadow-lg hover:shadow-olive-200/40' // Hover interactions
+
+// Focus & Interaction states:
+'focus:ring-2 focus:ring-olive-500/20 focus:border-olive-500'
+'focus:outline-none'                  // Clean focus states
+'touch-pan-y'                         // Mobile-friendly interactions
 ```
 
 ---
@@ -64,28 +90,60 @@ The vendor interface merges the natural essence of fresh produce with minimalist
 
 ### Login Screen - Minimalistic Entry Point
 
-```typescript
-// LoginScreen.tsx
-const LoginScreen = () => {
+```javascript
+// src/components/vendor/LoginScreen.jsx - Extend existing auth components
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Phone, Lock, Leaf, Loader } from 'lucide-react';
+import FloatingLabelInput from '../ui/FloatingLabelInput';
+
+const VendorLoginScreen = () => {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    
+    try {
+      // Integrate with existing auth API pattern
+      const response = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, password })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        // Follow existing auth storage pattern
+        localStorage.setItem('authToken', data.data.token);
+        localStorage.setItem('userRole', data.data.user.role);
+        navigate('/vendor/dashboard');
+      }
+    } catch (error) {
+      console.error('Login failed:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-earthy-beige/20 via-white to-sage-green/10 
+    <div className="min-h-screen bg-gradient-to-br from-amber-50/20 via-white to-olive-50/10 
                     flex items-center justify-center p-6">
       {/* Floating Glass Card */}
-      <div className="glass-4 rounded-3xl p-8 w-full max-w-md border shadow-depth-3 
+      <div className="bg-white/80 backdrop-blur-lg rounded-3xl p-8 w-full max-w-md border shadow-xl shadow-gray-900/10 
                       animate-fade-in backdrop-blur-xl">
         
         {/* Logo & Branding */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-secondary rounded-2xl mx-auto mb-4 
+          <div className="w-16 h-16 bg-gradient-to-r from-olive-600 to-olive-700 rounded-2xl mx-auto mb-4 
                           flex items-center justify-center">
             <Leaf className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-text-dark mb-2">Vendor Portal</h1>
-          <p className="text-text-muted text-sm">Aaroth Fresh B2B Marketplace</p>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Vendor Portal</h1>
+          <p className="text-gray-600 text-sm">Aaroth Fresh B2B Marketplace</p>
         </div>
 
         {/* Login Form */}
@@ -115,8 +173,8 @@ const LoginScreen = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-gradient-secondary text-white py-4 rounded-2xl 
-                       font-medium transition-all duration-300 hover:shadow-glow-olive 
+            className="w-full bg-gradient-to-r from-olive-600 to-olive-700 text-white py-4 rounded-2xl 
+                       font-medium transition-all duration-300 hover:shadow-lg hover:shadow-olive-200/40 
                        hover:-translate-y-0.5 disabled:opacity-50 touch-target"
           >
             {isLoading ? (
@@ -133,7 +191,7 @@ const LoginScreen = () => {
           <div className="text-center">
             <button 
               type="button"
-              className="text-muted-olive hover:text-muted-olive/80 text-sm 
+              className="text-olive-600 hover:text-olive-600/80 text-sm 
                          transition-colors duration-200"
             >
               Forgot Password?
@@ -143,8 +201,8 @@ const LoginScreen = () => {
 
         {/* Registration Link */}
         <div className="mt-8 pt-6 border-t border-white/10 text-center">
-          <p className="text-text-muted text-sm mb-3">New to Aaroth Fresh?</p>
-          <button className="text-muted-olive hover:text-muted-olive/80 font-medium 
+          <p className="text-gray-600 text-sm mb-3">New to Aaroth Fresh?</p>
+          <button className="text-olive-600 hover:text-olive-600/80 font-medium 
                              transition-colors duration-200">
             Register Your Business
           </button>
@@ -157,8 +215,11 @@ const LoginScreen = () => {
 
 ### Registration Flow - Multi-Step Onboarding
 
-```typescript
-// VendorRegistration.tsx
+```javascript
+// src/components/vendor/VendorRegistration.jsx - Multi-step registration form
+import { useState } from 'react';
+import { User, Building, FileText, Shield } from 'lucide-react';
+
 const VendorRegistration = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -167,6 +228,21 @@ const VendorRegistration = () => {
     documents: {},
     verification: {}
   });
+  
+  // Registration API integration
+  const handleRegistration = async (stepData) => {
+    try {
+      const response = await fetch('/api/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(stepData)
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Registration step failed:', error);
+      return { success: false, error: error.message };
+    }
+  };
 
   const steps = [
     { id: 1, title: 'Personal Details', icon: User },
@@ -176,14 +252,14 @@ const VendorRegistration = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-earthy-beige/10 to-sage-green/5 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50/10 to-olive-50/5 p-6">
       <div className="max-w-4xl mx-auto">
         
         {/* Progress Header */}
-        <div className="glass-2 rounded-3xl p-6 mb-8 border">
+        <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 mb-8 border">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold text-text-dark">Join Aaroth Fresh</h1>
-            <span className="text-text-muted text-sm">Step {currentStep} of {steps.length}</span>
+            <h1 className="text-2xl font-bold text-gray-800">Join Aaroth Fresh</h1>
+            <span className="text-gray-600 text-sm">Step {currentStep} of {steps.length}</span>
           </div>
           
           {/* Progress Steps */}
@@ -193,21 +269,21 @@ const VendorRegistration = () => {
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center 
                                 transition-all duration-300 ${
                   currentStep >= step.id 
-                    ? 'bg-gradient-secondary text-white shadow-glow-olive' 
-                    : 'glass-1 text-text-muted'
+                    ? 'bg-gradient-to-r from-olive-600 to-olive-700 text-white shadow-lg shadow-olive-200/40' 
+                    : 'bg-white/60 backdrop-blur-sm text-gray-600'
                 }`}>
                   <step.icon className="w-6 h-6" />
                 </div>
                 <div className="ml-3">
                   <p className={`font-medium text-sm ${
-                    currentStep >= step.id ? 'text-muted-olive' : 'text-text-muted'
+                    currentStep >= step.id ? 'text-olive-600' : 'text-gray-600'
                   }`}>
                     {step.title}
                   </p>
                 </div>
                 {index < steps.length - 1 && (
                   <div className={`w-16 h-0.5 mx-6 transition-all duration-500 ${
-                    currentStep > step.id ? 'bg-muted-olive' : 'bg-gray-200'
+                    currentStep > step.id ? 'bg-olive-600' : 'bg-gray-200'
                   }`} />
                 )}
               </div>
@@ -216,7 +292,7 @@ const VendorRegistration = () => {
         </div>
 
         {/* Step Content */}
-        <div className="glass-3 rounded-3xl p-8 border shadow-depth-2">
+        <div className="bg-white/70 backdrop-blur-md rounded-3xl p-8 border shadow-lg shadow-gray-900/10">
           {currentStep === 1 && <PersonalInfoStep />}
           {currentStep === 2 && <BusinessInfoStep />}
           {currentStep === 3 && <DocumentsUploadStep />}
@@ -234,22 +310,58 @@ const VendorRegistration = () => {
 
 ### Main Dashboard - Command Center
 
-```typescript
-// VendorDashboard.tsx
+```javascript
+// src/pages/vendor/Dashboard.jsx - Main vendor dashboard
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { 
+  TrendingUp, ShoppingBag, DollarSign, Calculator, 
+  Plus, Package, ClipboardList, BarChart, Bell 
+} from 'lucide-react';
+import MetricCard from '../../components/vendor/MetricCard';
+import NotificationBell from '../../components/ui/NotificationBell';
+
 const VendorDashboard = () => {
-  const { data: dashboardData, isLoading } = useDashboardOverview();
-  const { data: notifications } = useNotifications({ unreadOnly: true });
+  const [dashboardData, setDashboardData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notifications, setNotifications] = useState(null);
+  const navigate = useNavigate();
+  
+  // Fetch dashboard data from vendor-dashboard API
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch('/api/v1/vendor-dashboard/overview?period=month', {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        const result = await response.json();
+        if (result.success) {
+          setDashboardData(result.data);
+        }
+      } catch (error) {
+        console.error('Dashboard fetch failed:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchDashboard();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-earthy-beige/5 to-white">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50/5 to-white">
       
       {/* Header with Notifications */}
-      <header className="glass-1 border-b border-white/10 backdrop-blur-xl sticky top-0 z-40">
+      <header className="bg-white/60 backdrop-blur-sm border-b border-white/10 backdrop-blur-xl sticky top-0 z-40">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-text-dark">Dashboard</h1>
-              <p className="text-text-muted text-sm">Welcome back, Fresh Vegetables Ltd</p>
+              <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
+              <p className="text-gray-600 text-sm">Welcome back, Fresh Vegetables Ltd</p>
             </div>
             
             {/* Quick Actions */}
@@ -323,10 +435,10 @@ const VendorDashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
           {/* Recent Orders */}
-          <div className="glass-2 rounded-3xl p-6 border">
+          <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 border">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-text-dark">Recent Orders</h3>
-              <Link to="/orders" className="text-muted-olive hover:text-muted-olive/80 
+              <h3 className="text-lg font-semibold text-gray-800">Recent Orders</h3>
+              <Link to="/orders" className="text-olive-600 hover:text-olive-600/80 
                                            text-sm font-medium transition-colors">
                 View All
               </Link>
@@ -340,8 +452,8 @@ const VendorDashboard = () => {
           </div>
 
           {/* Quick Actions */}
-          <div className="glass-2 rounded-3xl p-6 border">
-            <h3 className="text-lg font-semibold text-text-dark mb-6">Quick Actions</h3>
+          <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 border">
+            <h3 className="text-lg font-semibold text-gray-800 mb-6">Quick Actions</h3>
             
             <div className="grid grid-cols-2 gap-4">
               <QuickActionCard
@@ -349,21 +461,21 @@ const VendorDashboard = () => {
                 description="List new product"
                 icon={Plus}
                 onClick={() => navigate('/products/create')}
-                className="hover:shadow-glow-olive"
+                className="hover:shadow-lg hover:shadow-olive-200/40"
               />
               <QuickActionCard
                 title="Update Inventory"
                 description="Stock management"
                 icon={Package}
                 onClick={() => navigate('/inventory')}
-                className="hover:shadow-glow-sage"
+                className="hover:shadow-lg shadow-olive-200/30"
               />
               <QuickActionCard
                 title="View Orders"
                 description="Process pending"
                 icon={ClipboardList}
                 onClick={() => navigate('/orders?status=pending')}
-                className="hover:shadow-glow-cedar"
+                className="hover:shadow-lg shadow-orange-200/40"
                 badge={dashboardData?.summary.pendingOrders}
               />
               <QuickActionCard
@@ -371,7 +483,7 @@ const VendorDashboard = () => {
                 description="Detailed reports"
                 icon={BarChart}
                 onClick={() => navigate('/analytics')}
-                className="hover:shadow-glow-amber"
+                className="hover:shadow-lg shadow-amber-200/40"
               />
             </div>
           </div>
@@ -384,19 +496,17 @@ const VendorDashboard = () => {
 
 ### Metric Card Component - Glassmorphic Design
 
-```typescript
-// MetricCard.tsx
-interface MetricCardProps {
-  title: string;
-  value: number | string;
-  growth?: number;
-  icon: React.ComponentType<any>;
-  format?: 'currency' | 'number' | 'percentage';
-  loading?: boolean;
-}
+```javascript
+// src/components/vendor/MetricCard.jsx - Reusable metric display component
+import { TrendingUp } from 'lucide-react';
 
-const MetricCard: React.FC<MetricCardProps> = ({ 
-  title, value, growth, icon: Icon, format = 'number', loading 
+const MetricCard = ({ 
+  title, 
+  value, 
+  growth, 
+  icon: Icon, 
+  format = 'number', 
+  loading = false 
 }) => {
   const formatValue = (val: number | string) => {
     if (loading) return '---';
@@ -413,19 +523,19 @@ const MetricCard: React.FC<MetricCardProps> = ({
   };
 
   const getGrowthColor = (growth?: number) => {
-    if (!growth) return 'text-text-muted';
-    return growth > 0 ? 'text-sage-green' : 'text-tomato-red';
+    if (!growth) return 'text-gray-600';
+    return growth > 0 ? 'text-olive-400' : 'text-red-500';
   };
 
   return (
-    <div className="glass-3 rounded-3xl p-6 border shadow-depth-2 
-                    hover:shadow-depth-3 hover:glass-4 transition-all duration-300 
+    <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 border shadow-lg shadow-gray-900/10 
+                    hover:shadow-xl shadow-gray-900/10 hover:bg-white/80 backdrop-blur-lg transition-all duration-300 
                     hover:-translate-y-1 group">
       
       <div className="flex items-center justify-between mb-6">
-        <div className="p-3 bg-gradient-to-br from-muted-olive/10 to-sage-green/10 
+        <div className="p-3 bg-gradient-to-br from-olive-600/10 to-olive-50/10 
                         rounded-2xl group-hover:scale-110 transition-transform duration-300">
-          <Icon className="w-6 h-6 text-muted-olive" />
+          <Icon className="w-6 h-6 text-olive-600" />
         </div>
         
         {growth !== undefined && (
@@ -437,14 +547,14 @@ const MetricCard: React.FC<MetricCardProps> = ({
       </div>
       
       <div className="space-y-2">
-        <h3 className="text-text-muted text-sm font-medium tracking-wide uppercase">
+        <h3 className="text-gray-600 text-sm font-medium tracking-wide uppercase">
           {title}
         </h3>
         
         {loading ? (
-          <div className="animate-pulse bg-earthy-beige rounded-lg h-8 w-24"></div>
+          <div className="animate-pulse bg-amber-100 rounded-lg h-8 w-24"></div>
         ) : (
-          <p className="text-3xl font-bold text-text-dark group-hover:text-muted-olive 
+          <p className="text-3xl font-bold text-gray-800 group-hover:text-olive-600 
                         transition-colors duration-300">
             {formatValue(value)}
           </p>
@@ -461,17 +571,61 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 ### Inventory Overview - Smart Monitoring
 
-```typescript
-// InventoryOverview.tsx
-const InventoryOverview = () => {
+```javascript
+// src/pages/vendor/Inventory.jsx - Inventory management interface
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { 
+  Download, Plus, Filter, AlertTriangle, Package, 
+  DollarSign, AlertCircle, XCircle, Settings, MoreVertical 
+} from 'lucide-react';
+import SearchInput from '../../components/ui/SearchInput';
+import Select from '../../components/ui/Select';
+import ToggleSwitch from '../../components/ui/ToggleSwitch';
+
+const VendorInventory = () => {
   const [filters, setFilters] = useState({
     status: 'all',
     search: '',
     lowStock: false
   });
+  const [inventory, setInventory] = useState(null);
+  const [alerts, setAlerts] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   
-  const { data: inventory, isLoading } = useInventory(filters);
-  const { data: alerts } = useInventoryAlerts();
+  // Fetch inventory data from API
+  useEffect(() => {
+    const fetchInventory = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const queryParams = new URLSearchParams({
+          status: filters.status,
+          search: filters.search,
+          lowStock: filters.lowStock.toString(),
+          page: '1',
+          limit: '20'
+        });
+        
+        const response = await fetch(`/api/v1/inventory?${queryParams}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+          setInventory(result.data);
+        }
+      } catch (error) {
+        console.error('Inventory fetch failed:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchInventory();
+  }, [filters]);
 
   return (
     <div className="space-y-8">
@@ -479,19 +633,19 @@ const InventoryOverview = () => {
       {/* Header with Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-text-dark mb-2">Inventory</h1>
-          <p className="text-text-muted">Manage your product stock and supplies</p>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Inventory</h1>
+          <p className="text-gray-600">Manage your product stock and supplies</p>
         </div>
         
         <div className="flex items-center gap-3">
-          <button className="glass-2 px-4 py-3 rounded-xl text-muted-olive hover:glass-3 
+          <button className="bg-white/70 backdrop-blur-md px-4 py-3 rounded-xl text-olive-600 hover:bg-white/70 backdrop-blur-md 
                              transition-all duration-200 flex items-center gap-2">
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Export</span>
           </button>
           
-          <button className="bg-gradient-secondary text-white px-6 py-3 rounded-xl 
-                             font-medium hover:shadow-glow-olive hover:-translate-y-0.5 
+          <button className="bg-gradient-to-r from-olive-600 to-olive-700 text-white px-6 py-3 rounded-xl 
+                             font-medium hover:shadow-lg hover:shadow-olive-200/40 hover:-translate-y-0.5 
                              transition-all duration-300 flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Add Purchase
@@ -501,19 +655,19 @@ const InventoryOverview = () => {
 
       {/* Alert Banner */}
       {alerts?.summary.criticalAlerts > 0 && (
-        <div className="glass-2 border-l-4 border-tomato-red rounded-2xl p-4">
+        <div className="bg-white/70 backdrop-blur-md border-l-4 border-red-400 rounded-2xl p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-tomato-red flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium text-text-dark">
+              <p className="font-medium text-gray-800">
                 {alerts.summary.criticalAlerts} Critical Alert{alerts.summary.criticalAlerts > 1 ? 's' : ''}
               </p>
-              <p className="text-text-muted text-sm mt-1">
+              <p className="text-gray-600 text-sm mt-1">
                 Some products need immediate attention
               </p>
             </div>
             <Link to="/inventory/alerts" 
-                  className="ml-auto text-tomato-red hover:text-tomato-red/80 
+                  className="ml-auto text-red-500 hover:text-red-500/80 
                              font-medium text-sm transition-colors">
               View All
             </Link>
@@ -540,24 +694,24 @@ const InventoryOverview = () => {
           title="Low Stock"
           value={inventory?.summary.lowStockItems}
           icon={AlertCircle}
-          className="border-amber-warm/20"
+          className="border-amber-500/20"
           loading={isLoading}
         />
         <SummaryCard
           title="Out of Stock"
           value={inventory?.summary.outOfStockItems}
           icon={XCircle}
-          className="border-tomato-red/20"
+          className="border-red-400/20"
           loading={isLoading}
         />
       </div>
 
       {/* Filters */}
-      <div className="glass-2 rounded-2xl p-4 border">
+      <div className="bg-white/70 backdrop-blur-md rounded-2xl p-4 border">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-muted-olive" />
-            <span className="text-text-dark font-medium">Filters:</span>
+            <Filter className="w-5 h-5 text-olive-600" />
+            <span className="text-gray-800 font-medium">Filters:</span>
           </div>
           
           <SearchInput
@@ -603,29 +757,27 @@ const InventoryOverview = () => {
 
 ### Inventory Item Card - Status Indicators
 
-```typescript
-// InventoryCard.tsx
-interface InventoryCardProps {
-  item: InventoryItem;
-}
+```javascript
+// src/components/vendor/InventoryCard.jsx - Individual inventory item card
+import { Settings, MoreVertical } from 'lucide-react';
 
-const InventoryCard: React.FC<InventoryCardProps> = ({ item }) => {
+const InventoryCard = ({ item }) => {
   const getStatusConfig = (status: string) => {
     const configs = {
       active: { 
-        color: 'text-sage-green', 
-        bg: 'bg-sage-green/10', 
-        border: 'border-sage-green/30' 
+        color: 'text-olive-400', 
+        bg: 'bg-olive-400/10', 
+        border: 'border-olive-200/30' 
       },
       low_stock: { 
-        color: 'text-amber-warm', 
-        bg: 'bg-amber-warm/10', 
-        border: 'border-amber-warm/30' 
+        color: 'text-amber-500', 
+        bg: 'bg-amber-500/10', 
+        border: 'border-amber-500/30' 
       },
       out_of_stock: { 
-        color: 'text-tomato-red', 
-        bg: 'bg-tomato-red/10', 
-        border: 'border-tomato-red/30' 
+        color: 'text-red-500', 
+        bg: 'bg-red-500/10', 
+        border: 'border-red-400/30' 
       }
     };
     return configs[status] || configs.active;
@@ -635,17 +787,17 @@ const InventoryCard: React.FC<InventoryCardProps> = ({ item }) => {
   const stockPercentage = (item.availableQuantity / item.reorderLevel) * 100;
 
   return (
-    <div className="glass-card rounded-3xl p-6 border hover:shadow-glow-olive 
+    <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 border hover:shadow-lg hover:shadow-olive-200/40 
                     transition-all duration-300 hover:-translate-y-1 group">
       
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-text-dark group-hover:text-muted-olive 
+          <h3 className="font-semibold text-gray-800 group-hover:text-olive-600 
                          transition-colors duration-200 truncate">
             {item.productId.name}
           </h3>
-          <p className="text-text-muted text-sm">{item.productId.category}</p>
+          <p className="text-gray-600 text-sm">{item.productId.category}</p>
         </div>
         
         <div className={`px-2 py-1 rounded-lg text-xs font-medium border ${statusConfig.bg} ${statusConfig.color} ${statusConfig.border}`}>
@@ -656,30 +808,30 @@ const InventoryCard: React.FC<InventoryCardProps> = ({ item }) => {
       {/* Stock Information */}
       <div className="space-y-4 mb-6">
         <div className="flex justify-between items-center">
-          <span className="text-text-muted text-sm">Available</span>
-          <span className="font-semibold text-text-dark">
+          <span className="text-gray-600 text-sm">Available</span>
+          <span className="font-semibold text-gray-800">
             {item.availableQuantity} {item.productId.unit}
           </span>
         </div>
         
         <div className="flex justify-between items-center">
-          <span className="text-text-muted text-sm">Total Value</span>
-          <span className="font-semibold text-text-dark">
+          <span className="text-gray-600 text-sm">Total Value</span>
+          <span className="font-semibold text-gray-800">
             ৳{item.totalValue.toLocaleString()}
           </span>
         </div>
 
         {/* Stock Level Indicator */}
         <div className="space-y-2">
-          <div className="flex justify-between text-xs text-text-muted">
+          <div className="flex justify-between text-xs text-gray-600">
             <span>Stock Level</span>
             <span>{Math.round(stockPercentage)}%</span>
           </div>
-          <div className="w-full bg-earthy-beige/30 rounded-full h-2">
+          <div className="w-full bg-amber-100/30 rounded-full h-2">
             <div 
               className={`h-full rounded-full transition-all duration-500 ${
-                stockPercentage > 50 ? 'bg-sage-green' : 
-                stockPercentage > 25 ? 'bg-amber-warm' : 'bg-tomato-red'
+                stockPercentage > 50 ? 'bg-olive-400' : 
+                stockPercentage > 25 ? 'bg-amber-500' : 'bg-red-500'
               }`}
               style={{ width: `${Math.min(stockPercentage, 100)}%` }}
             />
@@ -692,11 +844,11 @@ const InventoryCard: React.FC<InventoryCardProps> = ({ item }) => {
         <div className="mb-4">
           {item.alerts.slice(0, 1).map(alert => (
             <div key={alert.id} className={`p-3 rounded-xl ${
-              alert.severity === 'high' ? 'bg-tomato-red/5 border border-tomato-red/20' :
-              alert.severity === 'medium' ? 'bg-amber-warm/5 border border-amber-warm/20' :
+              alert.severity === 'high' ? 'bg-red-500/5 border border-red-400/20' :
+              alert.severity === 'medium' ? 'bg-amber-500/5 border border-amber-500/20' :
               'bg-blue-50/50 border border-blue-200/30'
             }`}>
-              <p className="text-xs font-medium text-text-dark">{alert.message}</p>
+              <p className="text-xs font-medium text-gray-800">{alert.message}</p>
             </div>
           ))}
         </div>
@@ -704,15 +856,15 @@ const InventoryCard: React.FC<InventoryCardProps> = ({ item }) => {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        <button className="flex-1 glass-2 py-2 px-3 rounded-xl text-sm font-medium 
-                           text-muted-olive hover:glass-3 transition-all duration-200">
+        <button className="flex-1 bg-white/70 backdrop-blur-md py-2 px-3 rounded-xl text-sm font-medium 
+                           text-olive-600 hover:bg-white/70 backdrop-blur-md transition-all duration-200">
           Update Stock
         </button>
-        <button className="p-2 glass-2 rounded-xl hover:glass-3 transition-all duration-200">
-          <Settings className="w-4 h-4 text-text-muted" />
+        <button className="p-2 bg-white/70 backdrop-blur-md rounded-xl hover:bg-white/70 backdrop-blur-md transition-all duration-200">
+          <Settings className="w-4 h-4 text-gray-600" />
         </button>
-        <button className="p-2 glass-2 rounded-xl hover:glass-3 transition-all duration-200">
-          <MoreVertical className="w-4 h-4 text-text-muted" />
+        <button className="p-2 bg-white/70 backdrop-blur-md rounded-xl hover:bg-white/70 backdrop-blur-md transition-all duration-200">
+          <MoreVertical className="w-4 h-4 text-gray-600" />
         </button>
       </div>
     </div>
@@ -726,17 +878,57 @@ const InventoryCard: React.FC<InventoryCardProps> = ({ item }) => {
 
 ### Listings Overview - Visual Product Catalog
 
-```typescript
-// ProductListings.tsx
-const ProductListings = () => {
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+```javascript
+// src/pages/vendor/Listings.jsx - Product listings management
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Plus, Filter, Grid, List } from 'lucide-react';
+import ViewToggle from '../../components/ui/ViewToggle';
+import FilterBar from '../../components/vendor/FilterBar';
+
+const VendorListings = () => {
+  const [view, setView] = useState('grid');
   const [filters, setFilters] = useState({
     status: 'all',
-    category: 'all',
+    category: 'all', 
     search: ''
   });
-
-  const { data: listings, isLoading } = useListings(filters);
+  const [listings, setListings] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Fetch listings from API
+  useEffect(() => {
+    const fetchListings = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const queryParams = new URLSearchParams({
+          search: filters.search,
+          category: filters.category,
+          status: filters.status,
+          page: '1',
+          limit: '20'
+        });
+        
+        const response = await fetch(`/api/v1/listings?${queryParams}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+          setListings(result.data);
+        }
+      } catch (error) {
+        console.error('Listings fetch failed:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchListings();
+  }, [filters]);
 
   return (
     <div className="space-y-6">
@@ -744,15 +936,15 @@ const ProductListings = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-text-dark mb-2">Product Listings</h1>
-          <p className="text-text-muted">Manage your product catalog and pricing</p>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Product Listings</h1>
+          <p className="text-gray-600">Manage your product catalog and pricing</p>
         </div>
         
         <div className="flex items-center gap-3">
           <ViewToggle view={view} onViewChange={setView} />
           
-          <button className="bg-gradient-secondary text-white px-6 py-3 rounded-xl 
-                             font-medium hover:shadow-glow-olive hover:-translate-y-0.5 
+          <button className="bg-gradient-to-r from-olive-600 to-olive-700 text-white px-6 py-3 rounded-xl 
+                             font-medium hover:shadow-lg hover:shadow-olive-200/40 hover:-translate-y-0.5 
                              transition-all duration-300 flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Create Listing
@@ -770,19 +962,19 @@ const ProductListings = () => {
         <QuickStat 
           label="Active" 
           value={listings?.summary.activeListings} 
-          className="text-sage-green"
+          className="text-olive-400"
           loading={isLoading}
         />
         <QuickStat 
           label="Draft" 
           value={listings?.summary.draftListings} 
-          className="text-amber-warm"
+          className="text-amber-500"
           loading={isLoading}
         />
         <QuickStat 
           label="Out of Stock" 
           value={listings?.summary.outOfStockListings} 
-          className="text-tomato-red"
+          className="text-red-500"
           loading={isLoading}
         />
         <QuickStat 
@@ -815,17 +1007,14 @@ const ProductListings = () => {
 
 ### Listing Card - Performance Focused
 
-```typescript
-// ListingCard.tsx
-interface ListingCardProps {
-  listing: Listing;
-  onEdit?: (listing: Listing) => void;
-  onDelete?: (listing: Listing) => void;
-}
+```javascript
+// src/components/vendor/ListingCard.jsx - Product listing card component
+import { Edit, Eye, Share, Star, Settings } from 'lucide-react';
+import StatusBadge from '../ui/StatusBadge';
 
-const ListingCard: React.FC<ListingCardProps> = ({ listing, onEdit, onDelete }) => {
+const ListingCard = ({ listing, onEdit, onDelete }) => {
   return (
-    <div className="glass-card rounded-3xl overflow-hidden hover:shadow-glow-olive 
+    <div className="bg-white/70 backdrop-blur-md rounded-3xl overflow-hidden hover:shadow-lg hover:shadow-olive-200/40 
                     transition-all duration-300 hover:-translate-y-1 group">
       
       {/* Image Section */}
@@ -843,7 +1032,7 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing, onEdit, onDelete }) 
         </div>
         
         {/* Price Badge */}
-        <div className="absolute top-3 right-3 glass-3 px-3 py-1 rounded-full 
+        <div className="absolute top-3 right-3 bg-white/70 backdrop-blur-md px-3 py-1 rounded-full 
                         text-white font-semibold backdrop-blur-sm">
           ৳{listing.price.selling}
         </div>
@@ -854,19 +1043,19 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing, onEdit, onDelete }) 
           <div className="flex gap-2">
             <button 
               onClick={() => onEdit?.(listing)}
-              className="p-3 glass-4 rounded-xl text-white hover:glass-5 
+              className="p-3 bg-white/80 backdrop-blur-lg rounded-xl text-white hover:bg-white/40 backdrop-blur-lg 
                          transition-all duration-200"
             >
               <Edit className="w-4 h-4" />
             </button>
             <button 
-              className="p-3 glass-4 rounded-xl text-white hover:glass-5 
+              className="p-3 bg-white/80 backdrop-blur-lg rounded-xl text-white hover:bg-white/40 backdrop-blur-lg 
                          transition-all duration-200"
             >
               <Eye className="w-4 h-4" />
             </button>
             <button 
-              className="p-3 glass-4 rounded-xl text-white hover:glass-5 
+              className="p-3 bg-white/80 backdrop-blur-lg rounded-xl text-white hover:bg-white/40 backdrop-blur-lg 
                          transition-all duration-200"
             >
               <Share className="w-4 h-4" />
@@ -880,43 +1069,43 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing, onEdit, onDelete }) 
         
         {/* Title & Category */}
         <div>
-          <h3 className="font-semibold text-text-dark group-hover:text-muted-olive 
+          <h3 className="font-semibold text-gray-800 group-hover:text-olive-600 
                          transition-colors duration-200 line-clamp-2 mb-1">
             {listing.title}
           </h3>
-          <p className="text-text-muted text-sm">{listing.productId.category}</p>
+          <p className="text-gray-600 text-sm">{listing.productId.category}</p>
         </div>
 
         {/* Performance Metrics */}
         <div className="grid grid-cols-2 gap-4 py-3 border-t border-white/10">
           <div className="text-center">
-            <p className="text-lg font-bold text-text-dark">
+            <p className="text-lg font-bold text-gray-800">
               {listing.performance.totalOrders}
             </p>
-            <p className="text-xs text-text-muted">Orders</p>
+            <p className="text-xs text-gray-600">Orders</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-1">
-              <Star className="w-3 h-3 fill-amber-warm text-amber-warm" />
-              <span className="text-lg font-bold text-text-dark">
+              <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+              <span className="text-lg font-bold text-gray-800">
                 {listing.performance.rating.average}
               </span>
             </div>
-            <p className="text-xs text-text-muted">Rating</p>
+            <p className="text-xs text-gray-600">Rating</p>
           </div>
         </div>
 
         {/* Revenue & Profit */}
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <span className="text-text-muted text-sm">Revenue</span>
-            <span className="font-semibold text-sage-green">
+            <span className="text-gray-600 text-sm">Revenue</span>
+            <span className="font-semibold text-olive-400">
               ৳{listing.profitAnalytics.totalRevenue.toLocaleString()}
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-text-muted text-sm">Profit</span>
-            <span className="font-semibold text-muted-olive">
+            <span className="text-gray-600 text-sm">Profit</span>
+            <span className="font-semibold text-olive-600">
               ৳{listing.profitAnalytics.grossProfit.toLocaleString()} 
               ({listing.profitAnalytics.profitMargin}%)
             </span>
@@ -927,10 +1116,10 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing, onEdit, onDelete }) 
         <div className="flex items-center justify-between pt-3 border-t border-white/10">
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${
-              listing.inventory.available > 20 ? 'bg-sage-green' :
-              listing.inventory.available > 0 ? 'bg-amber-warm' : 'bg-tomato-red'
+              listing.inventory.available > 20 ? 'bg-olive-400' :
+              listing.inventory.available > 0 ? 'bg-amber-500' : 'bg-red-500'
             }`} />
-            <span className="text-sm text-text-muted">
+            <span className="text-sm text-gray-600">
               {listing.inventory.available} {listing.inventory.unit} in stock
             </span>
           </div>
@@ -938,10 +1127,10 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing, onEdit, onDelete }) 
           {/* Quick Edit Button */}
           <button 
             onClick={() => onEdit?.(listing)}
-            className="p-2 glass-2 rounded-lg hover:glass-3 transition-all duration-200 
+            className="p-2 bg-white/70 backdrop-blur-md rounded-lg hover:bg-white/70 backdrop-blur-md transition-all duration-200 
                        opacity-0 group-hover:opacity-100"
           >
-            <Settings className="w-4 h-4 text-text-muted" />
+            <Settings className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       </div>
@@ -956,20 +1145,82 @@ const ListingCard: React.FC<ListingCardProps> = ({ listing, onEdit, onDelete }) 
 
 ### Orders Dashboard - Process-Oriented Design
 
-```typescript
-// OrdersOverview.tsx
-const OrdersOverview = () => {
+```javascript
+// src/pages/vendor/Orders.jsx - Order management interface
+import { useState, useEffect } from 'react';
+import { 
+  CheckCircle, XCircle, Play, Package, Truck, Clock,
+  Building, User, MapPin, Calendar, MessageSquare, Eye, MoreHorizontal
+} from 'lucide-react';
+import BulkActionButton from '../../components/vendor/BulkActionButton';
+
+const VendorOrders = () => {
   const [activeTab, setActiveTab] = useState('all');
-  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const [selectedOrders, setSelectedOrders] = useState([]);
+  const [orders, setOrders] = useState(null);
+  const [orderStats, setOrderStats] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   
-  const { data: orders, isLoading } = useOrders({ status: activeTab });
-  const { data: orderStats } = useOrderStats();
+  // Fetch orders data from API
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const queryParams = new URLSearchParams({
+          status: activeTab === 'all' ? '' : activeTab,
+          page: '1',
+          limit: '20'
+        });
+        
+        const response = await fetch(`/api/v1/orders?${queryParams}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+          setOrders(result.data);
+        }
+      } catch (error) {
+        console.error('Orders fetch failed:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchOrders();
+  }, [activeTab]);
+  
+  // Order status update function
+  const updateOrderStatus = async (orderId, newStatus) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/v1/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        // Refresh orders list
+        fetchOrders();
+      }
+    } catch (error) {
+      console.error('Status update failed:', error);
+    }
+  };
 
   const statusTabs = [
     { id: 'all', label: 'All Orders', count: orderStats?.summary.totalOrders },
-    { id: 'pending', label: 'Pending', count: orderStats?.summary.pendingOrders, color: 'amber-warm' },
+    { id: 'pending', label: 'Pending', count: orderStats?.summary.pendingOrders, color: 'amber-500' },
     { id: 'confirmed', label: 'Confirmed', count: orderStats?.summary.confirmedOrders, color: 'blue-500' },
-    { id: 'processing', label: 'Processing', count: orderStats?.summary.processingOrders, color: 'muted-olive' },
+    { id: 'processing', label: 'Processing', count: orderStats?.summary.processingOrders, color: 'olive-600' },
     { id: 'ready', label: 'Ready', count: orderStats?.summary.readyOrders, color: 'sage-green' },
     { id: 'delivered', label: 'Delivered', count: orderStats?.summary.deliveredOrders, color: 'green-600' }
   ];
@@ -980,35 +1231,35 @@ const OrdersOverview = () => {
       {/* Header with Stats */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-text-dark mb-2">Orders</h1>
-          <p className="text-text-muted">Manage and track your order fulfillment</p>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Orders</h1>
+          <p className="text-gray-600">Manage and track your order fulfillment</p>
         </div>
         
         {/* Key Metrics */}
         <div className="grid grid-cols-3 gap-4">
           <div className="text-center">
-            <p className="text-2xl font-bold text-text-dark">
+            <p className="text-2xl font-bold text-gray-800">
               ৳{orderStats?.summary.totalRevenue?.toLocaleString()}
             </p>
-            <p className="text-text-muted text-sm">Revenue</p>
+            <p className="text-gray-600 text-sm">Revenue</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold text-text-dark">
+            <p className="text-2xl font-bold text-gray-800">
               {orderStats?.summary.totalOrders}
             </p>
-            <p className="text-text-muted text-sm">Total Orders</p>
+            <p className="text-gray-600 text-sm">Total Orders</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold text-sage-green">
+            <p className="text-2xl font-bold text-olive-400">
               ৳{orderStats?.summary.avgOrderValue?.toFixed(0)}
             </p>
-            <p className="text-text-muted text-sm">Avg Value</p>
+            <p className="text-gray-600 text-sm">Avg Value</p>
           </div>
         </div>
       </div>
 
       {/* Status Tabs */}
-      <div className="glass-2 rounded-2xl p-2 border">
+      <div className="bg-white/70 backdrop-blur-md rounded-2xl p-2 border">
         <div className="flex overflow-x-auto gap-1">
           {statusTabs.map(tab => (
             <button
@@ -1017,8 +1268,8 @@ const OrdersOverview = () => {
               className={`flex items-center gap-2 px-4 py-3 rounded-xl whitespace-nowrap 
                          font-medium transition-all duration-200 ${
                 activeTab === tab.id
-                  ? 'bg-muted-olive text-white shadow-glow-olive'
-                  : 'hover:glass-3 text-text-muted hover:text-text-dark'
+                  ? 'bg-olive-600 text-white shadow-lg shadow-olive-200/40'
+                  : 'hover:bg-white/70 backdrop-blur-md text-gray-600 hover:text-gray-800'
               }`}
             >
               <span>{tab.label}</span>
@@ -1026,7 +1277,7 @@ const OrdersOverview = () => {
                 <span className={`px-2 py-0.5 rounded-full text-xs ${
                   activeTab === tab.id 
                     ? 'bg-white/20 text-white' 
-                    : 'bg-earthy-beige text-text-muted'
+                    : 'bg-amber-100 text-gray-600'
                 }`}>
                   {tab.count}
                 </span>
@@ -1038,15 +1289,15 @@ const OrdersOverview = () => {
 
       {/* Bulk Actions Bar */}
       {selectedOrders.length > 0 && (
-        <div className="glass-3 rounded-2xl p-4 border animate-fade-in">
+        <div className="bg-white/70 backdrop-blur-md rounded-2xl p-4 border animate-fade-in">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-muted-olive/20 rounded-full flex items-center justify-center">
-                <span className="text-muted-olive font-medium text-sm">
+              <div className="w-8 h-8 bg-olive-600/20 rounded-full flex items-center justify-center">
+                <span className="text-olive-600 font-medium text-sm">
                   {selectedOrders.length}
                 </span>
               </div>
-              <span className="text-text-dark font-medium">
+              <span className="text-gray-800 font-medium">
                 {selectedOrders.length} order{selectedOrders.length > 1 ? 's' : ''} selected
               </span>
             </div>
@@ -1066,7 +1317,7 @@ const OrdersOverview = () => {
                 onClick={() => setSelectedOrders([])}
                 className="p-2 hover:bg-black/5 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-text-muted" />
+                <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
           </div>
@@ -1101,23 +1352,20 @@ const OrdersOverview = () => {
 
 ### Order Card - Status-Driven Workflow
 
-```typescript
-// OrderCard.tsx
-interface OrderCardProps {
-  order: Order;
-  selected: boolean;
-  onSelect: (selected: boolean) => void;
-}
+```javascript
+// src/components/vendor/OrderCard.jsx - Individual order card component
+import { format } from 'date-fns';
+import StatusActionButton from '../ui/StatusActionButton';
 
-const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
+const OrderCard = ({ order, selected, onSelect, onStatusUpdate }) => {
   const getStatusConfig = (status: string) => {
     const configs = {
-      pending: { color: 'text-amber-warm', bg: 'bg-amber-warm/10', border: 'border-amber-warm/30' },
+      pending: { color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
       confirmed: { color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200' },
-      processing: { color: 'text-muted-olive', bg: 'bg-muted-olive/10', border: 'border-muted-olive/30' },
-      ready: { color: 'text-sage-green', bg: 'bg-sage-green/10', border: 'border-sage-green/30' },
+      processing: { color: 'text-olive-600', bg: 'bg-olive-600/10', border: 'border-olive-500/30' },
+      ready: { color: 'text-olive-400', bg: 'bg-olive-400/10', border: 'border-olive-200/30' },
       delivered: { color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
-      cancelled: { color: 'text-tomato-red', bg: 'bg-tomato-red/10', border: 'border-tomato-red/30' }
+      cancelled: { color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-400/30' }
     };
     return configs[status] || configs.pending;
   };
@@ -1126,10 +1374,10 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
   const isUrgent = order.priority === 'urgent' || order.priority === 'high';
 
   return (
-    <div className={`glass-card rounded-3xl p-6 border transition-all duration-300 
-                     hover:shadow-glow-olive hover:-translate-y-0.5 ${
-                       selected ? 'ring-2 ring-muted-olive/30 shadow-glow-olive' : ''
-                     } ${isUrgent ? 'border-l-4 border-l-tomato-red' : ''}`}>
+    <div className={`bg-white/70 backdrop-blur-md rounded-3xl p-6 border transition-all duration-300 
+                     hover:shadow-lg hover:shadow-olive-200/40 hover:-translate-y-0.5 ${
+                       selected ? 'ring-2 ring-olive-500/30 shadow-lg shadow-olive-200/40' : ''
+                     } ${isUrgent ? 'border-l-4 border-l-red-500' : ''}`}>
       
       <div className="flex items-start gap-4">
         
@@ -1139,8 +1387,8 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
             type="checkbox"
             checked={selected}
             onChange={(e) => onSelect(e.target.checked)}
-            className="w-4 h-4 rounded border-2 border-text-muted/30 
-                       text-muted-olive focus:ring-muted-olive/20"
+            className="w-4 h-4 rounded border-2 border-gray-300/30 
+                       text-olive-600 focus:ring-olive-500/20"
           />
         </div>
 
@@ -1150,7 +1398,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
           {/* Header Row */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <h3 className="font-semibold text-text-dark">
+              <h3 className="font-semibold text-gray-800">
                 {order.orderNumber}
               </h3>
               
@@ -1159,7 +1407,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
               </div>
               
               {isUrgent && (
-                <div className="flex items-center gap-1 text-tomato-red">
+                <div className="flex items-center gap-1 text-red-500">
                   <Clock className="w-3 h-3" />
                   <span className="text-xs font-medium">URGENT</span>
                 </div>
@@ -1167,10 +1415,10 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
             </div>
             
             <div className="text-right">
-              <p className="text-lg font-bold text-text-dark">
+              <p className="text-lg font-bold text-gray-800">
                 ৳{order.pricing.totalAmount.toLocaleString()}
               </p>
-              <p className="text-text-muted text-sm">
+              <p className="text-gray-600 text-sm">
                 {order.items.length} item{order.items.length > 1 ? 's' : ''}
               </p>
             </div>
@@ -1181,15 +1429,15 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
             
             {/* Customer Info */}
             <div className="space-y-2">
-              <h4 className="font-medium text-text-dark flex items-center gap-2">
-                <Building className="w-4 h-4 text-muted-olive" />
+              <h4 className="font-medium text-gray-800 flex items-center gap-2">
+                <Building className="w-4 h-4 text-olive-600" />
                 {order.customer.restaurantName}
               </h4>
-              <p className="text-text-muted text-sm flex items-center gap-2">
+              <p className="text-gray-600 text-sm flex items-center gap-2">
                 <User className="w-3 h-3" />
                 {order.customer.contactPerson}
               </p>
-              <p className="text-text-muted text-sm flex items-center gap-2">
+              <p className="text-gray-600 text-sm flex items-center gap-2">
                 <MapPin className="w-3 h-3" />
                 {order.delivery.address.area}, {order.delivery.address.city}
               </p>
@@ -1198,18 +1446,18 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
             {/* Timeline */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm">
-                <Calendar className="w-3 h-3 text-muted-olive" />
-                <span className="text-text-muted">Placed:</span>
-                <span className="text-text-dark font-medium">
+                <Calendar className="w-3 h-3 text-olive-600" />
+                <span className="text-gray-600">Placed:</span>
+                <span className="text-gray-800 font-medium">
                   {format(new Date(order.timeline.orderPlaced), 'MMM dd, HH:mm')}
                 </span>
               </div>
               
               {order.timeline.estimatedDelivery && (
                 <div className="flex items-center gap-2 text-sm">
-                  <Truck className="w-3 h-3 text-sage-green" />
-                  <span className="text-text-muted">Delivery:</span>
-                  <span className="text-text-dark font-medium">
+                  <Truck className="w-3 h-3 text-olive-400" />
+                  <span className="text-gray-600">Delivery:</span>
+                  <span className="text-gray-800 font-medium">
                     {format(new Date(order.timeline.estimatedDelivery), 'MMM dd, HH:mm')}
                   </span>
                 </div>
@@ -1221,12 +1469,12 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
           <div className="mb-4">
             <div className="flex flex-wrap gap-2">
               {order.items.slice(0, 3).map(item => (
-                <div key={item.id} className="glass-1 px-3 py-1 rounded-full text-xs">
+                <div key={item.id} className="bg-white/60 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
                   {item.productName} ({item.quantity}{item.unit})
                 </div>
               ))}
               {order.items.length > 3 && (
-                <div className="glass-1 px-3 py-1 rounded-full text-xs text-text-muted">
+                <div className="bg-white/60 backdrop-blur-sm px-3 py-1 rounded-full text-xs text-gray-600">
                   +{order.items.length - 3} more
                 </div>
               )}
@@ -1285,16 +1533,16 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
 
             {/* Secondary Actions */}
             <div className="flex items-center gap-2">
-              <button className="p-2 glass-2 rounded-lg hover:glass-3 transition-all duration-200">
-                <MessageSquare className="w-4 h-4 text-text-muted" />
+              <button className="p-2 bg-white/70 backdrop-blur-md rounded-lg hover:bg-white/70 backdrop-blur-md transition-all duration-200">
+                <MessageSquare className="w-4 h-4 text-gray-600" />
               </button>
               
-              <button className="p-2 glass-2 rounded-lg hover:glass-3 transition-all duration-200">
-                <Eye className="w-4 h-4 text-text-muted" />
+              <button className="p-2 bg-white/70 backdrop-blur-md rounded-lg hover:bg-white/70 backdrop-blur-md transition-all duration-200">
+                <Eye className="w-4 h-4 text-gray-600" />
               </button>
               
-              <button className="p-2 glass-2 rounded-lg hover:glass-3 transition-all duration-200">
-                <MoreHorizontal className="w-4 h-4 text-text-muted" />
+              <button className="p-2 bg-white/70 backdrop-blur-md rounded-lg hover:bg-white/70 backdrop-blur-md transition-all duration-200">
+                <MoreHorizontal className="w-4 h-4 text-gray-600" />
               </button>
             </div>
           </div>
@@ -1311,15 +1559,53 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, selected, onSelect }) => {
 
 ### Notifications Center - Unified Messaging
 
-```typescript
-// NotificationsCenter.tsx
-const NotificationsCenter = () => {
+```javascript
+// src/pages/vendor/Notifications.jsx - Notification center interface
+import { useState, useEffect } from 'react';
+import { 
+  Bell, BellRing, AlertTriangle, CheckSquare, CheckCircle,
+  Settings, Package, ShoppingBag, CreditCard, Clock,
+  Eye, Archive, Trash2
+} from 'lucide-react';
+
+const VendorNotifications = () => {
   const [activeTab, setActiveTab] = useState('all');
-  const [selectedNotifications, setSelectedNotifications] = useState<string[]>([]);
+  const [selectedNotifications, setSelectedNotifications] = useState([]);
+  const [notifications, setNotifications] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   
-  const { data: notifications, isLoading } = useNotifications({ 
-    type: activeTab === 'all' ? undefined : activeTab 
-  });
+  // Fetch notifications from API (assumes notifications endpoint exists)
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const queryParams = new URLSearchParams({
+          type: activeTab === 'all' ? '' : activeTab,
+          page: '1',
+          limit: '20'
+        });
+        
+        // Note: Update endpoint based on actual notifications API
+        const response = await fetch(`/api/v1/vendor/notifications?${queryParams}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+          setNotifications(result.data);
+        }
+      } catch (error) {
+        console.error('Notifications fetch failed:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchNotifications();
+  }, [activeTab]);
 
   const notificationTabs = [
     { id: 'all', label: 'All', count: notifications?.summary.total },
@@ -1335,12 +1621,12 @@ const NotificationsCenter = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-text-dark mb-2">Notifications</h1>
-          <p className="text-text-muted">Stay updated with your business alerts</p>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Notifications</h1>
+          <p className="text-gray-600">Stay updated with your business alerts</p>
         </div>
         
         {notifications?.summary.unread > 0 && (
-          <button className="glass-2 px-4 py-2 rounded-xl text-muted-olive hover:glass-3 
+          <button className="bg-white/70 backdrop-blur-md px-4 py-2 rounded-xl text-olive-600 hover:bg-white/70 backdrop-blur-md 
                              transition-all duration-200 flex items-center gap-2">
             <CheckCircle className="w-4 h-4" />
             Mark All Read
@@ -1359,24 +1645,24 @@ const NotificationsCenter = () => {
           title="Unread"
           value={notifications?.summary.unread}
           icon={BellRing}
-          className="border-muted-olive/20"
+          className="border-olive-500/20"
         />
         <SummaryCard
           title="Urgent"
           value={notifications?.summary.urgent}
           icon={AlertTriangle}
-          className="border-tomato-red/20"
+          className="border-red-400/20"
         />
         <SummaryCard
           title="Action Required"
           value={notifications?.summary.actionRequired}
           icon={CheckSquare}
-          className="border-amber-warm/20"
+          className="border-amber-500/20"
         />
       </div>
 
       {/* Filter Tabs */}
-      <div className="glass-2 rounded-2xl p-2 border">
+      <div className="bg-white/70 backdrop-blur-md rounded-2xl p-2 border">
         <div className="flex overflow-x-auto gap-1">
           {notificationTabs.map(tab => (
             <button
@@ -1385,8 +1671,8 @@ const NotificationsCenter = () => {
               className={`flex items-center gap-2 px-4 py-3 rounded-xl whitespace-nowrap 
                          font-medium transition-all duration-200 ${
                 activeTab === tab.id
-                  ? 'bg-muted-olive text-white shadow-glow-olive'
-                  : 'hover:glass-3 text-text-muted hover:text-text-dark'
+                  ? 'bg-olive-600 text-white shadow-lg shadow-olive-200/40'
+                  : 'hover:bg-white/70 backdrop-blur-md text-gray-600 hover:text-gray-800'
               }`}
             >
               {tab.icon && <tab.icon className="w-4 h-4" />}
@@ -1395,7 +1681,7 @@ const NotificationsCenter = () => {
                 <span className={`px-2 py-0.5 rounded-full text-xs ${
                   activeTab === tab.id 
                     ? 'bg-white/20 text-white' 
-                    : 'bg-earthy-beige text-text-muted'
+                    : 'bg-amber-100 text-gray-600'
                 }`}>
                   {tab.count}
                 </span>
@@ -1425,31 +1711,30 @@ const NotificationsCenter = () => {
 
 ### Notification Card - Contextual Alerts
 
-```typescript
-// NotificationCard.tsx
-interface NotificationCardProps {
-  notification: Notification;
-}
+```javascript
+// src/components/vendor/NotificationCard.jsx - Individual notification display
+import { formatDistanceToNow } from 'date-fns';
+import { Package, ShoppingBag, CreditCard, Settings } from 'lucide-react';
 
-const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => {
+const NotificationCard = ({ notification }) => {
   const getTypeConfig = (type: string) => {
     const configs = {
       inventory: { 
-        color: 'text-amber-warm', 
-        bg: 'bg-amber-warm/5', 
-        border: 'border-amber-warm/20',
+        color: 'text-amber-500', 
+        bg: 'bg-amber-500/5', 
+        border: 'border-amber-500/20',
         icon: Package 
       },
       order: { 
-        color: 'text-muted-olive', 
-        bg: 'bg-muted-olive/5', 
-        border: 'border-muted-olive/20',
+        color: 'text-olive-600', 
+        bg: 'bg-olive-600/5', 
+        border: 'border-olive-500/20',
         icon: ShoppingBag 
       },
       payment: { 
-        color: 'text-sage-green', 
-        bg: 'bg-sage-green/5', 
-        border: 'border-sage-green/20',
+        color: 'text-olive-400', 
+        bg: 'bg-olive-400/5', 
+        border: 'border-olive-200/20',
         icon: CreditCard 
       },
       system: { 
@@ -1464,10 +1749,10 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => 
 
   const getPriorityConfig = (priority: string) => {
     const configs = {
-      urgent: { color: 'text-tomato-red', bg: 'bg-tomato-red/10', pulse: true },
-      high: { color: 'text-amber-warm', bg: 'bg-amber-warm/10', pulse: false },
+      urgent: { color: 'text-red-500', bg: 'bg-red-500/10', pulse: true },
+      high: { color: 'text-amber-500', bg: 'bg-amber-500/10', pulse: false },
       medium: { color: 'text-blue-500', bg: 'bg-blue-50', pulse: false },
-      low: { color: 'text-text-muted', bg: 'bg-gray-50', pulse: false }
+      low: { color: 'text-gray-600', bg: 'bg-gray-50', pulse: false }
     };
     return configs[priority] || configs.medium;
   };
@@ -1477,9 +1762,9 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => 
   const IconComponent = typeConfig.icon;
 
   return (
-    <div className={`glass-card rounded-2xl p-4 border transition-all duration-300 
-                     hover:shadow-glow-olive group ${
-                       !notification.isRead ? 'border-l-4 border-l-muted-olive' : ''
+    <div className={`bg-white/70 backdrop-blur-md rounded-2xl p-4 border transition-all duration-300 
+                     hover:shadow-lg hover:shadow-olive-200/40 group ${
+                       !notification.isRead ? 'border-l-4 border-l-olive-600' : ''
                      }`}>
       
       <div className="flex items-start gap-4">
@@ -1497,26 +1782,26 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => 
           {/* Header */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <h3 className={`font-semibold ${!notification.isRead ? 'text-text-dark' : 'text-text-muted'}`}>
+              <h3 className={`font-semibold ${!notification.isRead ? 'text-gray-800' : 'text-gray-600'}`}>
                 {notification.title}
               </h3>
               
               {notification.priority === 'urgent' && (
-                <span className="px-2 py-1 bg-tomato-red text-white text-xs rounded-full 
+                <span className="px-2 py-1 bg-red-500 text-white text-xs rounded-full 
                                font-medium animate-pulse">
                   URGENT
                 </span>
               )}
             </div>
             
-            <div className="flex items-center gap-2 text-text-muted text-xs">
+            <div className="flex items-center gap-2 text-gray-600 text-xs">
               <Clock className="w-3 h-3" />
               <span>{formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}</span>
             </div>
           </div>
 
           {/* Message */}
-          <p className={`text-sm mb-3 ${!notification.isRead ? 'text-text-dark' : 'text-text-muted'}`}>
+          <p className={`text-sm mb-3 ${!notification.isRead ? 'text-gray-800' : 'text-gray-600'}`}>
             {notification.message}
           </p>
 
@@ -1524,7 +1809,7 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => 
           {notification.metadata && (
             <div className="mb-3">
               {notification.type === 'inventory' && notification.metadata.productName && (
-                <div className="flex items-center gap-2 text-xs text-text-muted">
+                <div className="flex items-center gap-2 text-xs text-gray-600">
                   <span>Product: {notification.metadata.productName}</span>
                   {notification.metadata.currentStock !== undefined && (
                     <span>• Stock: {notification.metadata.currentStock}</span>
@@ -1539,15 +1824,15 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => 
             <div className="flex items-center gap-2">
               
               {notification.isActionRequired && notification.actionUrl && (
-                <button className="bg-gradient-secondary text-white px-4 py-2 rounded-xl 
-                                 text-sm font-medium hover:shadow-glow-olive 
+                <button className="bg-gradient-to-r from-olive-600 to-olive-700 text-white px-4 py-2 rounded-xl 
+                                 text-sm font-medium hover:shadow-lg hover:shadow-olive-200/40 
                                  transition-all duration-300">
                   {notification.actionText || 'Take Action'}
                 </button>
               )}
               
               {!notification.isRead && (
-                <button className="text-muted-olive hover:text-muted-olive/80 text-sm 
+                <button className="text-olive-600 hover:text-olive-600/80 text-sm 
                                  font-medium transition-colors duration-200">
                   Mark as Read
                 </button>
@@ -1558,13 +1843,13 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => 
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 
                             transition-opacity duration-200">
               <button className="p-2 hover:bg-black/5 rounded-lg transition-colors">
-                <Eye className="w-3 h-3 text-text-muted" />
+                <Eye className="w-3 h-3 text-gray-600" />
               </button>
               <button className="p-2 hover:bg-black/5 rounded-lg transition-colors">
-                <Archive className="w-3 h-3 text-text-muted" />
+                <Archive className="w-3 h-3 text-gray-600" />
               </button>
               <button className="p-2 hover:bg-black/5 rounded-lg transition-colors">
-                <Trash2 className="w-3 h-3 text-text-muted" />
+                <Trash2 className="w-3 h-3 text-gray-600" />
               </button>
             </div>
           </div>
@@ -1577,993 +1862,4 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notification }) => 
 
 ---
 
-## Component Library - Reusable Elements
-
-### Form Components - Glassmorphic Inputs
-
-```typescript
-// FloatingLabelInput.tsx
-interface FloatingLabelInputProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  icon?: React.ComponentType<any>;
-  error?: string;
-  required?: boolean;
-  placeholder?: string;
-  className?: string;
-}
-
-const FloatingLabelInput: React.FC<FloatingLabelInputProps> = ({
-  label, value, onChange, type = 'text', icon: Icon, error, required, placeholder, className = ''
-}) => {
-  const [isFocused, setIsFocused] = useState(false);
-  const hasValue = value && value.length > 0;
-  const isFloating = isFocused || hasValue;
-
-  return (
-    <div className={`relative group ${className}`}>
-      <div className="relative">
-        {Icon && (
-          <Icon className="absolute left-4 top-1/2 transform -translate-y-1/2 
-                          w-5 h-5 text-text-muted group-focus-within:text-muted-olive 
-                          transition-colors duration-300 z-10" />
-        )}
-        
-        <input
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={isFocused ? placeholder : ''}
-          className={`w-full ${Icon ? 'pl-12 pr-6' : 'px-6'} pt-6 pb-2 rounded-2xl 
-                      bg-earthy-beige/30 border-0 focus:glass-3 focus:shadow-glow-olive 
-                      transition-all duration-300 peer touch-target focus:outline-none 
-                      text-text-dark placeholder:text-text-muted/60 
-                      ${error ? 'border-2 border-tomato-red/30 bg-tomato-red/5' : ''}`}
-        />
-        
-        <label className={`absolute ${Icon ? 'left-12' : 'left-6'} transition-all duration-300 
-                           pointer-events-none select-none
-                           ${isFloating 
-                             ? 'top-2 text-xs text-muted-olive font-medium' 
-                             : 'top-1/2 -translate-y-1/2 text-text-muted'}`}>
-          {label}
-          {required && <span className="text-tomato-red ml-1">*</span>}
-        </label>
-      </div>
-      
-      {error && (
-        <div className="flex items-center gap-2 text-tomato-red/80 text-sm mt-2 animate-fade-in">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// SearchInput.tsx
-interface SearchInputProps {
-  placeholder?: string;
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit?: () => void;
-  className?: string;
-}
-
-const SearchInput: React.FC<SearchInputProps> = ({
-  placeholder = 'Search...', value, onChange, onSubmit, className = ''
-}) => {
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && onSubmit) {
-      onSubmit();
-    }
-  };
-
-  return (
-    <div className={`relative ${className}`}>
-      <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 
-                        w-5 h-5 text-text-muted" />
-      
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyPress={handleKeyPress}
-        placeholder={placeholder}
-        className="w-full pl-12 pr-10 py-3 rounded-2xl bg-earthy-beige/30 border-0 
-                   focus:glass-3 focus:shadow-glow-olive transition-all duration-300 
-                   placeholder:text-text-muted/60 touch-target focus:outline-none 
-                   text-text-dark"
-      />
-      
-      {value && (
-        <button
-          onClick={() => onChange('')}
-          className="absolute right-3 top-1/2 transform -translate-y-1/2 
-                     p-1 hover:bg-black/5 rounded-full transition-colors duration-200"
-        >
-          <X className="w-4 h-4 text-text-muted" />
-        </button>
-      )}
-    </div>
-  );
-};
-
-// Select.tsx
-interface SelectProps {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-  className?: string;
-}
-
-const Select: React.FC<SelectProps> = ({
-  value, onChange, options, placeholder = 'Select option...', className = ''
-}) => {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={`px-4 py-3 rounded-xl bg-earthy-beige/30 border-0 
-                  focus:glass-3 focus:shadow-glow-olive appearance-none cursor-pointer 
-                  transition-all duration-300 touch-target focus:outline-none text-text-dark
-                  bg-[url('data:image/svg+xml;charset=US-ASCII,<svg xmlns="http://www.w3.org/2000/svg" fill="%236B7280" viewBox="0 0 20 20"><path d="M5.23 7.21a.75.75 0 011.06-.02L10 10.88l3.71-3.69a.75.75 0 111.06 1.06l-4.24 4.22a.75.75 0 01-1.06 0L5.23 8.25a.75.75 0 01.02-1.04z"/></svg>')] 
-                  bg-no-repeat bg-[length:20px] bg-[right_1rem_center] ${className}`}
-    >
-      <option value="" disabled>
-        {placeholder}
-      </option>
-      {options.map(option => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
-};
-
-// ToggleSwitch.tsx
-interface ToggleSwitchProps {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  description?: string;
-}
-
-const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
-  label, checked, onChange, description
-}) => {
-  return (
-    <div className="flex items-center gap-3">
-      <button
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full 
-                   transition-colors focus:outline-none focus:ring-2 
-                   focus:ring-muted-olive/20 focus:ring-offset-2 ${
-          checked ? 'bg-muted-olive' : 'bg-gray-200'
-        }`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white 
-                     transition-transform ${
-            checked ? 'translate-x-6' : 'translate-x-1'
-          }`}
-        />
-      </button>
-      
-      <div>
-        <label className="text-sm font-medium text-text-dark cursor-pointer"
-               onClick={() => onChange(!checked)}>
-          {label}
-        </label>
-        {description && (
-          <p className="text-xs text-text-muted">{description}</p>
-        )}
-      </div>
-    </div>
-  );
-};
-```
-
-### Chart Components - Data Visualization
-
-```typescript
-// RevenueChart.tsx
-interface RevenueChartProps {
-  data: Array<{
-    date: string;
-    revenue: number;
-    profit: number;
-    orders: number;
-  }>;
-}
-
-const RevenueChart: React.FC<RevenueChartProps> = ({ data }) => {
-  return (
-    <div className="h-full w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
-          <defs>
-            <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#7f8966" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#7f8966" stopOpacity={0}/>
-            </linearGradient>
-            <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#9CAF88" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#9CAF88" stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          
-          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-          
-          <XAxis 
-            dataKey="date" 
-            stroke="#6B7280"
-            fontSize={12}
-            tickFormatter={(value) => format(new Date(value), 'MMM dd')}
-          />
-          
-          <YAxis 
-            stroke="#6B7280"
-            fontSize={12}
-            tickFormatter={(value) => `৳${value.toLocaleString()}`}
-          />
-          
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'rgba(255, 255, 255, 0.95)',
-              backdropFilter: 'blur(12px)',
-              border: 'none',
-              borderRadius: '16px',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
-            }}
-            formatter={(value: number, name: string) => [
-              `৳${value.toLocaleString()}`,
-              name === 'revenue' ? 'Revenue' : 'Profit'
-            ]}
-            labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
-          />
-          
-          <Area
-            type="monotone"
-            dataKey="revenue"
-            stroke="#7f8966"
-            strokeWidth={3}
-            fill="url(#revenueGradient)"
-            strokeLinecap="round"
-          />
-          
-          <Area
-            type="monotone"
-            dataKey="profit"
-            stroke="#9CAF88"
-            strokeWidth={3}
-            fill="url(#profitGradient)"
-            strokeLinecap="round"
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
-// InventoryHealthChart.tsx
-const InventoryHealthChart = ({ data }) => {
-  const chartData = [
-    { name: 'Healthy', value: data?.statusDistribution.active, color: '#9CAF88' },
-    { name: 'Low Stock', value: data?.statusDistribution.lowStock, color: '#F59E0B' },
-    { name: 'Out of Stock', value: data?.statusDistribution.outOfStock, color: '#E94B3C' },
-    { name: 'Overstocked', value: data?.statusDistribution.overstocked, color: '#A0826D' }
-  ];
-
-  return (
-    <div className="glass-2 rounded-3xl p-6 border">
-      <h3 className="text-lg font-semibold text-text-dark mb-6">Inventory Health</h3>
-      
-      <div className="h-40 mb-6">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              innerRadius={40}
-              outerRadius={70}
-              paddingAngle={2}
-              dataKey="value"
-            >
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(12px)',
-                border: 'none',
-                borderRadius: '12px',
-                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)'
-              }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="space-y-3">
-        {chartData.map((item, index) => (
-          <div key={index} className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div 
-                className="w-3 h-3 rounded-full" 
-                style={{ backgroundColor: item.color }}
-              />
-              <span className="text-sm text-text-muted">{item.name}</span>
-            </div>
-            <span className="text-sm font-medium text-text-dark">{item.value}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6 pt-4 border-t border-white/10">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-text-muted">Health Score</span>
-          <div className="flex items-center gap-2">
-            <div className="w-16 h-2 bg-earthy-beige/30 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-sage-green to-muted-olive rounded-full 
-                           transition-all duration-500"
-                style={{ width: `${data?.healthScore || 0}%` }}
-              />
-            </div>
-            <span className="text-sm font-semibold text-muted-olive">
-              {data?.healthScore || 0}%
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-```
-
----
-
-## Technical Integration Guidelines
-
-### API Integration Pattern
-
-```typescript
-// services/api.ts
-import axios from 'axios';
-import { useAuthStore } from '../stores/authStore';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Request interceptor for auth token
-api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Response interceptor for error handling
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
-
-export { api };
-
-// Custom hooks for API integration
-export const useApiQuery = <T>(
-  key: string[], 
-  fetcher: () => Promise<{ data: T }>,
-  options?: any
-) => {
-  return useQuery({
-    queryKey: key,
-    queryFn: async () => {
-      const response = await fetcher();
-      return response.data;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    ...options
-  });
-};
-
-export const useApiMutation = <T, V>(
-  mutationFn: (variables: V) => Promise<{ data: T }>,
-  options?: any
-) => {
-  return useMutation({
-    mutationFn: async (variables: V) => {
-      const response = await mutationFn(variables);
-      return response.data;
-    },
-    ...options
-  });
-};
-```
-
-### Real-time Updates with WebSocket
-
-```typescript
-// hooks/useWebSocket.ts
-import { useEffect, useState, useRef } from 'react';
-import { useAuthStore } from '../stores/authStore';
-
-export const useWebSocket = () => {
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const { token } = useAuthStore();
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-
-  const connect = useCallback(() => {
-    if (!token) return;
-
-    const ws = new WebSocket(`${WS_BASE_URL}?token=${token}`);
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      console.log('WebSocket connected');
-    };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-      console.log('WebSocket disconnected');
-      
-      // Reconnect after 3 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 3000);
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    setSocket(ws);
-  }, [token]);
-
-  useEffect(() => {
-    connect();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      socket?.close();
-    };
-  }, [connect]);
-
-  const sendMessage = useCallback((message: any) => {
-    if (socket && isConnected) {
-      socket.send(JSON.stringify(message));
-    }
-  }, [socket, isConnected]);
-
-  return { socket, isConnected, sendMessage };
-};
-
-// Real-time notifications hook
-export const useRealtimeNotifications = () => {
-  const { socket } = useWebSocket();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleMessage = (event: MessageEvent) => {
-      const data = JSON.parse(event.data);
-      
-      switch (data.type) {
-        case 'notification':
-          setNotifications(prev => [data.payload, ...prev]);
-          // Show toast notification
-          toast.success(data.payload.message);
-          break;
-          
-        case 'order_update':
-          queryClient.invalidateQueries(['orders']);
-          queryClient.invalidateQueries(['dashboard']);
-          break;
-          
-        case 'inventory_alert':
-          queryClient.invalidateQueries(['inventory']);
-          queryClient.invalidateQueries(['alerts']);
-          break;
-      }
-    };
-
-    socket.addEventListener('message', handleMessage);
-
-    return () => {
-      socket.removeEventListener('message', handleMessage);
-    };
-  }, [socket, queryClient]);
-
-  return { notifications };
-};
-```
-
-### State Management with Zustand
-
-```typescript
-// stores/authStore.ts
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
-interface User {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  role: string;
-  vendor: {
-    id: string;
-    businessName: string;
-    status: string;
-  };
-}
-
-interface AuthState {
-  user: User | null;
-  token: string | null;
-  refreshToken: string | null;
-  isAuthenticated: boolean;
-  login: (tokens: { token: string; refreshToken: string; user: User }) => void;
-  logout: () => void;
-  updateUser: (user: Partial<User>) => void;
-}
-
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      token: null,
-      refreshToken: null,
-      isAuthenticated: false,
-
-      login: ({ token, refreshToken, user }) => {
-        set({
-          user,
-          token,
-          refreshToken,
-          isAuthenticated: true,
-        });
-      },
-
-      logout: () => {
-        set({
-          user: null,
-          token: null,
-          refreshToken: null,
-          isAuthenticated: false,
-        });
-      },
-
-      updateUser: (userData) => {
-        const currentUser = get().user;
-        if (currentUser) {
-          set({
-            user: { ...currentUser, ...userData },
-          });
-        }
-      },
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({
-        user: state.user,
-        token: state.token,
-        refreshToken: state.refreshToken,
-        isAuthenticated: state.isAuthenticated,
-      }),
-    }
-  )
-);
-
-// stores/notificationStore.ts
-interface NotificationState {
-  notifications: Notification[];
-  unreadCount: number;
-  addNotification: (notification: Notification) => void;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
-  removeNotification: (id: string) => void;
-}
-
-export const useNotificationStore = create<NotificationState>((set) => ({
-  notifications: [],
-  unreadCount: 0,
-
-  addNotification: (notification) => {
-    set((state) => ({
-      notifications: [notification, ...state.notifications],
-      unreadCount: state.unreadCount + 1,
-    }));
-  },
-
-  markAsRead: (id) => {
-    set((state) => ({
-      notifications: state.notifications.map(n => 
-        n.id === id ? { ...n, isRead: true } : n
-      ),
-      unreadCount: Math.max(0, state.unreadCount - 1),
-    }));
-  },
-
-  markAllAsRead: () => {
-    set((state) => ({
-      notifications: state.notifications.map(n => ({ ...n, isRead: true })),
-      unreadCount: 0,
-    }));
-  },
-
-  removeNotification: (id) => {
-    set((state) => {
-      const notification = state.notifications.find(n => n.id === id);
-      return {
-        notifications: state.notifications.filter(n => n.id !== id),
-        unreadCount: notification && !notification.isRead 
-          ? Math.max(0, state.unreadCount - 1) 
-          : state.unreadCount,
-      };
-    });
-  },
-}));
-```
-
-### Error Handling & Loading States
-
-```typescript
-// components/ErrorBoundary.tsx
-import { Component, ErrorInfo, ReactNode } from 'react';
-
-interface Props {
-  children: ReactNode;
-  fallback?: ReactNode;
-}
-
-interface State {
-  hasError: boolean;
-  error?: Error;
-}
-
-export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false
-  };
-
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
-
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
-  }
-
-  public render() {
-    if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="min-h-[50vh] flex flex-col items-center justify-center text-center p-8">
-          <div className="glass-3 rounded-3xl p-8 max-w-md">
-            <AlertTriangle className="w-16 h-16 text-tomato-red mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-text-dark mb-2">
-              Something went wrong
-            </h2>
-            <p className="text-text-muted mb-6">
-              We encountered an unexpected error. Please refresh the page or try again later.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-gradient-secondary text-white px-6 py-3 rounded-xl 
-                         font-medium hover:shadow-glow-olive transition-all duration-300"
-            >
-              Refresh Page
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
-// components/LoadingStates.tsx
-export const LoadingSpinner = ({ size = 'default' }) => {
-  const sizeClasses = {
-    small: 'w-4 h-4',
-    default: 'w-8 h-8',
-    large: 'w-12 h-12'
-  };
-
-  return (
-    <div className="flex items-center justify-center p-8">
-      <div className={`${sizeClasses[size]} border-4 border-muted-olive/20 
-                       border-t-muted-olive rounded-full animate-spin`} />
-    </div>
-  );
-};
-
-export const SkeletonCard = () => (
-  <div className="animate-pulse glass-2 rounded-3xl p-6 space-y-4">
-    <div className="h-4 bg-earthy-beige rounded-full w-3/4" />
-    <div className="h-4 bg-earthy-beige rounded-full w-1/2" />
-    <div className="h-32 bg-earthy-beige rounded-2xl" />
-    <div className="flex justify-between">
-      <div className="h-4 bg-earthy-beige rounded-full w-1/4" />
-      <div className="h-4 bg-earthy-beige rounded-full w-1/4" />
-    </div>
-  </div>
-);
-
-export const EmptyState = ({ 
-  title, 
-  description, 
-  actionLabel, 
-  onAction, 
-  icon: Icon = Package 
-}) => (
-  <div className="flex flex-col items-center justify-center py-16 px-8 text-center max-w-md mx-auto">
-    <div className="w-24 h-24 text-text-muted/40 mb-6">
-      <Icon className="w-full h-full" />
-    </div>
-    <h3 className="text-lg font-medium text-text-dark/70 mb-2">{title}</h3>
-    <p className="text-text-muted mb-8 leading-relaxed">{description}</p>
-    {actionLabel && onAction && (
-      <button
-        onClick={onAction}
-        className="bg-gradient-secondary text-white px-8 py-3 rounded-2xl 
-                   font-medium hover:shadow-glow-olive hover:-translate-y-0.5 
-                   transition-all duration-300"
-      >
-        {actionLabel}
-      </button>
-    )}
-  </div>
-);
-```
-
----
-
-## Performance Optimization
-
-### Bundle Optimization & Code Splitting
-
-```typescript
-// Router.tsx - Route-based code splitting
-import { lazy, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
-import { LoadingSpinner } from './components/LoadingStates';
-
-// Lazy load route components
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Inventory = lazy(() => import('./pages/Inventory'));
-const Orders = lazy(() => import('./pages/Orders'));
-const Listings = lazy(() => import('./pages/Listings'));
-const Analytics = lazy(() => import('./pages/Analytics'));
-
-export const Router = () => {
-  return (
-    <Suspense fallback={<LoadingSpinner />}>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/inventory/*" element={<Inventory />} />
-        <Route path="/orders/*" element={<Orders />} />
-        <Route path="/listings/*" element={<Listings />} />
-        <Route path="/analytics/*" element={<Analytics />} />
-      </Routes>
-    </Suspense>
-  );
-};
-
-// utils/lazyImport.ts - Dynamic component loading
-export const lazyImport = <T extends React.ComponentType<any>>(
-  importFn: () => Promise<{ default: T }>
-) => {
-  return lazy(() =>
-    importFn().catch(() => ({
-      default: () => (
-        <div className="text-center p-8">
-          <p className="text-text-muted">Failed to load component</p>
-        </div>
-      ) as T,
-    }))
-  );
-};
-```
-
-### Image Optimization & Caching
-
-```typescript
-// components/OptimizedImage.tsx
-interface OptimizedImageProps {
-  src: string;
-  alt: string;
-  className?: string;
-  placeholder?: string;
-  sizes?: string;
-}
-
-export const OptimizedImage: React.FC<OptimizedImageProps> = ({
-  src, alt, className, placeholder = '/placeholder-image.jpg', sizes
-}) => {
-  const [imageSrc, setImageSrc] = useState(placeholder);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-
-  useEffect(() => {
-    const img = new Image();
-    
-    img.onload = () => {
-      setImageSrc(src);
-      setIsLoading(false);
-    };
-    
-    img.onerror = () => {
-      setHasError(true);
-      setIsLoading(false);
-    };
-    
-    img.src = src;
-  }, [src]);
-
-  return (
-    <div className={`relative overflow-hidden ${className}`}>
-      <img
-        src={imageSrc}
-        alt={alt}
-        sizes={sizes}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${
-          isLoading ? 'opacity-0' : 'opacity-100'
-        }`}
-        loading="lazy"
-      />
-      
-      {isLoading && (
-        <div className="absolute inset-0 bg-earthy-beige/20 flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-muted-olive/20 border-t-muted-olive 
-                          rounded-full animate-spin" />
-        </div>
-      )}
-      
-      {hasError && (
-        <div className="absolute inset-0 bg-earthy-beige/20 flex items-center justify-center">
-          <ImageIcon className="w-8 h-8 text-text-muted/40" />
-        </div>
-      )}
-    </div>
-  );
-};
-
-// hooks/useInfiniteScroll.ts - Performance optimization for large lists
-export const useInfiniteScroll = <T>(
-  fetchFn: (page: number) => Promise<{ data: T[]; hasMore: boolean }>,
-  options: { initialPage?: number; threshold?: number } = {}
-) => {
-  const { initialPage = 1, threshold = 0.8 } = options;
-  const [data, setData] = useState<T[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(initialPage);
-  const observerRef = useRef<IntersectionObserver>();
-  const lastElementRef = useRef<HTMLDivElement>();
-
-  const loadMore = useCallback(async () => {
-    if (isLoading || !hasMore) return;
-    
-    setIsLoading(true);
-    try {
-      const result = await fetchFn(page);
-      setData(prev => [...prev, ...result.data]);
-      setHasMore(result.hasMore);
-      setPage(prev => prev + 1);
-    } catch (error) {
-      console.error('Error loading more data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fetchFn, page, isLoading, hasMore]);
-
-  useEffect(() => {
-    if (observerRef.current) observerRef.current.disconnect();
-    
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoading) {
-          loadMore();
-        }
-      },
-      { threshold }
-    );
-
-    if (lastElementRef.current) {
-      observerRef.current.observe(lastElementRef.current);
-    }
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [hasMore, isLoading, loadMore, threshold]);
-
-  return { data, isLoading, hasMore, lastElementRef };
-};
-```
-
----
-
-## Implementation Checklist
-
-### Phase 1: Foundation (Week 1-2)
-- [ ] Set up React + TypeScript + Vite project
-- [ ] Configure Tailwind CSS with custom Aaroth Fresh colors
-- [ ] Implement authentication system with phone-based login
-- [ ] Create base component library (forms, buttons, cards)
-- [ ] Set up routing with role-based protection
-- [ ] Configure API integration with interceptors
-
-### Phase 2: Core Features (Week 3-5)
-- [ ] Build dashboard with analytics and metrics
-- [ ] Implement inventory management interface
-- [ ] Create product listings management
-- [ ] Develop order management workflow
-- [ ] Add notification system and real-time updates
-- [ ] Implement responsive design for mobile devices
-
-### Phase 3: Advanced Features (Week 6-7)
-- [ ] Add advanced filtering and search functionality
-- [ ] Implement bulk operations for efficiency
-- [ ] Create data visualization charts
-- [ ] Add file upload for product images
-- [ ] Implement offline support with service workers
-- [ ] Add performance optimization (lazy loading, caching)
-
-### Phase 4: Polish & Testing (Week 8)
-- [ ] Comprehensive testing (unit, integration, e2e)
-- [ ] Accessibility audit and improvements
-- [ ] Performance optimization and bundle analysis
-- [ ] Documentation and deployment preparation
-- [ ] User acceptance testing with vendors
-
----
-
-## Conclusion
-
-This comprehensive vendor interface design documentation provides frontend developers with everything needed to build a modern, user-friendly vendor portal for the Aaroth Fresh B2B marketplace. The design follows the "Organic Futurism" philosophy, combining natural aesthetics with cutting-edge technology to create an interface that vendors will love to use.
-
-The documentation covers all major aspects from authentication to order management, with detailed component specifications, API integration patterns, and performance optimization guidelines. The result will be a professional, efficient, and delightful vendor experience that drives business growth and customer satisfaction.
-
-**Key Benefits of This Design:**
-- **Mobile-First**: Optimized for vendors managing business on mobile devices
-- **Performance-Focused**: Fast loading times and smooth animations
-- **Accessible**: WCAG 2.1 AA compliant for all users
-- **Scalable**: Architecture supports future feature expansion
-- **Brand-Consistent**: Follows Aaroth Fresh design language throughout
-- **User-Centric**: Designed based on actual vendor workflows and needs
-
-This interface will empower vegetable vendors to efficiently manage their business operations while providing an exceptional user experience that reflects the quality and values of the Aaroth Fresh platform.
+**Continue reading**: [Component Library & Technical Guidelines →](./vendor-interface-components.md)
