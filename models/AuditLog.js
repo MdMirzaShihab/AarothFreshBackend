@@ -256,6 +256,6 @@ AuditLogSchema.index({ createdAt: -1 });
 AuditLogSchema.index({ 'metadata.bulkOperationId': 1 });
 
 // TTL index for automatic cleanup based on retention period
-AuditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 220752000 }); // 7 years
+AuditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 1209600 }); // 2 weeks
 
 module.exports = mongoose.model('AuditLog', AuditLogSchema);
