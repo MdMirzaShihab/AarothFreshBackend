@@ -1,9 +1,7 @@
 const { validationResult } = require('express-validator');
-const User = require('../models/User');
-const Vendor = require('../models/Vendor');
 const Order = require('../models/Order');
 const Listing = require('../models/Listing');
-const Product = require('../models/Product');
+const VendorInventory = require('../models/VendorInventory');
 const { ErrorResponse } = require('../middleware/error');
 
 /**
@@ -435,7 +433,6 @@ exports.getRevenueAnalytics = async (req, res, next) => {
     const { start, end } = getDateRange(period, startDate, endDate);
     
     // Get inventory analytics for cost calculations
-    const VendorInventory = require('../models/VendorInventory');
 
     const [dailyRevenue, revenueByStatus, revenueByProduct, monthlyTrends, inventoryAnalytics, profitByProduct] = await Promise.all([
       // Daily revenue breakdown
@@ -836,10 +833,7 @@ exports.getProductPerformance = async (req, res, next) => {
     }
 
     const vendorId = req.user.vendorId;
-    const { period = 'month', startDate, endDate, sort = 'profit', limit = 20 } = req.query;
-    const { start, end } = getDateRange(period, startDate, endDate);
-    
-    const VendorInventory = require('../models/VendorInventory');
+    const { sort = 'profit', limit = 20 } = req.query;
 
     // Enhanced sort mapping to include profit-based metrics
     const sortMapping = {
@@ -1314,7 +1308,6 @@ exports.getCustomerInsights = async (req, res, next) => {
 exports.getInventoryStatus = async (req, res, next) => {
   try {
     const vendorId = req.user.vendorId;
-    const VendorInventory = require('../models/VendorInventory');
 
     const [inventoryItems, listings, inventoryAnalytics] = await Promise.all([
       // Get all inventory items with complete data

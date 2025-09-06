@@ -506,7 +506,7 @@ VendorInventorySchema.statics.getLowStockItems = async function(vendorId, option
 // Static method to get inventory analytics for vendor
 VendorInventorySchema.statics.getInventoryAnalytics = async function(vendorId, startDate, endDate) {
   return await this.aggregate([
-    { $match: { vendorId: mongoose.Types.ObjectId(vendorId) } },
+    { $match: { vendorId: new mongoose.Types.ObjectId(vendorId) } },
     {
       $group: {
         _id: null,

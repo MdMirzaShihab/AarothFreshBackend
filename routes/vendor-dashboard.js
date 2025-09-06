@@ -102,7 +102,7 @@ router.get('/order-management',
   [
     query('status')
       .optional()
-      .isIn(['pending', 'confirmed', 'processing', 'ready', 'delivered', 'cancelled'])
+      .isIn(['all', 'pending', 'confirmed', 'processing', 'ready', 'delivered', 'cancelled'])
       .withMessage('Invalid order status'),
     query('page')
       .optional()

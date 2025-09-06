@@ -501,7 +501,7 @@ exports.getVendor = async (req, res, next) => {
 
     // Get order statistics
     const orderStats = await Order.aggregate([
-      { $match: { vendorId: mongoose.Types.ObjectId(req.params.id) } },
+      { $match: { vendorId: new mongoose.Types.ObjectId(req.params.id) } },
       {
         $group: {
           _id: null,
@@ -519,7 +519,7 @@ exports.getVendor = async (req, res, next) => {
 
     // Get listing statistics
     const listingStats = await Listing.aggregate([
-      { $match: { vendorId: mongoose.Types.ObjectId(req.params.id) } },
+      { $match: { vendorId: new mongoose.Types.ObjectId(req.params.id) } },
       {
         $group: {
           _id: null,
@@ -1142,7 +1142,7 @@ exports.getRestaurant = async (req, res, next) => {
 
     // Get order statistics
     const orderStats = await Order.aggregate([
-      { $match: { restaurantId: mongoose.Types.ObjectId(req.params.id) } },
+      { $match: { restaurantId: new mongoose.Types.ObjectId(req.params.id) } },
       {
         $group: {
           _id: null,

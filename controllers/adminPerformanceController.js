@@ -270,7 +270,7 @@ exports.getSLAViolations = async (req, res, next) => {
       { $unwind: '$slaViolations' },
       {
         $match: {
-          ...(adminId && { adminId: mongoose.Types.ObjectId(adminId) }),
+          ...(adminId && { adminId: new mongoose.Types.ObjectId(adminId) }),
           ...(startDate && endDate && {
             'slaViolations.actionTakenAt': {
               $gte: new Date(startDate),
@@ -627,7 +627,7 @@ exports.generatePerformanceReport = async (req, res, next) => {
     // Build admin filter
     let adminFilter = {};
     if (adminIds && adminIds.length > 0) {
-      adminFilter.adminId = { $in: adminIds.map(id => mongoose.Types.ObjectId(id)) };
+      adminFilter.adminId = { $in: adminIds.map(id => new mongoose.Types.ObjectId(id)) };
     }
     
     const query = { ...dateQuery, ...adminFilter, periodType: period };

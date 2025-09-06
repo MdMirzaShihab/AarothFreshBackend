@@ -137,19 +137,51 @@ exports.getListings = async (req, res, next) => {
 };
 
 /**
- * @desc    Get vendor's own listings
+ * @desc    Get vendor's own listings with filtering and pagination
  * @route   GET /api/v1/listings/vendor
  * @access  Private/Vendor
  */
 exports.getVendorListings = async (req, res, next) => {
   try {
-    const listings = await Listing.find({ vendorId: req.user.vendorId })
-      .populate('productId', 'name description category')
-      .sort({ createdAt: -1 });
+    const { status = 'all', limit, page = 1, sort = '-createdAt' } = req.query;
+    
+    // Build query for vendor's own listings
+    let query = { vendorId: req.user.vendorId };
+    
+    // Add status filter if specified and not 'all'
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+    
+    // Build the listing query
+    let listingQuery = Listing.find(query)
+      .populate('productId', 'name description category images')
+      .populate('inventoryId', 'currentStock status')
+      .sort(sort);
+    
+    // Add pagination if limit is specified
+    if (limit) {
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      listingQuery = listingQuery.skip(skip).limit(parseInt(limit));
+    }
+    
+    // Execute query
+    const listings = await listingQuery;
+    
+    // Get total count for pagination info
+    const totalCount = await Listing.countDocuments(query);
 
     res.status(200).json({
       success: true,
       count: listings.length,
+      total: totalCount,
+      pagination: limit ? {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(totalCount / parseInt(limit)),
+        hasNext: parseInt(page) * parseInt(limit) < totalCount,
+        hasPrev: parseInt(page) > 1
+      } : undefined,
       data: listings
     });
   } catch (err) {

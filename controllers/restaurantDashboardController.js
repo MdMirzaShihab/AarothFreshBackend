@@ -999,7 +999,7 @@ exports.getBudgetTracking = async (req, res, next) => {
           }
         },
         { $unwind: '$category' },
-        ...(category ? [{ $match: { 'category._id': mongoose.Types.ObjectId(category) } }] : []),
+        ...(category ? [{ $match: { 'category._id': new mongoose.Types.ObjectId(category) } }] : []),
         {
           $group: {
             _id: '$category._id',
@@ -1376,7 +1376,7 @@ exports.getPriceAnalytics = async (req, res, next) => {
           }
         },
         { $unwind: '$category' },
-        ...(categoryId ? [{ $match: { 'category._id': mongoose.Types.ObjectId(categoryId) } }] : []),
+        ...(categoryId ? [{ $match: { 'category._id': new mongoose.Types.ObjectId(categoryId) } }] : []),
         {
           $group: {
             _id: {
@@ -1416,7 +1416,7 @@ exports.getPriceAnalytics = async (req, res, next) => {
           }
         },
         { $unwind: '$items' },
-        ...(productId ? [{ $match: { 'items.productId': mongoose.Types.ObjectId(productId) } }] : []),
+        ...(productId ? [{ $match: { 'items.productId': new mongoose.Types.ObjectId(productId) } }] : []),
         {
           $lookup: {
             from: 'products',
@@ -1957,7 +1957,7 @@ exports.getOrderHistory = async (req, res, next) => {
     };
 
     if (vendor) {
-      matchConditions.vendorId = mongoose.Types.ObjectId(vendor);
+      matchConditions.vendorId = new mongoose.Types.ObjectId(vendor);
     }
 
     if (status && status !== 'all') {
