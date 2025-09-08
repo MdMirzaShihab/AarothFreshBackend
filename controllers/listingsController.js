@@ -39,7 +39,7 @@ exports.createListing = async (req, res, next) => {
       return next(new ErrorResponse(statusMessage, 403));
     }
 
-    const { productId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications, inventoryId } = req.body;
+    const { productId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications, inventoryId, listingType = 'inventory_based' } = req.body;
 
     // Verify the product exists
     const product = await Product.findById(productId);
@@ -47,54 +47,68 @@ exports.createListing = async (req, res, next) => {
       return next(new ErrorResponse('Product not found', 404));
     }
 
-    // Verify inventory exists and vendor owns it
+    // Handle inventory validation based on listing type
     let inventory = null;
-    if (inventoryId) {
-      inventory = await VendorInventory.findById(inventoryId);
-      if (!inventory) {
-        return next(new ErrorResponse('Inventory record not found', 404));
+    
+    if (listingType === 'inventory_based') {
+      // For inventory-based listings, inventory is required
+      if (inventoryId) {
+        inventory = await VendorInventory.findById(inventoryId);
+        if (!inventory) {
+          return next(new ErrorResponse('Inventory record not found', 404));
+        }
+        
+        if (inventory.vendorId.toString() !== req.user.vendorId.toString()) {
+          return next(new ErrorResponse('Not authorized to access this inventory record', 403));
+        }
+        
+        if (inventory.productId.toString() !== productId.toString()) {
+          return next(new ErrorResponse('Inventory product does not match listing product', 400));
+        }
+      } else {
+        // Try to find inventory automatically
+        inventory = await VendorInventory.findOne({ 
+          vendorId: req.user.vendorId, 
+          productId 
+        });
+        
+        if (!inventory) {
+          return next(new ErrorResponse('No inventory found for this product. Please add inventory first before creating an inventory-based listing.', 400));
+        }
       }
-      
-      if (inventory.vendorId.toString() !== req.user.vendorId.toString()) {
-        return next(new ErrorResponse('Not authorized to access this inventory record', 403));
+
+      // Validate that we have enough inventory for the listing
+      if (availability.quantityAvailable > inventory.currentStock.totalQuantity) {
+        return next(new ErrorResponse(
+          `Cannot list ${availability.quantityAvailable} ${availability.unit}. Only ${inventory.currentStock.totalQuantity} available in inventory.`,
+          400
+        ));
       }
-      
-      if (inventory.productId.toString() !== productId.toString()) {
-        return next(new ErrorResponse('Inventory product does not match listing product', 400));
+
+      // Check if units match
+      if (availability.unit !== inventory.currentStock.unit) {
+        return next(new ErrorResponse(
+          `Listing unit (${availability.unit}) must match inventory unit (${inventory.currentStock.unit})`,
+          400
+        ));
       }
-    } else {
-      // Try to find inventory automatically
-      inventory = await VendorInventory.findOne({ 
-        vendorId: req.user.vendorId, 
-        productId 
-      });
-      
-      if (!inventory) {
-        return next(new ErrorResponse('No inventory found for this product. Please add inventory first before creating a listing.', 400));
+    } else if (listingType === 'non_inventory') {
+      // For non-inventory listings, inventory is optional but can be provided for reference
+      if (inventoryId) {
+        inventory = await VendorInventory.findById(inventoryId);
+        if (!inventory || inventory.vendorId.toString() !== req.user.vendorId.toString()) {
+          return next(new ErrorResponse('Invalid inventory reference for non-inventory listing', 400));
+        }
       }
+      // No stock validation needed for non-inventory listings
     }
 
-    // Validate that we have enough inventory for the listing
-    if (availability.quantityAvailable > inventory.currentStock.totalQuantity) {
-      return next(new ErrorResponse(
-        `Cannot list ${availability.quantityAvailable} ${availability.unit}. Only ${inventory.currentStock.totalQuantity} available in inventory.`,
-        400
-      ));
-    }
-
-    // Check if units match
-    if (availability.unit !== inventory.currentStock.unit) {
-      return next(new ErrorResponse(
-        `Listing unit (${availability.unit}) must match inventory unit (${inventory.currentStock.unit})`,
-        400
-      ));
-    }
-
-    // Create listing with inventory reference
+    // Create listing with inventory reference and type classification
     const listing = await Listing.create({
       vendorId: req.user.vendorId,
+      listingType,
       productId,
-      inventoryId: inventory._id,
+      inventoryId: inventory?._id, // Optional for non-inventory listings
       pricing,
       qualityGrade,
       availability,

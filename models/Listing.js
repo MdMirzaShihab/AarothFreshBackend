@@ -12,11 +12,28 @@ const ListingSchema = new mongoose.Schema({
     required: [true, 'Product ID is required']
   },
   
-  // Inventory relationship for tracking stock and costs
+  // Listing type classification
+  listingType: {
+    type: String,
+    enum: ['inventory_based', 'non_inventory'],
+    required: [true, 'Listing type is required'],
+    default: 'inventory_based'
+  },
+
+  // Inventory relationship - optional for non-inventory listings
   inventoryId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'VendorInventory',
-    required: [true, 'Inventory ID is required for listing creation']
+    required: false // Made optional to support non-inventory listings
+  },
+
+  // Flag to clearly indicate if this listing affects inventory tracking
+  isInventoryTracked: {
+    type: Boolean,
+    required: [true, 'Inventory tracking flag is required'],
+    default: function() {
+      return this.listingType === 'inventory_based';
+    }
   },
 
   // Pricing information
@@ -248,6 +265,19 @@ const ListingSchema = new mongoose.Schema({
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
+});
+
+// Validate listing type consistency
+ListingSchema.pre('save', function(next) {
+  // Ensure inventory_based listings have inventoryId
+  if (this.listingType === 'inventory_based' && !this.inventoryId) {
+    return next(new Error('Inventory-based listings must have an inventoryId'));
+  }
+  
+  // Set isInventoryTracked based on listingType
+  this.isInventoryTracked = this.listingType === 'inventory_based';
+  
+  next();
 });
 
 // Ensure only one primary image

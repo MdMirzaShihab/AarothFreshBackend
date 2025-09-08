@@ -544,4 +544,26 @@ router.post("/performance/generate-report",
   generatePerformanceReport
 );
 
+// Manual inventory check for MVP (simplified)
+router.post("/inventory/manual-check",
+  auditLog('manual_inventory_check', 'Inventory', 'Manual inventory check triggered', { severity: 'low', impactLevel: 'minor' }),
+  async (req, res) => {
+    try {
+      // Simple response for MVP - just indicate the check would happen
+      res.json({
+        success: true,
+        message: 'Manual inventory check would be performed here in full version',
+        timestamp: new Date().toISOString(),
+        note: 'This is a simplified MVP response. Enable ENABLE_INVENTORY_MONITORING=true for full functionality.'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to trigger inventory check',
+        error: error.message
+      });
+    }
+  }
+);
+
 module.exports = router;

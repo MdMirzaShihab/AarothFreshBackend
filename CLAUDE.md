@@ -8,6 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Start production server**: `npm start`
 - **No tests configured**: The test script is not implemented - check if tests need to be added
 
+## Architecture Changes (v2.0)
+
+- **Route Consolidation**: Vendor listing CRUD moved to `/api/v1/vendor-dashboard/listings/*`
+- **Legacy Code Removal**: All backward compatibility patterns and old field structures removed
+- **Real-time Features**: Simplified for MVP - SLA and inventory monitoring disabled by default
+- **Validation Standardization**: Consistent nested field validation across all endpoints
+
 ## Architecture Overview
 
 This is a B2B marketplace REST API connecting local vegetable vendors with restaurants, built with Express.js and MongoDB.

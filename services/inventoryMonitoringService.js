@@ -59,7 +59,7 @@ class InventoryMonitoringService {
     try {
       console.log('Starting inventory check at', new Date().toISOString());
 
-      // Get all inventory items that need attention
+      // Get all inventory items that need attention with optimized query
       const inventoryItems = await VendorInventory.find({
         $or: [
           { status: 'low_stock' },
@@ -75,7 +75,8 @@ class InventoryMonitoringService {
           }
         ]
       }).populate('vendorId', 'businessName')
-        .populate('productId', 'name category');
+        .populate('productId', 'name category')
+        .maxTimeMS(30000); // Set explicit query timeout to 30 seconds
 
       console.log(`Found ${inventoryItems.length} inventory items needing attention`);
 
@@ -119,6 +120,14 @@ class InventoryMonitoringService {
 
     } catch (error) {
       console.error('Error during inventory check:', error);
+      
+      // If it's a timeout error, log specific guidance
+      if (error.name === 'MongooseError' && error.message.includes('buffering timed out')) {
+        console.error('MongoDB connection timeout detected. Check database connection and query performance.');
+      }
+      
+      // Don't throw the error - let the service continue for next scheduled check
+      return false;
     }
   }
 
@@ -231,12 +240,27 @@ class InventoryMonitoringService {
    */
   async updateInventoryStatuses() {
     try {
-      // This will trigger the pre-save hooks that update statuses
-      const inventoryItems = await VendorInventory.find({});
+      // Process inventory items in smaller batches to avoid timeouts
+      const batchSize = 50;
+      const totalCount = await VendorInventory.countDocuments({});
+      console.log(`Updating statuses for ${totalCount} inventory items in batches of ${batchSize}`);
       
-      for (let inventory of inventoryItems) {
-        // Simply save to trigger status updates
-        await inventory.save();
+      for (let skip = 0; skip < totalCount; skip += batchSize) {
+        const inventoryBatch = await VendorInventory.find({})
+          .skip(skip)
+          .limit(batchSize)
+          .maxTimeMS(20000);
+        
+        // Process batch in parallel
+        const savePromises = inventoryBatch.map(inventory => {
+          return inventory.save().catch(error => {
+            console.error(`Error saving inventory ${inventory._id}:`, error.message);
+            return null; // Continue with other items
+          });
+        });
+        
+        await Promise.allSettled(savePromises);
+        console.log(`Processed batch ${Math.floor(skip/batchSize) + 1}/${Math.ceil(totalCount/batchSize)}`);
       }
     } catch (error) {
       console.error('Error updating inventory statuses:', error);
