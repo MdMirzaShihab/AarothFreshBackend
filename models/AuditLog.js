@@ -33,7 +33,7 @@ const AuditLogSchema = new mongoose.Schema({
       // Category management
       'category_created', 'category_updated', 'category_deleted', 'category_viewed', 'categories_viewed', 'category_usage_viewed',
       // Listing management
-      'listing_flagged', 'listing_unflagged', 'listing_featured', 'listing_status_changed',
+      'listing_flagged', 'listing_unflagged', 'listing_featured', 'listing_unfeatured', 'listing_status_changed',
       'listings_viewed', 'featured_listings_viewed', 'flagged_listings_viewed', 'listing_viewed',
       // Order management
       'order_approved', 'order_cancelled', 'order_status_changed',

@@ -21,9 +21,12 @@ const {
   safeDeleteVendor,
   getAllRestaurants,
   getRestaurant,
+  getRestaurantStats,
   updateRestaurant,
   deactivateRestaurant,
   safeDeleteRestaurant,
+  transferRestaurantOwnership,
+  requestRestaurantDocuments,
   getDashboardOverview,
   createRestaurantOwner,
   createRestaurantManager,
@@ -34,6 +37,9 @@ const {
   safeDeleteProduct,
   safeDeleteCategory,
   deactivateVendor,
+  // Product Statistics and Bulk Operations
+  getProductStats,
+  bulkUpdateProducts,
   // Comprehensive Listing Management
   getAdminListings,
   getAdminListing,
@@ -75,16 +81,18 @@ const {
   getSettingHistory
 } = require("../controllers/settingsController");
 const { protect, authorize } = require("../middleware/auth");
-const { 
-  uploadCategoryImage, 
+const {
+  uploadCategoryImage,
   uploadRestaurantLogo,
-  uploadVendorLogo
+  uploadVendorLogo,
+  uploadProductImages
 } = require("../middleware/upload");
 const {
   auditLog,
   auditSecurity
 } = require("../middleware/auditLog");
 const {
+  handleValidationErrors,
   productValidation,
   categoryValidation,
   userUpdateValidation,
@@ -187,6 +195,9 @@ router.delete("/vendors/:id/safe-delete",
 // RESTAURANT MANAGEMENT
 // ================================
 
+// Restaurant statistics
+router.get("/restaurants/stats", getRestaurantStats);
+
 // Unified restaurant route with query parameter filtering
 // Query params: ?status=pending|approved|rejected&page=1&limit=20&search=name
 router.route("/restaurants").get(getAllRestaurants);
@@ -231,6 +242,28 @@ router.delete("/restaurants/:id/safe-delete",
   safeDeleteRestaurant
 );
 
+// Transfer restaurant ownership
+router.post("/restaurants/:id/transfer-ownership",
+  mongoIdValidation("id"),
+  [
+    body('newOwnerId').isMongoId().withMessage('Valid new owner ID is required'),
+    body('reason').optional().isLength({ min: 3, max: 500 }).withMessage('Reason must be between 3-500 characters'),
+  ],
+  auditSecurity('restaurant_ownership_transferred', 'Transferred restaurant ownership', { severity: 'critical', impactLevel: 'major' }),
+  transferRestaurantOwnership
+);
+
+// Request additional documents from restaurant
+router.put("/restaurants/:id/request-documents",
+  mongoIdValidation("id"),
+  [
+    body('documentTypes').isArray({ min: 1 }).withMessage('Document types array is required'),
+    body('message').optional().isLength({ max: 1000 }).withMessage('Message cannot exceed 1000 characters'),
+    body('deadline').optional().isISO8601().withMessage('Deadline must be a valid date'),
+  ],
+  auditLog('restaurant_documents_requested', 'Restaurant', 'Requested documents from restaurant', { severity: 'medium', impactLevel: 'moderate' }),
+  requestRestaurantDocuments
+);
 
 // Restaurant owner and manager creation
 router.post("/restaurant-owners", 
@@ -253,6 +286,7 @@ router
   .route("/products")
   .get(getProducts)
   .post(
+    ...uploadProductImages('images', 5),
     productValidation,
     auditLog('product_created', 'Product', 'Created product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
     createProduct
@@ -263,6 +297,7 @@ router
   .get(mongoIdValidation("id"), getProduct)
   .put(
     mongoIdValidation("id"),
+    ...uploadProductImages('images', 5),
     productValidation,
     auditLog('product_updated', 'Product', 'Updated product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
     updateProduct
@@ -273,6 +308,20 @@ router.delete("/products/:id/safe-delete",
   mongoIdValidation("id"),
   auditLog('product_deleted', 'Product', 'Safely deleted product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
   safeDeleteProduct
+);
+
+// Product statistics
+router.get("/products/stats", getProductStats);
+
+// Bulk product operations
+router.put("/products/bulk",
+  [
+    body('productIds').isArray({ min: 1, max: 100 }).withMessage('Product IDs array required (1-100 items)'),
+    body('action').isIn(['activate', 'deactivate', 'delete']).withMessage('Action must be activate, deactivate, or delete'),
+    handleValidationErrors
+  ],
+  auditLog('products_bulk_updated', 'Product', 'Bulk action on products', { severity: 'medium', impactLevel: 'moderate' }),
+  bulkUpdateProducts
 );
 
 // ================================
@@ -404,7 +453,11 @@ router.put("/vendors/:id/verification",
   mongoIdValidation("id"),
   [
     body('status').isIn(['pending', 'approved', 'rejected']).withMessage('status must be one of: pending, approved, rejected'),
-    body('reason').optional().isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters')
+    body('reason')
+      .if(body('status').equals('rejected'))
+      .notEmpty().withMessage('Reason is required when rejecting verification')
+      .isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5 and 500 characters'),
+    handleValidationErrors
   ],
   auditSecurity('vendor_verification_toggle', 'Toggled vendor verification status', { severity: 'high', impactLevel: 'significant' }),
   toggleVendorVerification
@@ -415,7 +468,11 @@ router.put("/restaurants/:id/verification",
   mongoIdValidation("id"),
   [
     body('status').isIn(['pending', 'approved', 'rejected']).withMessage('status must be one of: pending, approved, rejected'),
-    body('reason').optional().isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5-500 characters')
+    body('reason')
+      .if(body('status').equals('rejected'))
+      .notEmpty().withMessage('Reason is required when rejecting verification')
+      .isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5 and 500 characters'),
+    handleValidationErrors
   ],
   auditSecurity('restaurant_verification_toggle', 'Toggled restaurant verification status', { severity: 'high', impactLevel: 'significant' }),
   toggleRestaurantVerification

@@ -855,7 +855,7 @@ exports.getVendorInsights = async (req, res, next) => {
           relationshipDuration: Math.floor(
             (vendor.lastOrderDate - vendor.firstOrderDate) / (1000 * 60 * 60 * 24)
           ),
-          loyaltyScore: this.calculateLoyaltyScore(vendor, reliability)
+          loyaltyScore: calculateLoyaltyScore(vendor, reliability)
         }
       };
     });
@@ -1128,7 +1128,7 @@ exports.getBudgetTracking = async (req, res, next) => {
         cumulativeSpent: 0 // Will be calculated below
       })),
       alerts: budgetAlerts,
-      recommendations: this.generateBudgetRecommendations(currentSpending, budgetLimit, spendingByCategory)
+      recommendations: generateBudgetRecommendations(currentSpending, budgetLimit, spendingByCategory)
     };
 
     // Calculate cumulative spending
@@ -1341,7 +1341,8 @@ exports.getPriceAnalytics = async (req, res, next) => {
 
     const restaurantId = req.user.restaurantId;
     const { groupBy = 'category', productId, categoryId, period = 'month', startDate, endDate } = req.query;
-    
+    const { start, end } = getDateRange(period, startDate, endDate);
+
     // Get last 12 months for historical comparison
     const currentDate = new Date();
     const last12Months = new Date();
@@ -1791,10 +1792,10 @@ exports.getInventoryPlanning = async (req, res, next) => {
           consumptionRate: Math.round(product.consumptionRate * 100) / 100, // per day
           daysSinceLastOrder: Math.floor(product.daysSinceLastOrder || 0),
           totalSpent: Math.round(product.totalSpent * 100) / 100,
-          reorderPriority: product.daysSinceLastOrder > 7 ? 'high' : 
+          reorderPriority: product.daysSinceLastOrder > 7 ? 'high' :
                           product.daysSinceLastOrder > 3 ? 'medium' : 'low'
         })),
-        categoryConsumption: this.groupByCategory(consumptionPatterns)
+        categoryConsumption: groupByCategory(consumptionPatterns)
       },
       seasonalPatterns: seasonalTrends.map(product => ({
         productId: product._id,
@@ -1806,7 +1807,7 @@ exports.getInventoryPlanning = async (req, res, next) => {
             quantity: monthData ? monthData.quantity : 0
           };
         }),
-        seasonalityScore: this.calculateSeasonalityScore(product.monthlyData)
+        seasonalityScore: calculateSeasonalityScore(product.monthlyData)
       })),
       stockRecommendations: stockPrediction.map(item => ({
         productId: item.productId,
@@ -1818,8 +1819,8 @@ exports.getInventoryPlanning = async (req, res, next) => {
         },
         recommendations: {
           optimalOrderQuantity: Math.round(item.recommendedOrderQuantity * 100) / 100,
-          orderFrequency: this.calculateOptimalOrderFrequency(item.orderFrequency),
-          nextOrderDate: this.predictNextOrderDate(item),
+          orderFrequency: calculateOptimalOrderFrequency(item.orderFrequency),
+          nextOrderDate: predictNextOrderDate(item),
           safetyStock: Math.round(item.weeklyConsumption * 0.5 * 100) / 100 // 50% of weekly consumption
         }
       })),
@@ -1833,7 +1834,7 @@ exports.getInventoryPlanning = async (req, res, next) => {
           wastedValue: Math.round(item.wastedValue * 100) / 100
         }))
       },
-      alerts: this.generateInventoryAlerts(consumptionPatterns, stockPrediction)
+      alerts: generateInventoryAlerts(consumptionPatterns, stockPrediction)
     };
 
     res.status(200).json({
@@ -2205,7 +2206,7 @@ exports.getFavoriteVendors = async (req, res, next) => {
           lastOrderDate: vendor.lastOrderDate,
           favoriteScore: Math.round(vendor.favoriteScore * 100) / 100
         },
-        tags: this.generateVendorTags(vendor)
+        tags: generateVendorTags(vendor)
       })),
       frequentProducts: frequentProducts.slice(0, 15).map((product, index) => ({
         rank: index + 1,
@@ -2221,7 +2222,7 @@ exports.getFavoriteVendors = async (req, res, next) => {
         },
         reorderSuggestion: {
           recommended: product.totalOrders > 5,
-          urgency: this.calculateReorderUrgency(product),
+          urgency: calculateReorderUrgency(product),
           estimatedQuantity: Math.round((product.totalQuantity / product.totalOrders) * 100) / 100
         }
       })),

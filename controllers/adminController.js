@@ -960,6 +960,101 @@ exports.getAllRestaurants = async (req, res, next) => {
 };
 
 /**
+ * @desc    Get restaurant statistics
+ * @route   GET /api/v1/admin/restaurants/stats
+ * @access  Private/Admin
+ */
+exports.getRestaurantStats = async (req, res, next) => {
+  try {
+    // Calculate comprehensive statistics
+    const stats = await Restaurant.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $group: {
+          _id: null,
+          totalRestaurants: { $sum: 1 },
+          pendingRestaurants: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'pending'] }, 1, 0] }
+          },
+          approvedRestaurants: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'approved'] }, 1, 0] }
+          },
+          rejectedRestaurants: {
+            $sum: { $cond: [{ $eq: ['$verificationStatus', 'rejected'] }, 1, 0] }
+          },
+          activeRestaurants: {
+            $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] }
+          },
+          inactiveRestaurants: {
+            $sum: { $cond: [{ $eq: ['$isActive', false] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Get manager statistics
+    const managerStats = await Restaurant.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $project: {
+          managerCount: { $size: { $ifNull: ['$managers', []] } }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalManagers: { $sum: '$managerCount' },
+          avgManagersPerRestaurant: { $avg: '$managerCount' }
+        }
+      }
+    ]);
+
+    // Get top cities/locations
+    const topCities = await Restaurant.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      { $match: { 'address.city': { $exists: true, $ne: null, $ne: '' } } },
+      {
+        $group: {
+          _id: '$address.city',
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: 6 },
+      {
+        $project: {
+          _id: 0,
+          name: '$_id',
+          count: 1
+        }
+      }
+    ]);
+
+    // Extract stats and remove _id field
+    const restaurantStats = stats[0] || {};
+    const managerStatsData = managerStats[0] || {};
+
+    // Clean response without _id field
+    res.status(200).json({
+      success: true,
+      data: {
+        totalRestaurants: restaurantStats.totalRestaurants || 0,
+        pendingRestaurants: restaurantStats.pendingRestaurants || 0,
+        approvedRestaurants: restaurantStats.approvedRestaurants || 0,
+        rejectedRestaurants: restaurantStats.rejectedRestaurants || 0,
+        activeRestaurants: restaurantStats.activeRestaurants || 0,
+        inactiveRestaurants: restaurantStats.inactiveRestaurants || 0,
+        totalManagers: managerStatsData.totalManagers || 0,
+        avgManagersPerRestaurant: Number((managerStatsData.avgManagersPerRestaurant || 0).toFixed(2)),
+        topCities: topCities || []
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * @desc    Create restaurant owner and restaurant (Admin only)
  * @route   POST /api/v1/admin/restaurant-owners
  * @access  Private/Admin
@@ -1483,6 +1578,218 @@ exports.safeDeleteRestaurant = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Transfer restaurant ownership to another user
+ * @route   POST /api/v1/admin/restaurants/:id/transfer-ownership
+ * @access  Private/Admin
+ */
+exports.transferRestaurantOwnership = async (req, res, next) => {
+  try {
+    const { newOwnerId, reason } = req.body;
+
+    // Validate inputs
+    if (!newOwnerId) {
+      return next(new ErrorResponse('New owner ID is required', 400));
+    }
+
+    // Find restaurant
+    const restaurant = await Restaurant.findById(req.params.id);
+    if (!restaurant || restaurant.isDeleted) {
+      return next(new ErrorResponse('Restaurant not found', 404));
+    }
+
+    // Find new owner
+    const newOwner = await User.findById(newOwnerId);
+    if (!newOwner || newOwner.isDeleted) {
+      return next(new ErrorResponse('New owner user not found', 404));
+    }
+
+    // Validate new owner role
+    if (!['restaurantOwner', 'restaurantManager'].includes(newOwner.role)) {
+      return next(new ErrorResponse('New owner must have restaurantOwner or restaurantManager role', 400));
+    }
+
+    // Get old owner
+    const oldOwner = await User.findById(restaurant.createdBy);
+
+    // Start MongoDB transaction
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Update restaurant ownership
+      restaurant.createdBy = newOwnerId;
+      restaurant.lastModifiedBy = req.user.id;
+      restaurant.statusUpdatedAt = new Date();
+      restaurant.adminNotes = reason || `Ownership transferred to ${newOwner.name}`;
+      await restaurant.save({ session });
+
+      // Update new owner's role and restaurant association
+      if (newOwner.role === 'restaurantManager') {
+        newOwner.role = 'restaurantOwner';
+      }
+      newOwner.restaurantId = restaurant._id;
+      newOwner.lastModifiedBy = req.user.id;
+      await newOwner.save({ session });
+
+      // If old owner exists, update their role to manager or deactivate
+      if (oldOwner && !oldOwner.isDeleted) {
+        // Remove from managers array if they were a manager
+        restaurant.managers = restaurant.managers.filter(
+          managerId => !managerId.equals(newOwnerId)
+        );
+        await restaurant.save({ session });
+
+        // Optionally, you can convert old owner to manager or deactivate
+        // For now, we'll just update their last modified info
+        oldOwner.lastModifiedBy = req.user.id;
+        await oldOwner.save({ session });
+      }
+
+      // Create audit log
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: 'restaurant_ownership_transferred',
+        entityType: 'Restaurant',
+        entityId: restaurant._id,
+        description: `Transferred restaurant ownership from ${oldOwner?.name || 'Unknown'} to ${newOwner.name}`,
+        reason,
+        severity: 'high',
+        impactLevel: 'major',
+        metadata: {
+          restaurantId: restaurant._id,
+          restaurantName: restaurant.name,
+          oldOwnerId: oldOwner?._id,
+          oldOwnerName: oldOwner?.name,
+          newOwnerId: newOwner._id,
+          newOwnerName: newOwner.name,
+          adminId: req.user.id
+        }
+      });
+
+      await session.commitTransaction();
+
+      res.status(200).json({
+        success: true,
+        message: 'Restaurant ownership transferred successfully',
+        data: {
+          restaurant: await Restaurant.findById(restaurant._id)
+            .populate('createdBy', 'name email phone')
+            .populate('managers', 'name email phone'),
+          newOwner: {
+            _id: newOwner._id,
+            name: newOwner.name,
+            email: newOwner.email,
+            phone: newOwner.phone
+          }
+        }
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Request additional documents from restaurant
+ * @route   PUT /api/v1/admin/restaurants/:id/request-documents
+ * @access  Private/Admin
+ */
+exports.requestRestaurantDocuments = async (req, res, next) => {
+  try {
+    const { documentTypes, message, deadline } = req.body;
+
+    // Validate inputs
+    if (!documentTypes || !Array.isArray(documentTypes) || documentTypes.length === 0) {
+      return next(new ErrorResponse('Document types array is required', 400));
+    }
+
+    // Find restaurant
+    const restaurant = await Restaurant.findById(req.params.id)
+      .populate('createdBy', 'name email phone');
+
+    if (!restaurant || restaurant.isDeleted) {
+      return next(new ErrorResponse('Restaurant not found', 404));
+    }
+
+    // Create document request record
+    const documentRequest = {
+      requestedBy: req.user.id,
+      requestedAt: new Date(),
+      documentTypes,
+      message: message || 'Please submit the following documents for verification',
+      deadline: deadline ? new Date(deadline) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days default
+      status: 'pending'
+    };
+
+    // Update restaurant with document request
+    if (!restaurant.documentRequests) {
+      restaurant.documentRequests = [];
+    }
+    restaurant.documentRequests.push(documentRequest);
+    restaurant.lastModifiedBy = req.user.id;
+    restaurant.statusUpdatedAt = new Date();
+
+    // Add admin note
+    const noteText = `Document request: ${documentTypes.join(', ')}`;
+    restaurant.adminNotes = restaurant.adminNotes
+      ? `${restaurant.adminNotes}\n${noteText}`
+      : noteText;
+
+    await restaurant.save();
+
+    // Create audit log
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'restaurant_documents_requested',
+      entityType: 'Restaurant',
+      entityId: restaurant._id,
+      description: `Requested documents from restaurant: ${restaurant.name}`,
+      severity: 'medium',
+      impactLevel: 'moderate',
+      metadata: {
+        restaurantId: restaurant._id,
+        restaurantName: restaurant.name,
+        documentTypes,
+        deadline: documentRequest.deadline,
+        adminId: req.user.id
+      }
+    });
+
+    // TODO: Send email notification to restaurant owner
+    // This would integrate with your email service (Brevo)
+    // await emailService.sendDocumentRequest({
+    //   to: restaurant.createdBy.email,
+    //   restaurantName: restaurant.name,
+    //   documentTypes,
+    //   message,
+    //   deadline: documentRequest.deadline
+    // });
+
+    res.status(200).json({
+      success: true,
+      message: 'Document request sent successfully',
+      data: {
+        documentRequest,
+        restaurant: {
+          _id: restaurant._id,
+          name: restaurant.name,
+          email: restaurant.email
+        }
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ================================
 // PRODUCT MANAGEMENT
 // ================================
@@ -1547,9 +1854,31 @@ exports.getProducts = async (req, res, next) => {
       query.name = { $regex: req.query.search, $options: "i" };
     }
 
-    // Filter by category
-    if (req.query.category) {
+    // Filter by category (skip if 'all')
+    if (req.query.category && req.query.category !== 'all') {
       query.category = req.query.category;
+    }
+
+    // Filter by status (isActive field)
+    if (req.query.status && req.query.status !== 'all') {
+      if (req.query.status === 'active') {
+        query.isActive = true;
+      } else if (req.query.status === 'inactive') {
+        query.isActive = false;
+      } else if (req.query.status === 'flagged') {
+        query.isFlagged = true;
+      }
+    }
+
+    // Filter by stock level
+    if (req.query.stockLevel && req.query.stockLevel !== 'all') {
+      if (req.query.stockLevel === 'in_stock') {
+        query.stockQuantity = { $gt: 10 };
+      } else if (req.query.stockLevel === 'low_stock') {
+        query.stockQuantity = { $gt: 0, $lte: 10 };
+      } else if (req.query.stockLevel === 'out_of_stock') {
+        query.stockQuantity = { $lte: 0 };
+      }
     }
 
     // Pagination
@@ -1557,11 +1886,17 @@ exports.getProducts = async (req, res, next) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
 
+    // Dynamic sorting
+    let sortBy = {};
+    const sortField = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    sortBy[sortField] = sortOrder;
+
     const products = await Product.find(query)
       .populate("category", "name")
       .populate("createdBy", "name email")
       .populate("updatedBy", "name email")
-      .sort({ createdAt: -1 })
+      .sort(sortBy)
       .skip(skip)
       .limit(limit);
 
@@ -1633,25 +1968,42 @@ exports.updateProduct = async (req, res, next) => {
       updatedBy: req.user.id
     };
 
-    // Handle image updates if new images were uploaded
+    // Handle image updates
+    let finalImages = [];
+
+    // If existingImages is provided, use it as the base (allows user to remove/reorder images)
+    if (req.body.existingImages) {
+      try {
+        const parsedExistingImages = JSON.parse(req.body.existingImages);
+        finalImages = parsedExistingImages;
+      } catch (err) {
+        // If parsing fails, keep original images
+        finalImages = product.images;
+      }
+    } else {
+      // No existingImages provided, keep original images
+      finalImages = product.images;
+    }
+
+    // Add new uploaded images
     if (req.files && req.files.length > 0) {
-      // Process new images
       const newImages = req.files.map((file, index) => ({
         url: file.path, // Cloudinary URL
         alt: req.body.imageAlts ? req.body.imageAlts[index] || '' : '',
-        isPrimary: index === 0 && product.images.length === 0 // First image is primary if no existing images
+        isPrimary: false // Don't automatically set as primary
       }));
 
-      // If replacing all images
-      if (req.body.replaceAllImages === 'true') {
-        updateData.images = newImages;
-        if (newImages.length > 0) {
-          newImages[0].isPrimary = true; // Ensure first image is primary
-        }
-      } else {
-        // Add to existing images
-        updateData.images = [...product.images, ...newImages];
+      // If no existing images, make first new image primary
+      if (finalImages.length === 0 && newImages.length > 0) {
+        newImages[0].isPrimary = true;
       }
+
+      finalImages = [...finalImages, ...newImages];
+    }
+
+    // Update images if there were changes
+    if (req.files?.length > 0 || req.body.existingImages) {
+      updateData.images = finalImages;
     }
 
     // Ensure at least one image exists (validation will be handled by model)
@@ -1729,6 +2081,138 @@ exports.safeDeleteProduct = async (req, res, next) => {
       success: true,
       message: 'Product deleted successfully',
       data: { deletedId: product._id }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Get product statistics
+ * @route   GET /api/v1/admin/products/stats
+ * @access  Private/Admin
+ */
+exports.getProductStats = async (req, res, next) => {
+  try {
+    // Total products
+    const totalProducts = await Product.countDocuments({ isDeleted: { $ne: true } });
+
+    // Active products
+    const activeProducts = await Product.countDocuments({
+      isActive: true,
+      isDeleted: { $ne: true }
+    });
+
+    // Flagged products
+    const flaggedProducts = await Product.countDocuments({
+      isFlagged: true,
+      isDeleted: { $ne: true }
+    });
+
+    // Low stock products (stock quantity <= 10)
+    const lowStockProducts = await Product.countDocuments({
+      stockQuantity: { $lte: 10 },
+      isDeleted: { $ne: true }
+    });
+
+    // Average performance score
+    const performanceAgg = await Product.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $group: {
+          _id: null,
+          avgScore: { $avg: '$performanceScore' }
+        }
+      }
+    ]);
+
+    const averagePerformanceScore = performanceAgg.length > 0
+      ? Math.round(performanceAgg[0].avgScore || 0)
+      : 0;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalProducts,
+        activeProducts,
+        flaggedProducts,
+        lowStockProducts,
+        averagePerformanceScore
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Bulk update products
+ * @route   PUT /api/v1/admin/products/bulk
+ * @access  Private/Admin
+ */
+exports.bulkUpdateProducts = async (req, res, next) => {
+  try {
+    const { productIds, action } = req.body;
+
+    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      return next(new ErrorResponse('Product IDs array is required', 400));
+    }
+
+    if (!action) {
+      return next(new ErrorResponse('Action is required', 400));
+    }
+
+    let updateData = {};
+    let message = '';
+
+    switch (action) {
+      case 'activate':
+        updateData = { isActive: true, updatedBy: req.user.id };
+        message = `${productIds.length} products activated successfully`;
+        break;
+
+      case 'deactivate':
+        updateData = { isActive: false, updatedBy: req.user.id };
+        message = `${productIds.length} products deactivated successfully`;
+        break;
+
+      case 'delete':
+        updateData = {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: req.user.id,
+          updatedBy: req.user.id
+        };
+        message = `${productIds.length} products deleted successfully`;
+        break;
+
+      default:
+        return next(new ErrorResponse(`Invalid action: ${action}`, 400));
+    }
+
+    const result = await Product.updateMany(
+      { _id: { $in: productIds } },
+      { $set: updateData }
+    );
+
+    // Log bulk action
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: `products_bulk_${action}`,
+      entityType: 'Product',
+      description: `Bulk ${action} on ${productIds.length} products`,
+      severity: 'medium',
+      impactLevel: 'moderate'
+    });
+
+    res.status(200).json({
+      success: true,
+      message,
+      data: {
+        matched: result.matchedCount,
+        modified: result.modifiedCount
+      }
     });
   } catch (err) {
     next(err);
@@ -2229,13 +2713,13 @@ exports.getAdminListings = async (req, res, next) => {
     const listings = await Listing.find(query)
       .populate({
         path: 'productId',
-        select: 'name description category images',
+        select: 'name description category images variety origin seasonality',
         populate: {
           path: 'category',
-          select: 'name'
+          select: 'name description'
         }
       })
-      .populate('vendorId', 'businessName contactInfo')
+      .populate('vendorId', 'businessName contactInfo email phone address tradeLicenseNo logo ownerName')
       .populate('moderatedBy', 'name email')
       .populate('deletedBy', 'name email')
       .sort(sortOptions)
@@ -2300,7 +2784,7 @@ exports.getAdminListing = async (req, res, next) => {
           select: 'name description'
         }
       })
-      .populate('vendorId', 'businessName contactInfo address tradeLicenseNo')
+      .populate('vendorId', 'businessName contactInfo email phone address tradeLicenseNo logo ownerName')
       .populate('moderatedBy', 'name email role')
       .populate('deletedBy', 'name email role')
       .populate('createdBy', 'name email role')
@@ -2315,10 +2799,11 @@ exports.getAdminListing = async (req, res, next) => {
       'items.listingId': req.params.id,
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
     })
-    .populate('restaurantId', 'name')
-    .select('status totalAmount createdAt')
+    .populate('restaurantId', 'name email phone')
+    .populate('placedBy', 'name email')
+    .select('orderNumber status totalAmount items createdAt deliveryInfo')
     .sort({ createdAt: -1 })
-    .limit(5);
+    .limit(10);
 
     res.status(200).json({
       success: true,
@@ -2784,7 +3269,7 @@ exports.toggleVendorVerification = async (req, res, next) => {
       vendor.statusUpdatedBy = req.user.id;
       vendor.statusUpdatedAt = new Date();
       vendor.adminNotes = reason;
-      await vendor.save({ session });
+      await vendor.save({ session, validateModifiedOnly: true });
 
       // Log the action with session
       const actionMap = {
@@ -2837,7 +3322,8 @@ exports.toggleVendorVerification = async (req, res, next) => {
   } catch (err) {
     // withTransaction handles abort automatically, only handle specific error cases
     if (err.name === 'ValidationError') {
-      return next(new ErrorResponse('Validation failed', 400));
+      const messages = Object.values(err.errors).map(e => e.message);
+      return next(new ErrorResponse(`Validation failed: ${messages.join(', ')}`, 400));
     }
     if (err.code === 11000) {
       return next(new ErrorResponse('Duplicate key error', 409));
@@ -2889,7 +3375,7 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
       restaurant.statusUpdatedBy = req.user.id;
       restaurant.statusUpdatedAt = new Date();
       restaurant.adminNotes = reason;
-      await restaurant.save({ session });
+      await restaurant.save({ session, validateModifiedOnly: true });
 
       // Log the action with session
       const actionMap = {
@@ -2947,7 +3433,8 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
   } catch (err) {
     // withTransaction handles abort automatically, only handle specific error cases
     if (err.name === 'ValidationError') {
-      return next(new ErrorResponse('Validation failed', 400));
+      const messages = Object.values(err.errors).map(e => e.message);
+      return next(new ErrorResponse(`Validation failed: ${messages.join(', ')}`, 400));
     }
     if (err.code === 11000) {
       return next(new ErrorResponse('Duplicate key error', 409));
