@@ -292,6 +292,9 @@ router
     createProduct
   );
 
+// Product statistics - MUST be before /products/:id to avoid route collision
+router.get("/products/stats", getProductStats);
+
 router
   .route("/products/:id")
   .get(mongoIdValidation("id"), getProduct)
@@ -309,9 +312,6 @@ router.delete("/products/:id/safe-delete",
   auditLog('product_deleted', 'Product', 'Safely deleted product: {name}', { severity: 'medium', impactLevel: 'moderate' }),
   safeDeleteProduct
 );
-
-// Product statistics
-router.get("/products/stats", getProductStats);
 
 // Bulk product operations
 router.put("/products/bulk",

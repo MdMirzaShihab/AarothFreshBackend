@@ -2286,9 +2286,7 @@ exports.getCategories = async (req, res, next) => {
       page = 1,
       limit = 20,
       search,
-      isActive,
-      isAvailable,
-      adminStatus,
+      status,
       level,
       sortBy = 'name',
       sortOrder = 'asc'
@@ -2305,24 +2303,22 @@ exports.getCategories = async (req, res, next) => {
       ];
     }
 
-    // Filter by active status
-    if (isActive !== undefined) {
-      query.isActive = isActive === 'true';
-    }
-
-    // Filter by availability (flag system)
-    if (isAvailable !== undefined) {
-      query.isAvailable = isAvailable === 'true';
-    }
-
-    // Filter by admin status
-    if (adminStatus) {
-      query.adminStatus = adminStatus;
+    // Filter by status (similar to products)
+    if (status && status !== 'all') {
+      if (status === 'active') {
+        query.isActive = true;
+      } else if (status === 'inactive') {
+        query.isActive = false;
+      }
     }
 
     // Filter by level
-    if (level !== undefined) {
-      query.level = parseInt(level);
+    if (level && level !== 'all') {
+      if (level === 'top') {
+        query.parentCategory = { $exists: false };
+      } else if (level === 'sub') {
+        query.parentCategory = { $exists: true };
+      }
     }
 
     // Pagination
@@ -2339,7 +2335,17 @@ exports.getCategories = async (req, res, next) => {
       .populate('parentCategory', 'name slug')
       .sort(sortOptions)
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
+
+    // Add product count to each category
+    const Product = require('../models/Product');
+    for (let category of categories) {
+      category.productCount = await Product.countDocuments({
+        category: category._id,
+        isDeleted: { $ne: true }
+      });
+    }
 
     // Get total count
     const total = await ProductCategory.countDocuments(query);
@@ -2366,17 +2372,20 @@ exports.getCategories = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      count: categories.length,
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      data: categories,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+        limit: parseInt(limit),
+        count: categories.length
+      },
       stats: stats[0] || {
         totalCategories: 0,
         activeCategories: 0,
         availableCategories: 0,
         flaggedCategories: 0
-      },
-      data: categories
+      }
     });
   } catch (err) {
     next(err);
