@@ -17,9 +17,41 @@ exports.getInventoryOverview = async (req, res, next) => {
     }
 
     const vendorId = req.user.vendorId;
-    const { status, lowStock } = req.query;
+    const { status, lowStock, summary: summaryOnly } = req.query;
 
-    // Build query
+    // Get summary statistics (always needed)
+    const analytics = await VendorInventory.getInventoryAnalytics(vendorId);
+    const summary = analytics[0] || {
+      totalProducts: 0,
+      totalStockValue: 0,
+      totalStockQuantity: 0,
+      averageProfitMargin: 0,
+      totalGrossProfit: 0,
+      lowStockItems: 0,
+      outOfStockItems: 0,
+      overstockedItems: 0
+    };
+
+    // If summary-only mode, return just the summary statistics
+    if (summaryOnly === 'true') {
+      return res.status(200).json({
+        success: true,
+        data: {
+          summary: {
+            totalProducts: summary.totalProducts,
+            totalStockValue: Math.round(summary.totalStockValue * 100) / 100,
+            totalStockQuantity: summary.totalStockQuantity,
+            averageProfitMargin: Math.round(summary.averageProfitMargin * 100) / 100,
+            totalGrossProfit: Math.round(summary.totalGrossProfit * 100) / 100,
+            lowStockItems: summary.lowStockItems,
+            outOfStockItems: summary.outOfStockItems,
+            overstockedItems: summary.overstockedItems
+          }
+        }
+      });
+    }
+
+    // Full mode: Build query and fetch inventory items
     let query = { vendorId };
     if (status && status !== 'all') {
       query.status = status;
@@ -42,19 +74,6 @@ exports.getInventoryOverview = async (req, res, next) => {
     }
 
     const inventoryItems = await inventoryQuery;
-
-    // Get summary statistics
-    const analytics = await VendorInventory.getInventoryAnalytics(vendorId);
-    const summary = analytics[0] || {
-      totalProducts: 0,
-      totalStockValue: 0,
-      totalStockQuantity: 0,
-      averageProfitMargin: 0,
-      totalGrossProfit: 0,
-      lowStockItems: 0,
-      outOfStockItems: 0,
-      overstockedItems: 0
-    };
 
     // Format response
     const formattedInventory = inventoryItems.map(item => ({

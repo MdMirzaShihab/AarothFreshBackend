@@ -219,7 +219,7 @@ class NotificationService {
           message: `${additionalData.productName || 'Product'} is running low (${listing.availability.quantityAvailable} ${listing.availability.unit} remaining)`,
           priority: 'high',
           isActionRequired: true,
-          actionUrl: `/vendor-dashboard/inventory?listingId=${listing._id}`,
+          actionUrl: `/inventory?listingId=${listing._id}`,
           actionText: 'Update Stock'
         };
         break;
@@ -231,7 +231,7 @@ class NotificationService {
           message: `${additionalData.productName || 'Product'} is out of stock`,
           priority: 'urgent',
           isActionRequired: true,
-          actionUrl: `/vendor-dashboard/inventory?listingId=${listing._id}`,
+          actionUrl: `/inventory?listingId=${listing._id}`,
           actionText: 'Restock Item'
         };
         break;

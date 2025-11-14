@@ -110,6 +110,7 @@ const validateStockAdjustment = [
  * @access  Private/Vendor
  * @query   status - filter by status (active, low_stock, out_of_stock, overstocked, inactive)
  * @query   lowStock - true to show only low stock items
+ * @query   summary - true to return only summary statistics (for dashboard widgets), false or omitted for full data
  */
 router.get('/', getInventoryOverview);
 

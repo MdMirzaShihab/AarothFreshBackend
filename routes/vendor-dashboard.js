@@ -1,13 +1,13 @@
 /**
  * @fileoverview Vendor Dashboard Routes
  * @description Complete vendor management interface including analytics, listings, and operations
- * @version 2.0
- * @features 
+ * @version 2.1
+ * @features
  *   - Dashboard analytics and metrics
  *   - Order management and tracking
  *   - Product performance analysis
- *   - Inventory status and alerts
  *   - Complete listing CRUD operations
+ * @note Inventory management moved to /api/v1/inventory (use ?summary=true for dashboard widgets)
  * @since 2024
  */
 
@@ -18,7 +18,6 @@ const {
   getOrderAnalytics,
   getProductPerformance,
   getCustomerInsights,
-  getInventoryStatus,
   getOrderManagement,
   getTopProducts,
   getSalesReports,
@@ -199,11 +198,10 @@ router.get('/products',
 router.get('/customers', dateRangeValidation, getCustomerInsights);
 
 /**
- * @route   GET /api/v1/vendor-dashboard/inventory
- * @desc    Get inventory status and alerts
- * @access  Private (Vendor only)
+ * @note    Inventory endpoint removed - use /api/v1/inventory directly
+ *          For dashboard widgets: GET /inventory?summary=true
+ *          For full inventory management: GET /inventory
  */
-router.get('/inventory', getInventoryStatus);
 
 /**
  * @route   GET /api/v1/vendor-dashboard/order-management
