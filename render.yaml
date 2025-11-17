@@ -1,0 +1,67 @@
+# Render Blueprint Configuration for Aaroth Fresh Backend
+# This file enables one-click deployment to Render.com
+
+services:
+  # Express.js API Service
+  - type: web
+    name: aaroth-fresh-backend
+    env: node
+    region: oregon  # Free tier available region (you can change to singapore for Asia)
+    plan: free      # Free tier plan
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+
+    # Environment variables (you'll need to set these in Render dashboard)
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: 5000
+
+      - key: MONGO_URI
+        sync: false  # Set this manually in Render dashboard (sensitive)
+
+      - key: JWT_SECRET
+        sync: false  # Set this manually in Render dashboard (sensitive)
+
+      - key: JWT_EXPIRE
+        value: 30d
+
+      - key: BCRYPT_SALT_ROUNDS
+        value: 12
+
+      - key: CLIENT_URL
+        sync: false  # Set this to your Cloudflare Pages URL
+
+      - key: BREVO_API_KEY
+        sync: false  # Set this manually in Render dashboard (sensitive)
+
+      - key: BREVO_FROM_EMAIL
+        value: noreply@aaroth.com
+
+      - key: BREVO_FROM_NAME
+        value: Aaroth Fresh
+
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false  # Set this manually in Render dashboard
+
+      - key: CLOUDINARY_API_KEY
+        sync: false  # Set this manually in Render dashboard (sensitive)
+
+      - key: CLOUDINARY_API_SECRET
+        sync: false  # Set this manually in Render dashboard (sensitive)
+
+      # Optional: Background Services (disabled by default for free tier)
+      - key: ENABLE_SLA_MONITORING
+        value: false
+
+      - key: ENABLE_INVENTORY_MONITORING
+        value: false
+
+      - key: INVENTORY_CHECK_INTERVAL
+        value: 60
+
+    # Auto-deploy settings
+    autoDeploy: true  # Auto-deploy when you push to your main branch
