@@ -104,7 +104,6 @@ const server = app.listen(PORT, async () => {
   
   // MVP CONFIGURATION: Real-time features disabled for simplicity
   // - SLA Monitoring: Disabled by default (enable with ENABLE_SLA_MONITORING=true)
-  // - Inventory Monitoring: Disabled by default (enable with ENABLE_INVENTORY_MONITORING=true)
   // - Notifications: Database-based only, no push notifications or WebSockets
   // - Dashboard Updates: HTTP polling only, no real-time streaming
 
@@ -112,11 +111,11 @@ const server = app.listen(PORT, async () => {
   if (process.env.NODE_ENV !== 'test' && process.env.ENABLE_SLA_MONITORING === 'true') {
     try {
       const slaMonitorService = require('./services/slaMonitorService');
-      
+
       // Initialize default SLA configurations if needed
       // Uses null for system-generated configs since SLA monitoring is disabled for MVP
       await slaMonitorService.initializeDefaultConfigs(null);
-      
+
       // Start the SLA monitoring service (check every 30 minutes)
       await slaMonitorService.start(30);
       console.log('SLA Monitoring Service started successfully');
@@ -126,27 +125,6 @@ const server = app.listen(PORT, async () => {
     }
   } else if (process.env.NODE_ENV !== 'test') {
     console.log('SLA Monitoring Service disabled (set ENABLE_SLA_MONITORING=true to enable)');
-  }
-
-  // Initialize Inventory Monitoring Service (disabled for MVP - manual triggers only)
-  if (process.env.NODE_ENV !== 'test' && process.env.ENABLE_INVENTORY_MONITORING === 'true') {
-    try {
-      const inventoryMonitoringService = require('./services/inventoryMonitoringService');
-      
-      // Start the inventory monitoring service
-      inventoryMonitoringService.start();
-      console.log('Inventory Monitoring Service started successfully');
-      
-      // Set check interval from environment (default: 60 minutes)
-      const checkIntervalMinutes = parseInt(process.env.INVENTORY_CHECK_INTERVAL) || 60;
-      inventoryMonitoringService.setCheckInterval(checkIntervalMinutes);
-      
-    } catch (error) {
-      console.error('Failed to start Inventory Monitoring Service:', error);
-      // Don't exit the server if inventory monitoring fails to start
-    }
-  } else if (process.env.NODE_ENV !== 'test') {
-    console.log('Inventory Monitoring Service disabled (set ENABLE_INVENTORY_MONITORING=true to enable)');
   }
 });
 

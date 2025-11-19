@@ -17,15 +17,15 @@ const {
   getTeamActivity,
   getNotifications,
   getReorderSuggestions
-} = require('../controllers/restaurantDashboardController');
+} = require('../controllers/buyerDashboardController');
 const { protect, authorize } = require('../middleware/auth');
 const { query, body } = require('express-validator');
 
 const router = express.Router();
 
-// Apply authentication and restaurant authorization to all routes
+// Apply authentication and buyer authorization to all routes
 router.use(protect);
-router.use(authorize('restaurantOwner', 'restaurantManager'));
+router.use(authorize('buyerOwner', 'buyerManager'));
 
 // Date range validation middleware
 const dateRangeValidation = [
@@ -44,30 +44,30 @@ const dateRangeValidation = [
 ];
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/overview
- * @desc    Get restaurant dashboard overview with key metrics
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/overview
+ * @desc    Get buyer dashboard overview with key metrics
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/overview', dateRangeValidation, getDashboardOverview);
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/spending
+ * @route   GET /api/v1/buyer-dashboard/spending
  * @desc    Get spending analytics and trends
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/spending', dateRangeValidation, getSpendingAnalytics);
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/orders
+ * @route   GET /api/v1/buyer-dashboard/orders
  * @desc    Get order analytics (volume, frequency, patterns)
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/orders', dateRangeValidation, getOrderAnalytics);
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/vendors
+ * @route   GET /api/v1/buyer-dashboard/vendors
  * @desc    Get vendor insights and performance analytics
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/vendors', 
   [
@@ -85,9 +85,9 @@ router.get('/vendors',
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/budget
+ * @route   GET /api/v1/buyer-dashboard/budget
  * @desc    Get budget tracking and spending limits
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/budget', 
   [
@@ -101,12 +101,12 @@ router.get('/budget',
 );
 
 /**
- * @route   POST /api/v1/restaurant-dashboard/budget
+ * @route   POST /api/v1/buyer-dashboard/budget
  * @desc    Create a new monthly/quarterly budget
- * @access  Private (Restaurant Owner only)
+ * @access  Private (Buyer Owner only)
  */
 router.post('/budget',
-  authorize('restaurantOwner'),
+  authorize('buyerOwner'),
   [
     body('budgetPeriod')
       .isIn(['monthly', 'quarterly', 'yearly'])
@@ -142,12 +142,12 @@ router.post('/budget',
 );
 
 /**
- * @route   PUT /api/v1/restaurant-dashboard/budget/:budgetId
+ * @route   PUT /api/v1/buyer-dashboard/budget/:budgetId
  * @desc    Update an existing budget
- * @access  Private (Restaurant Owner only)
+ * @access  Private (Buyer Owner only)
  */
 router.put('/budget/:budgetId',
-  authorize('restaurantOwner'),
+  authorize('buyerOwner'),
   [
     body('totalBudgetLimit')
       .optional()
@@ -166,16 +166,16 @@ router.put('/budget/:budgetId',
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/inventory-planning
+ * @route   GET /api/v1/buyer-dashboard/inventory-planning
  * @desc    Get inventory planning and consumption insights
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/inventory-planning', dateRangeValidation, getInventoryPlanning);
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/order-history
+ * @route   GET /api/v1/buyer-dashboard/order-history
  * @desc    Get detailed order history with filters
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/order-history',
   [
@@ -201,9 +201,9 @@ router.get('/order-history',
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/favorite-vendors
+ * @route   GET /api/v1/buyer-dashboard/favorite-vendors
  * @desc    Get favorite vendors and frequently purchased items
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/favorite-vendors',
   [
@@ -216,16 +216,16 @@ router.get('/favorite-vendors',
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/cost-analysis
+ * @route   GET /api/v1/buyer-dashboard/cost-analysis
  * @desc    Get detailed cost analysis and pricing trends
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/cost-analysis', dateRangeValidation, getCostAnalysis);
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/price-analytics
+ * @route   GET /api/v1/buyer-dashboard/price-analytics
  * @desc    Get average price tracking and price trends by product/category
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/price-analytics',
   [
@@ -247,9 +247,9 @@ router.get('/price-analytics',
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/purchase-patterns
+ * @route   GET /api/v1/buyer-dashboard/purchase-patterns
  * @desc    Get purchase patterns and seasonal trends
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/purchase-patterns',
   [
@@ -263,27 +263,27 @@ router.get('/purchase-patterns',
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/delivery-tracking
+ * @route   GET /api/v1/buyer-dashboard/delivery-tracking
  * @desc    Get delivery tracking and logistics analytics
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/delivery-tracking', dateRangeValidation, getDeliveryTracking);
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/team-activity
+ * @route   GET /api/v1/buyer-dashboard/team-activity
  * @desc    Get team member activity and order management (Owner only)
- * @access  Private (Restaurant Owner only)
+ * @access  Private (Buyer Owner only)
  */
 router.get('/team-activity', 
-  authorize('restaurantOwner'), // Only owners can see team activity
+  authorize('buyerOwner'), // Only owners can see team activity
   dateRangeValidation, 
   getTeamActivity
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/notifications
- * @desc    Get restaurant notifications and alerts
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/notifications
+ * @desc    Get buyer notifications and alerts
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/notifications',
   [
@@ -300,9 +300,9 @@ router.get('/notifications',
 );
 
 /**
- * @route   GET /api/v1/restaurant-dashboard/reorder-suggestions
+ * @route   GET /api/v1/buyer-dashboard/reorder-suggestions
  * @desc    Get smart reorder suggestions based on consumption patterns
- * @access  Private (Restaurant Owner/Manager only)
+ * @access  Private (Buyer Owner/Manager only)
  */
 router.get('/reorder-suggestions',
   [

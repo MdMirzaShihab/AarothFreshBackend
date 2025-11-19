@@ -36,8 +36,8 @@ const registerValidation = [
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
     .withMessage("Please provide a valid phone number"),
   body("role")
-    .isIn(["vendor", "restaurantOwner"])
-    .withMessage("Role must be either vendor or restaurantOwner"),
+    .isIn(["vendor", "buyerOwner"])
+    .withMessage("Role must be either vendor or buyerOwner"),
   body("businessName")
     .if(body("role").equals("vendor"))
     .notEmpty()
@@ -46,13 +46,20 @@ const registerValidation = [
     .withMessage(
       "Business name is required for vendors and must be between 2 and 100 characters"
     ),
-  body("restaurantName")
-    .if(body("role").equals("restaurantOwner"))
+  body("businessName")
+    .if(body("role").equals("buyerOwner"))
     .notEmpty()
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage(
-      "Restaurant name is required for owners and must be between 2 and 100 characters"
+      "Business name is required for owners and must be between 2 and 100 characters"
+    ),
+  body("buyerType")
+    .if(body("role").equals("buyerOwner"))
+    .notEmpty()
+    .isIn(["restaurant", "corporate", "supershop", "catering"])
+    .withMessage(
+      "Buyer type is required for buyer owners and must be one of: restaurant, corporate, supershop, catering"
     ),
   body("address.street")
     .notEmpty()
@@ -151,12 +158,12 @@ const userUpdateValidation = [
     ),
   body("role")
     .optional()
-    .isIn(["admin", "vendor", "restaurantOwner", "restaurantManager"])
+    .isIn(["admin", "vendor", "buyerOwner", "buyerManager"])
     .withMessage("Invalid role"),
-  body("restaurantId")
-    .if(body("role").isIn(["restaurantOwner", "restaurantManager"]))
+  body("buyerId")
+    .if(body("role").isIn(["buyerOwner", "buyerManager"]))
     .isMongoId()
-    .withMessage("A valid restaurantId is required for this role"),
+    .withMessage("A valid buyerId is required for this role"),
   body("vendorId")
     .if(body("role").equals("vendor"))
     .isMongoId()
@@ -264,9 +271,9 @@ const orderStatusValidation = [
 ];
 
 /**
- * Admin restaurant owner creation validation rules
+ * Admin buyer owner creation validation rules
  */
-const adminRestaurantOwnerValidation = [
+const adminBuyerOwnerValidation = [
   body("name")
     .trim()
     .isLength({ min: 2, max: 50 })
@@ -285,11 +292,11 @@ const adminRestaurantOwnerValidation = [
   body("phone")
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
     .withMessage("Please provide a valid phone number"),
-  body("restaurantName")
+  body("businessName")
     .notEmpty()
     .trim()
     .isLength({ min: 2, max: 100 })
-    .withMessage("Restaurant name is required and must be between 2 and 100 characters"),
+    .withMessage("Business name is required and must be between 2 and 100 characters"),
   body("ownerName")
     .optional()
     .trim()
@@ -314,9 +321,9 @@ const adminRestaurantOwnerValidation = [
 ];
 
 /**
- * Admin restaurant manager creation validation rules
+ * Admin buyer manager creation validation rules
  */
-const adminRestaurantManagerValidation = [
+const adminBuyerManagerValidation = [
   body("name")
     .trim()
     .isLength({ min: 2, max: 50 })
@@ -335,9 +342,9 @@ const adminRestaurantManagerValidation = [
   body("phone")
     .matches(/^[\+]?[1-9][\d]{0,15}$/)
     .withMessage("Please provide a valid phone number"),
-  body("restaurantId")
+  body("buyerId")
     .isMongoId()
-    .withMessage("A valid restaurantId is required"),
+    .withMessage("A valid buyerId is required"),
   handleValidationErrors,
 ];
 
@@ -482,8 +489,8 @@ const analyticsValidation = [
 
   check("groupBy")
     .optional()
-    .isIn(['day', 'week', 'month', 'category', 'vendor', 'restaurant'])
-    .withMessage("Group by must be one of: day, week, month, category, vendor, restaurant"),
+    .isIn(['day', 'week', 'month', 'category', 'vendor', 'buyer'])
+    .withMessage("Group by must be one of: day, week, month, category, vendor, buyer"),
 
   check("limit")
     .optional()
@@ -562,6 +569,105 @@ const categoryAvailabilityValidation = [
   handleValidationErrors,
 ];
 
+/**
+ * Market validation rules
+ */
+const marketValidation = [
+  body("name")
+    .trim()
+    .notEmpty()
+    .withMessage("Market name is required")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Market name must be between 2 and 50 characters"),
+
+  body("description")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Market description must not exceed 500 characters"),
+
+  // Location validation
+  body("address")
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Address must not exceed 200 characters"),
+
+  body("location.address")
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Address must not exceed 200 characters"),
+
+  body("city")
+    .optional()
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("City name must not exceed 50 characters"),
+
+  body("location.city")
+    .optional()
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("City name must not exceed 50 characters"),
+
+  body("district")
+    .optional()
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("District name must not exceed 50 characters"),
+
+  body("location.district")
+    .optional()
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("District name must not exceed 50 characters"),
+
+  // Note: Image validation is handled in controller middleware as files are processed there
+  handleValidationErrors,
+];
+
+/**
+ * Market availability validation (flag system)
+ */
+const marketAvailabilityValidation = [
+  body("isAvailable")
+    .isBoolean()
+    .withMessage("isAvailable must be a boolean value"),
+
+  body("flagReason")
+    .if(body("isAvailable").equals(false))
+    .notEmpty()
+    .trim()
+    .isLength({ min: 10, max: 500 })
+    .withMessage("Flag reason is required when disabling availability and must be between 10-500 characters"),
+
+  body("flagReason")
+    .if(body("isAvailable").equals(true))
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Flag reason cannot exceed 500 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Vendor market validation (for registration and updates)
+ */
+const vendorMarketValidation = [
+  body("markets")
+    .optional()
+    .isArray({ min: 1 })
+    .withMessage("Vendor must operate in at least one market"),
+
+  body("markets.*")
+    .isMongoId()
+    .withMessage("Each market must be a valid market ID"),
+
+  handleValidationErrors,
+];
+
 module.exports = {
   handleValidationErrors,
   registerValidation,
@@ -575,8 +681,8 @@ module.exports = {
   listingValidation,
   orderValidation,
   orderStatusValidation,
-  adminRestaurantOwnerValidation,
-  adminRestaurantManagerValidation,
+  adminBuyerOwnerValidation,
+  adminBuyerManagerValidation,
   mongoIdValidation,
   paginationValidation,
   // Admin feature validations
@@ -588,4 +694,8 @@ module.exports = {
   adminListingFlagValidation,
   // Enhanced category management validations
   categoryAvailabilityValidation,
+  // Market management validations
+  marketValidation,
+  marketAvailabilityValidation,
+  vendorMarketValidation,
 };

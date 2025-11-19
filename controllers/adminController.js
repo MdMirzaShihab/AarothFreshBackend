@@ -2,7 +2,7 @@ const Product = require("../models/Product");
 const ProductCategory = require("../models/ProductCategory");
 const User = require("../models/User");
 const Vendor = require("../models/Vendor");
-const Restaurant = require("../models/Restaurant");
+const Buyer = require("../models/Buyer");
 const Order = require("../models/Order");
 const Listing = require("../models/Listing");
 const AuditLog = require("../models/AuditLog");
@@ -42,9 +42,9 @@ exports.getDashboardOverview = async (req, res, next) => {
               { $match: { role: 'vendor', isDeleted: { $ne: true } } },
               { $count: 'count' }
             ],
-            totalRestaurants: [
-              { $match: { role: { $in: ['restaurantOwner', 'restaurantManager'] }, isDeleted: { $ne: true } } },
-              { $group: { _id: '$restaurantId' } },
+            totalBuyers: [
+              { $match: { role: { $in: ['buyerOwner', 'buyerManager'] }, isDeleted: { $ne: true } } },
+              { $group: { _id: '$buyerId' } },
               { $count: 'count' }
             ],
             pendingApprovals: [
@@ -151,7 +151,7 @@ exports.getDashboardOverview = async (req, res, next) => {
     const response = {
       users: {
         totalVendors: userStats[0]?.totalVendors?.[0]?.count || 0,
-        totalRestaurants: userStats[0]?.totalRestaurants?.[0]?.count || 0,
+        totalBuyers: userStats[0]?.totalBuyers?.[0]?.count || 0,
         pendingApprovals: userStats[0]?.pendingApprovals?.[0]?.count || 0,
         activeUsers: userStats[0]?.activeUsers?.[0]?.count || 0,
         newUsersToday: userStats[0]?.newUsersToday?.[0]?.count || 0
@@ -222,7 +222,7 @@ exports.getAllUsers = async (req, res, next) => {
 
     const users = await User.find(query)
       .populate("vendorId", "businessName verificationStatus")
-      .populate("restaurantId", "name verificationStatus")
+      .populate("buyerId", "name verificationStatus")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -251,7 +251,7 @@ exports.getUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id)
       .populate("vendorId")
-      .populate("restaurantId");
+      .populate("buyerId");
 
     if (!user) {
       return next(
@@ -309,15 +309,15 @@ exports.updateUser = async (req, res, next) => {
             )
           );
         }
-        updates.restaurantId = undefined; // Unset restaurantId
+        updates.buyerId = undefined; // Unset buyerId
       } else if (
-        updates.role === "restaurantOwner" ||
-        updates.role === "restaurantManager"
+        updates.role === "buyerOwner" ||
+        updates.role === "buyerManager"
       ) {
-        if (!updates.restaurantId) {
+        if (!updates.buyerId) {
           return next(
             new ErrorResponse(
-              "restaurantId is required when changing role to restaurantOwner or restaurantManager",
+              "buyerId is required when changing role to buyerOwner or buyerManager",
               400
             )
           );
@@ -325,7 +325,7 @@ exports.updateUser = async (req, res, next) => {
         updates.vendorId = undefined; // Unset vendorId
       } else if (updates.role === "admin") {
         updates.vendorId = undefined;
-        updates.restaurantId = undefined;
+        updates.buyerId = undefined;
       }
     }
 
@@ -338,7 +338,7 @@ exports.updateUser = async (req, res, next) => {
       }
     )
       .populate("vendorId")
-      .populate("restaurantId");
+      .populate("buyerId");
 
     res.status(200).json({
       success: true,
@@ -495,7 +495,7 @@ exports.getVendor = async (req, res, next) => {
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
     })
     .select('status totalAmount createdAt')
-    .populate('restaurantId', 'name')
+    .populate('buyerId', 'name')
     .sort({ createdAt: -1 })
     .limit(10);
 
@@ -608,6 +608,28 @@ exports.updateVendor = async (req, res, next) => {
       }
     }
 
+    // Validate markets if they are being updated
+    if (req.body.markets) {
+      const { markets } = req.body;
+
+      if (!Array.isArray(markets) || markets.length === 0) {
+        return next(new ErrorResponse('Vendors must operate in at least one market', 400));
+      }
+
+      // Validate that all markets exist and are active
+      const Market = require('../models/Market');
+      const validMarkets = await Market.find({
+        _id: { $in: markets },
+        isActive: true,
+        isAvailable: true,
+        isDeleted: { $ne: true }
+      });
+
+      if (validMarkets.length !== markets.length) {
+        return next(new ErrorResponse('One or more selected markets are invalid or unavailable', 400));
+      }
+    }
+
     // Update data
     const updateData = {
       ...req.body,
@@ -686,6 +708,184 @@ exports.updateVendor = async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+};
+
+/**
+ * @desc    Create platform vendor (Aaroth Mall, etc.)
+ * @route   POST /api/v1/admin/vendors/platform
+ * @access  Private/Admin
+ */
+exports.createPlatformVendor = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    const {
+      platformName,
+      email,
+      phone,
+      name,
+      password,
+      address,
+      tradeLicenseNo,
+      markets
+    } = req.body;
+
+    // Validate markets - platform vendors must also operate in markets
+    if (!markets || !Array.isArray(markets) || markets.length === 0) {
+      await session.abortTransaction();
+      return next(new ErrorResponse('Platform vendors must operate in at least one market', 400));
+    }
+
+    // Validate that all markets exist and are active
+    const Market = require('../models/Market');
+    const validMarkets = await Market.find({
+      _id: { $in: markets },
+      isActive: true,
+      isAvailable: true,
+      isDeleted: { $ne: true }
+    });
+
+    if (validMarkets.length !== markets.length) {
+      await session.abortTransaction();
+      return next(new ErrorResponse('One or more selected markets are invalid or unavailable', 400));
+    }
+
+    // Validate platform name
+    const validPlatformNames = ['Aaroth Mall', 'Aaroth Organics', 'Aaroth Fresh Store'];
+    if (!validPlatformNames.includes(platformName)) {
+      await session.abortTransaction();
+      return next(new ErrorResponse('Invalid platform name', 400));
+    }
+
+    // Check if platform vendor already exists
+    const existingPlatformVendor = await Vendor.findOne({
+      isPlatformOwned: true,
+      platformName,
+      isDeleted: { $ne: true }
+    });
+
+    if (existingPlatformVendor) {
+      await session.abortTransaction();
+      return next(new ErrorResponse(`${platformName} vendor already exists`, 400));
+    }
+
+    // Check if email already exists
+    const existingEmail = await User.findOne({ email, isDeleted: { $ne: true } });
+    if (existingEmail) {
+      await session.abortTransaction();
+      return next(new ErrorResponse('Email already in use', 400));
+    }
+
+    // Check if phone already exists
+    const existingPhone = await User.findOne({ phone, isDeleted: { $ne: true } });
+    if (existingPhone) {
+      await session.abortTransaction();
+      return next(new ErrorResponse('Phone number already in use', 400));
+    }
+
+    // Create User account within transaction
+    const userResult = await User.create([{
+      name,
+      email,
+      phone,
+      password, // Will be hashed by pre-save hook
+      role: 'vendor',
+      isActive: true,
+      approvalStatus: 'approved', // Auto-approve platform vendor users
+      createdBy: req.user.id
+    }], { session });
+
+    const user = userResult[0];
+
+    // Create Vendor account with platform flags within transaction
+    const vendorResult = await Vendor.create([{
+      businessName: platformName,
+      ownerName: name,
+      email,
+      phone,
+      address,
+      tradeLicenseNo: tradeLicenseNo || `PLATFORM-${Date.now()}`,
+      markets, // Assign markets to platform vendor
+      isPlatformOwned: true,
+      platformName,
+      isEditable: false, // Admin-only editing
+      verificationStatus: 'approved', // Auto-approve platform vendors
+      isActive: true,
+      specialPrivileges: {
+        featuredListings: true,
+        prioritySupport: true,
+        customCommissionRate: 0.05, // 5% commission instead of standard
+        unlimitedListings: true
+      },
+      createdBy: req.user.id,
+      verificationDate: new Date()
+    }], { session });
+
+    const vendor = vendorResult[0];
+
+    // Link user to vendor within transaction
+    user.vendorId = vendor._id;
+    await user.save({ session });
+
+    // Create audit log within transaction
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'platform_vendor_created',
+      entityType: 'Vendor',
+      entityId: vendor._id,
+      description: `Created platform vendor: ${platformName}`,
+      severity: 'high',
+      impactLevel: 'significant',
+      metadata: {
+        platformName,
+        managerName: name,
+        managerEmail: email,
+        autoApproved: true
+      }
+    }, session);
+
+    // Commit transaction
+    await session.commitTransaction();
+
+    // Populate and return
+    const populatedVendor = await Vendor.findById(vendor._id)
+      .populate('createdBy', 'name email');
+
+    res.status(201).json({
+      success: true,
+      message: `${platformName} vendor created successfully`,
+      data: {
+        vendor: populatedVendor,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role
+        }
+      }
+    });
+  } catch (err) {
+    await session.abortTransaction();
+
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map(e => e.message);
+      return next(new ErrorResponse(`Validation failed: ${messages.join(', ')}`, 400));
+    }
+    if (err.code === 11000) {
+      return next(new ErrorResponse('Duplicate key error - email, phone, or trade license already exists', 409));
+    }
+    next(err);
+  } finally {
+    session.endSession();
   }
 };
 
@@ -878,11 +1078,11 @@ exports.deactivateVendor = async (req, res, next) => {
 // ================================
 
 /**
- * @desc    Get all restaurants with filtering
+ * @desc    Get all buyers with filtering
  * @route   GET /api/v1/admin/restaurants?status=pending|approved|rejected&page=1&limit=20&search=name
  * @access  Private/Admin
  */
-exports.getAllRestaurants = async (req, res, next) => {
+exports.getAllBuyers = async (req, res, next) => {
   try {
     const {
       page = 1,
@@ -911,29 +1111,29 @@ exports.getAllRestaurants = async (req, res, next) => {
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    const restaurants = await Restaurant.find(query)
+    const restaurants = await Buyer.find(query)
       .populate("createdBy", "name email")
       .populate("managers", "name email")
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await Restaurant.countDocuments(query);
+    const total = await Buyer.countDocuments(query);
 
     // Calculate statistics
-    const stats = await Restaurant.aggregate([
+    const stats = await Buyer.aggregate([
       { $match: { isDeleted: { $ne: true } } },
       {
         $group: {
           _id: null,
-          totalRestaurants: { $sum: 1 },
-          pendingRestaurants: {
+          totalBuyers: { $sum: 1 },
+          pendingBuyers: {
             $sum: { $cond: [{ $eq: ['$verificationStatus', 'pending'] }, 1, 0] }
           },
-          approvedRestaurants: {
+          approvedBuyers: {
             $sum: { $cond: [{ $eq: ['$verificationStatus', 'approved'] }, 1, 0] }
           },
-          rejectedRestaurants: {
+          rejectedBuyers: {
             $sum: { $cond: [{ $eq: ['$verificationStatus', 'rejected'] }, 1, 0] }
           }
         }
@@ -947,10 +1147,10 @@ exports.getAllRestaurants = async (req, res, next) => {
       page: parseInt(page),
       pages: Math.ceil(total / parseInt(limit)),
       stats: stats[0] || {
-        totalRestaurants: 0,
-        pendingRestaurants: 0,
-        approvedRestaurants: 0,
-        rejectedRestaurants: 0
+        totalBuyers: 0,
+        pendingBuyers: 0,
+        approvedBuyers: 0,
+        rejectedBuyers: 0
       },
       data: restaurants,
     });
@@ -964,28 +1164,28 @@ exports.getAllRestaurants = async (req, res, next) => {
  * @route   GET /api/v1/admin/restaurants/stats
  * @access  Private/Admin
  */
-exports.getRestaurantStats = async (req, res, next) => {
+exports.getBuyerStats = async (req, res, next) => {
   try {
     // Calculate comprehensive statistics
-    const stats = await Restaurant.aggregate([
+    const stats = await Buyer.aggregate([
       { $match: { isDeleted: { $ne: true } } },
       {
         $group: {
           _id: null,
-          totalRestaurants: { $sum: 1 },
-          pendingRestaurants: {
+          totalBuyers: { $sum: 1 },
+          pendingBuyers: {
             $sum: { $cond: [{ $eq: ['$verificationStatus', 'pending'] }, 1, 0] }
           },
-          approvedRestaurants: {
+          approvedBuyers: {
             $sum: { $cond: [{ $eq: ['$verificationStatus', 'approved'] }, 1, 0] }
           },
-          rejectedRestaurants: {
+          rejectedBuyers: {
             $sum: { $cond: [{ $eq: ['$verificationStatus', 'rejected'] }, 1, 0] }
           },
-          activeRestaurants: {
+          activeBuyers: {
             $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] }
           },
-          inactiveRestaurants: {
+          inactiveBuyers: {
             $sum: { $cond: [{ $eq: ['$isActive', false] }, 1, 0] }
           }
         }
@@ -993,7 +1193,7 @@ exports.getRestaurantStats = async (req, res, next) => {
     ]);
 
     // Get manager statistics
-    const managerStats = await Restaurant.aggregate([
+    const managerStats = await Buyer.aggregate([
       { $match: { isDeleted: { $ne: true } } },
       {
         $project: {
@@ -1004,13 +1204,13 @@ exports.getRestaurantStats = async (req, res, next) => {
         $group: {
           _id: null,
           totalManagers: { $sum: '$managerCount' },
-          avgManagersPerRestaurant: { $avg: '$managerCount' }
+          avgManagersPerBuyer: { $avg: '$managerCount' }
         }
       }
     ]);
 
     // Get top cities/locations
-    const topCities = await Restaurant.aggregate([
+    const topCities = await Buyer.aggregate([
       { $match: { isDeleted: { $ne: true } } },
       { $match: { 'address.city': { $exists: true, $ne: null, $ne: '' } } },
       {
@@ -1038,14 +1238,14 @@ exports.getRestaurantStats = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        totalRestaurants: restaurantStats.totalRestaurants || 0,
-        pendingRestaurants: restaurantStats.pendingRestaurants || 0,
-        approvedRestaurants: restaurantStats.approvedRestaurants || 0,
-        rejectedRestaurants: restaurantStats.rejectedRestaurants || 0,
-        activeRestaurants: restaurantStats.activeRestaurants || 0,
-        inactiveRestaurants: restaurantStats.inactiveRestaurants || 0,
+        totalBuyers: restaurantStats.totalBuyers || 0,
+        pendingBuyers: restaurantStats.pendingBuyers || 0,
+        approvedBuyers: restaurantStats.approvedBuyers || 0,
+        rejectedBuyers: restaurantStats.rejectedBuyers || 0,
+        activeBuyers: restaurantStats.activeBuyers || 0,
+        inactiveBuyers: restaurantStats.inactiveBuyers || 0,
         totalManagers: managerStatsData.totalManagers || 0,
-        avgManagersPerRestaurant: Number((managerStatsData.avgManagersPerRestaurant || 0).toFixed(2)),
+        avgManagersPerBuyer: Number((managerStatsData.avgManagersPerBuyer || 0).toFixed(2)),
         topCities: topCities || []
       }
     });
@@ -1055,11 +1255,11 @@ exports.getRestaurantStats = async (req, res, next) => {
 };
 
 /**
- * @desc    Create restaurant owner and restaurant (Admin only)
+ * @desc    Create buyer owner and restaurant (Admin only)
  * @route   POST /api/v1/admin/restaurant-owners
  * @access  Private/Admin
  */
-exports.createRestaurantOwner = async (req, res, next) => {
+exports.createBuyerOwner = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1095,7 +1295,7 @@ exports.createRestaurantOwner = async (req, res, next) => {
     }
 
     // Create restaurant
-    const restaurant = await Restaurant.create({
+    const restaurant = await Buyer.create({
       name: restaurantName,
       ownerName: ownerName || name,
       email,
@@ -1105,14 +1305,14 @@ exports.createRestaurantOwner = async (req, res, next) => {
       createdBy: req.user.id
     });
 
-    // Create restaurant owner user
+    // Create buyer owner user
     const user = await User.create({
       name,
       email,
       password,
       phone,
-      role: 'restaurantOwner',
-      restaurantId: restaurant._id
+      role: 'buyerOwner',
+      buyerId: restaurant._id
     });
 
     // Update restaurant with user reference
@@ -1121,12 +1321,12 @@ exports.createRestaurantOwner = async (req, res, next) => {
 
     // Populate response
     const populatedUser = await User.findById(user._id)
-      .populate('restaurantId', 'name email phone address')
+      .populate('buyerId', 'name email phone address')
       .select('-password');
 
     res.status(201).json({
       success: true,
-      message: 'Restaurant owner created successfully',
+      message: 'Buyer owner created successfully',
       data: populatedUser
     });
   } catch (err) {
@@ -1135,11 +1335,11 @@ exports.createRestaurantOwner = async (req, res, next) => {
 };
 
 /**
- * @desc    Create restaurant manager (Admin only)
+ * @desc    Create buyer manager (Admin only)
  * @route   POST /api/v1/admin/restaurant-managers
  * @access  Private/Admin
  */
-exports.createRestaurantManager = async (req, res, next) => {
+exports.createBuyerManager = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1151,13 +1351,13 @@ exports.createRestaurantManager = async (req, res, next) => {
       email,
       phone,
       password,
-      restaurantId
+      buyerId
     } = req.body;
 
     // Check if restaurant exists
-    const restaurant = await Restaurant.findById(restaurantId);
+    const restaurant = await Buyer.findById(buyerId);
     if (!restaurant) {
-      return next(new ErrorResponse('Restaurant not found', 404));
+      return next(new ErrorResponse('Buyer not found', 404));
     }
 
     // Check if user already exists
@@ -1177,30 +1377,30 @@ exports.createRestaurantManager = async (req, res, next) => {
       }
     }
 
-    // Create restaurant manager user
+    // Create buyer manager user
     const manager = await User.create({
       name,
       email,
       password,
       phone,
-      role: 'restaurantManager',
-      restaurantId: restaurant._id
+      role: 'buyerManager',
+      buyerId: restaurant._id
     });
 
     // Add manager to restaurant's managers array
-    await Restaurant.findByIdAndUpdate(
+    await Buyer.findByIdAndUpdate(
       restaurant._id,
       { $push: { managers: manager._id } }
     );
 
     // Populate response
     const populatedManager = await User.findById(manager._id)
-      .populate('restaurantId', 'name email phone address')
+      .populate('buyerId', 'name email phone address')
       .select('-password');
 
     res.status(201).json({
       success: true,
-      message: 'Restaurant manager created successfully',
+      message: 'Buyer manager created successfully',
       data: populatedManager
     });
   } catch (err) {
@@ -1209,26 +1409,26 @@ exports.createRestaurantManager = async (req, res, next) => {
 };
 
 /**
- * @desc    Get single restaurant with full details
+ * @desc    Get single buyer with full details
  * @route   GET /api/v1/admin/restaurants/:id
  * @access  Private/Admin
  */
-exports.getRestaurant = async (req, res, next) => {
+exports.getBuyer = async (req, res, next) => {
   try {
-    const restaurant = await Restaurant.findById(req.params.id)
+    const restaurant = await Buyer.findById(req.params.id)
       .populate('createdBy', 'name email')
       .populate('managers', 'name email phone role')
       .populate('statusUpdatedBy', 'name email');
 
     if (!restaurant) {
       return next(
-        new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404)
+        new ErrorResponse(`Buyer not found with id of ${req.params.id}`, 404)
       );
     }
 
     // Get recent orders for this restaurant
     const recentOrders = await Order.find({
-      restaurantId: req.params.id,
+      buyerId: req.params.id,
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
     })
     .select('status totalAmount createdAt')
@@ -1237,7 +1437,7 @@ exports.getRestaurant = async (req, res, next) => {
 
     // Get order statistics
     const orderStats = await Order.aggregate([
-      { $match: { restaurantId: new mongoose.Types.ObjectId(req.params.id) } },
+      { $match: { buyerId: new mongoose.Types.ObjectId(req.params.id) } },
       {
         $group: {
           _id: null,
@@ -1272,22 +1472,22 @@ exports.getRestaurant = async (req, res, next) => {
 };
 
 /**
- * @desc    Update restaurant details
+ * @desc    Update buyer details
  * @route   PUT /api/v1/admin/restaurants/:id
  * @access  Private/Admin
  */
-exports.updateRestaurant = async (req, res, next) => {
+exports.updateBuyer = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    let restaurant = await Restaurant.findById(req.params.id);
+    let restaurant = await Buyer.findById(req.params.id);
 
     if (!restaurant) {
       return next(
-        new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404)
+        new ErrorResponse(`Buyer not found with id of ${req.params.id}`, 404)
       );
     }
 
@@ -1332,28 +1532,28 @@ exports.updateRestaurant = async (req, res, next) => {
 
     // Check if email/phone is being changed and ensure uniqueness
     if (updateData.email && updateData.email !== restaurant.email) {
-      const existingRestaurant = await Restaurant.findOne({ 
+      const existingBuyer = await Buyer.findOne({ 
         email: updateData.email, 
         _id: { $ne: req.params.id },
         isDeleted: { $ne: true }
       });
-      if (existingRestaurant) {
-        return next(new ErrorResponse('Restaurant with this email already exists', 400));
+      if (existingBuyer) {
+        return next(new ErrorResponse('Buyer with this email already exists', 400));
       }
     }
 
     if (updateData.phone && updateData.phone !== restaurant.phone) {
-      const existingRestaurant = await Restaurant.findOne({ 
+      const existingBuyer = await Buyer.findOne({ 
         phone: updateData.phone, 
         _id: { $ne: req.params.id },
         isDeleted: { $ne: true }
       });
-      if (existingRestaurant) {
-        return next(new ErrorResponse('Restaurant with this phone number already exists', 400));
+      if (existingBuyer) {
+        return next(new ErrorResponse('Buyer with this phone number already exists', 400));
       }
     }
 
-    restaurant = await Restaurant.findByIdAndUpdate(
+    restaurant = await Buyer.findByIdAndUpdate(
       req.params.id,
       { $set: updateData },
       {
@@ -1378,7 +1578,7 @@ exports.updateRestaurant = async (req, res, next) => {
         userId: req.user.id,
         userRole: req.user.role,
         action: 'restaurant_updated',
-        entityType: 'Restaurant',
+        entityType: 'Buyer',
         entityId: restaurant._id,
         description: `Updated restaurant: ${changes.join(', ')}`,
         severity: 'medium',
@@ -1392,7 +1592,7 @@ exports.updateRestaurant = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Restaurant updated successfully',
+      message: 'Buyer updated successfully',
       data: restaurant,
     });
   } catch (err) {
@@ -1401,17 +1601,17 @@ exports.updateRestaurant = async (req, res, next) => {
 };
 
 /**
- * @desc    Deactivate restaurant with dependency check
+ * @desc    Deactivate buyer with dependency check
  * @route   PUT /api/v1/admin/restaurants/:id/deactivate
  * @access  Private/Admin
  */
-exports.deactivateRestaurant = async (req, res, next) => {
+exports.deactivateBuyer = async (req, res, next) => {
   try {
     const { reason } = req.body;
-    const restaurant = await Restaurant.findById(req.params.id);
+    const restaurant = await Buyer.findById(req.params.id);
     
     if (!restaurant) {
-      return next(new ErrorResponse('Restaurant not found', 404));
+      return next(new ErrorResponse('Buyer not found', 404));
     }
 
     if (restaurant.isDeleted) {
@@ -1420,7 +1620,7 @@ exports.deactivateRestaurant = async (req, res, next) => {
 
     // Check for incomplete orders (only block for incomplete orders)
     const incompleteOrders = await Order.countDocuments({
-      restaurantId: req.params.id,
+      buyerId: req.params.id,
       status: { $in: ['pending', 'confirmed', 'preparing'] }
     });
 
@@ -1448,7 +1648,7 @@ exports.deactivateRestaurant = async (req, res, next) => {
 
     // Deactivate associated users
     await User.updateMany(
-      { restaurantId: restaurant._id },
+      { buyerId: restaurant._id },
       { 
         isActive: false, 
         lastModifiedBy: req.user.id,
@@ -1461,7 +1661,7 @@ exports.deactivateRestaurant = async (req, res, next) => {
       userId: req.user.id,
       userRole: req.user.role,
       action: 'restaurant_deactivated',
-      entityType: 'Restaurant',
+      entityType: 'Buyer',
       entityId: restaurant._id,
       description: `Deactivated restaurant: ${restaurant.name}`,
       reason,
@@ -1469,13 +1669,13 @@ exports.deactivateRestaurant = async (req, res, next) => {
       impactLevel: 'major',
       metadata: {
         adminId: req.user.id,
-        affectedUsers: await User.countDocuments({ restaurantId: restaurant._id })
+        affectedUsers: await User.countDocuments({ buyerId: restaurant._id })
       }
     });
 
     res.status(200).json({
       success: true,
-      message: 'Restaurant deactivated successfully',
+      message: 'Buyer deactivated successfully',
       data: restaurant
     });
   } catch (err) {
@@ -1488,28 +1688,28 @@ exports.deactivateRestaurant = async (req, res, next) => {
  * @route   DELETE /api/v1/admin/restaurants/:id/safe-delete
  * @access  Private/Admin
  */
-exports.safeDeleteRestaurant = async (req, res, next) => {
+exports.safeDeleteBuyer = async (req, res, next) => {
   try {
     const { reason } = req.body;
-    const restaurant = await Restaurant.findById(req.params.id);
+    const restaurant = await Buyer.findById(req.params.id);
     
     if (!restaurant) {
-      return next(new ErrorResponse('Restaurant not found', 404));
+      return next(new ErrorResponse('Buyer not found', 404));
     }
 
     if (restaurant.isDeleted) {
-      return next(new ErrorResponse('Restaurant is already deleted', 400));
+      return next(new ErrorResponse('Buyer is already deleted', 400));
     }
 
     // Check for incomplete orders (only block for incomplete orders, not completed ones)
     const incompleteOrders = await Order.countDocuments({
-      restaurantId: req.params.id,
+      buyerId: req.params.id,
       status: { $in: ['pending', 'confirmed', 'preparing'] }
     });
 
     // Check for associated users
     const associatedUsers = await User.countDocuments({
-      restaurantId: req.params.id,
+      buyerId: req.params.id,
       isDeleted: { $ne: true }
     });
 
@@ -1540,13 +1740,13 @@ exports.safeDeleteRestaurant = async (req, res, next) => {
 
     // Soft delete associated users
     await User.updateMany(
-      { restaurantId: restaurant._id },
+      { buyerId: restaurant._id },
       { 
         isDeleted: true,
         deletedAt: new Date(),
         deletedBy: req.user.id,
         isActive: false,
-        adminNotes: reason || 'Restaurant deleted by admin'
+        adminNotes: reason || 'Buyer deleted by admin'
       }
     );
 
@@ -1555,7 +1755,7 @@ exports.safeDeleteRestaurant = async (req, res, next) => {
       userId: req.user.id,
       userRole: req.user.role,
       action: 'restaurant_deleted',
-      entityType: 'Restaurant',
+      entityType: 'Buyer',
       entityId: restaurant._id,
       description: `Soft deleted restaurant: ${restaurant.name}`,
       reason,
@@ -1570,7 +1770,7 @@ exports.safeDeleteRestaurant = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Restaurant deleted successfully',
+      message: 'Buyer deleted successfully',
       data: { deletedId: restaurant._id }
     });
   } catch (err) {
@@ -1579,11 +1779,11 @@ exports.safeDeleteRestaurant = async (req, res, next) => {
 };
 
 /**
- * @desc    Transfer restaurant ownership to another user
+ * @desc    Transfer buyer ownership to another user
  * @route   POST /api/v1/admin/restaurants/:id/transfer-ownership
  * @access  Private/Admin
  */
-exports.transferRestaurantOwnership = async (req, res, next) => {
+exports.transferBuyerOwnership = async (req, res, next) => {
   try {
     const { newOwnerId, reason } = req.body;
 
@@ -1593,9 +1793,9 @@ exports.transferRestaurantOwnership = async (req, res, next) => {
     }
 
     // Find restaurant
-    const restaurant = await Restaurant.findById(req.params.id);
+    const restaurant = await Buyer.findById(req.params.id);
     if (!restaurant || restaurant.isDeleted) {
-      return next(new ErrorResponse('Restaurant not found', 404));
+      return next(new ErrorResponse('Buyer not found', 404));
     }
 
     // Find new owner
@@ -1605,8 +1805,8 @@ exports.transferRestaurantOwnership = async (req, res, next) => {
     }
 
     // Validate new owner role
-    if (!['restaurantOwner', 'restaurantManager'].includes(newOwner.role)) {
-      return next(new ErrorResponse('New owner must have restaurantOwner or restaurantManager role', 400));
+    if (!['buyerOwner', 'buyerManager'].includes(newOwner.role)) {
+      return next(new ErrorResponse('New owner must have buyerOwner or buyerManager role', 400));
     }
 
     // Get old owner
@@ -1617,7 +1817,7 @@ exports.transferRestaurantOwnership = async (req, res, next) => {
     session.startTransaction();
 
     try {
-      // Update restaurant ownership
+      // Update buyer ownership
       restaurant.createdBy = newOwnerId;
       restaurant.lastModifiedBy = req.user.id;
       restaurant.statusUpdatedAt = new Date();
@@ -1625,10 +1825,10 @@ exports.transferRestaurantOwnership = async (req, res, next) => {
       await restaurant.save({ session });
 
       // Update new owner's role and restaurant association
-      if (newOwner.role === 'restaurantManager') {
-        newOwner.role = 'restaurantOwner';
+      if (newOwner.role === 'buyerManager') {
+        newOwner.role = 'buyerOwner';
       }
-      newOwner.restaurantId = restaurant._id;
+      newOwner.buyerId = restaurant._id;
       newOwner.lastModifiedBy = req.user.id;
       await newOwner.save({ session });
 
@@ -1651,14 +1851,14 @@ exports.transferRestaurantOwnership = async (req, res, next) => {
         userId: req.user.id,
         userRole: req.user.role,
         action: 'restaurant_ownership_transferred',
-        entityType: 'Restaurant',
+        entityType: 'Buyer',
         entityId: restaurant._id,
-        description: `Transferred restaurant ownership from ${oldOwner?.name || 'Unknown'} to ${newOwner.name}`,
+        description: `Transferred buyer ownership from ${oldOwner?.name || 'Unknown'} to ${newOwner.name}`,
         reason,
         severity: 'high',
         impactLevel: 'major',
         metadata: {
-          restaurantId: restaurant._id,
+          buyerId: restaurant._id,
           restaurantName: restaurant.name,
           oldOwnerId: oldOwner?._id,
           oldOwnerName: oldOwner?.name,
@@ -1672,9 +1872,9 @@ exports.transferRestaurantOwnership = async (req, res, next) => {
 
       res.status(200).json({
         success: true,
-        message: 'Restaurant ownership transferred successfully',
+        message: 'Buyer ownership transferred successfully',
         data: {
-          restaurant: await Restaurant.findById(restaurant._id)
+          restaurant: await Buyer.findById(restaurant._id)
             .populate('createdBy', 'name email phone')
             .populate('managers', 'name email phone'),
           newOwner: {
@@ -1701,7 +1901,7 @@ exports.transferRestaurantOwnership = async (req, res, next) => {
  * @route   PUT /api/v1/admin/restaurants/:id/request-documents
  * @access  Private/Admin
  */
-exports.requestRestaurantDocuments = async (req, res, next) => {
+exports.requestBuyerDocuments = async (req, res, next) => {
   try {
     const { documentTypes, message, deadline } = req.body;
 
@@ -1711,11 +1911,11 @@ exports.requestRestaurantDocuments = async (req, res, next) => {
     }
 
     // Find restaurant
-    const restaurant = await Restaurant.findById(req.params.id)
+    const restaurant = await Buyer.findById(req.params.id)
       .populate('createdBy', 'name email phone');
 
     if (!restaurant || restaurant.isDeleted) {
-      return next(new ErrorResponse('Restaurant not found', 404));
+      return next(new ErrorResponse('Buyer not found', 404));
     }
 
     // Create document request record
@@ -1749,13 +1949,13 @@ exports.requestRestaurantDocuments = async (req, res, next) => {
       userId: req.user.id,
       userRole: req.user.role,
       action: 'restaurant_documents_requested',
-      entityType: 'Restaurant',
+      entityType: 'Buyer',
       entityId: restaurant._id,
       description: `Requested documents from restaurant: ${restaurant.name}`,
       severity: 'medium',
       impactLevel: 'moderate',
       metadata: {
-        restaurantId: restaurant._id,
+        buyerId: restaurant._id,
         restaurantName: restaurant.name,
         documentTypes,
         deadline: documentRequest.deadline,
@@ -1763,7 +1963,7 @@ exports.requestRestaurantDocuments = async (req, res, next) => {
       }
     });
 
-    // TODO: Send email notification to restaurant owner
+    // TODO: Send email notification to buyer owner
     // This would integrate with your email service (Brevo)
     // await emailService.sendDocumentRequest({
     //   to: restaurant.createdBy.email,
@@ -2654,6 +2854,475 @@ exports.safeDeleteCategory = async (req, res, next) => {
 };
 
 // ================================
+// MARKET MANAGEMENT
+// ================================
+
+/**
+ * @desc    Create a new market
+ * @route   POST /api/v1/admin/markets
+ * @access  Private/Admin
+ */
+exports.createMarket = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    // Check if image was uploaded
+    if (!req.file) {
+      return next(new ErrorResponse('Market image is required', 400));
+    }
+
+    // Create market data with image URL from Cloudinary
+    const marketData = {
+      ...req.body,
+      location: {
+        address: req.body.address || req.body['location.address'],
+        city: req.body.city || req.body['location.city'],
+        district: req.body.district || req.body['location.district'],
+        coordinates: req.body.coordinates ?
+          (typeof req.body.coordinates === 'string' ?
+            JSON.parse(req.body.coordinates) : req.body.coordinates) :
+          undefined
+      },
+      image: req.file.path, // Cloudinary URL
+      createdBy: req.user.id
+    };
+
+    const Market = require('../models/Market');
+    const market = await Market.create(marketData);
+
+    // Log the action
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'market_created',
+      entityType: 'Market',
+      entityId: market._id,
+      description: `Created market: ${market.name}`,
+      severity: 'medium',
+      impactLevel: 'moderate'
+    });
+
+    const populatedMarket = await Market.findById(market._id)
+      .populate('createdBy', 'name email');
+
+    res.status(201).json({
+      success: true,
+      message: 'Market created successfully',
+      data: populatedMarket
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Get all markets with advanced filtering
+ * @route   GET /api/v1/admin/markets
+ * @access  Private/Admin
+ */
+exports.getMarkets = async (req, res, next) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      status,
+      city,
+      sortBy = 'name',
+      sortOrder = 'asc'
+    } = req.query;
+
+    const Market = require('../models/Market');
+
+    // Build query
+    let query = { isDeleted: { $ne: true } };
+
+    // Search by name, description, or city
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { 'location.city': { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Filter by status
+    if (status && status !== 'all') {
+      if (status === 'active') {
+        query.isActive = true;
+      } else if (status === 'inactive') {
+        query.isActive = false;
+      } else if (status === 'flagged') {
+        query.isAvailable = false;
+      }
+    }
+
+    // Filter by city
+    if (city && city !== 'all') {
+      query['location.city'] = city;
+    }
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Execute query
+    const markets = await Market.find(query)
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
+      .populate('flaggedBy', 'name email')
+      .populate('deletedBy', 'name email')
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    // Add vendor count to each market
+    const Vendor = require('../models/Vendor');
+    for (let market of markets) {
+      market.vendorCount = await Vendor.countDocuments({
+        markets: market._id,
+        isDeleted: { $ne: true }
+      });
+      market.activeVendorCount = await Vendor.countDocuments({
+        markets: market._id,
+        isActive: true,
+        verificationStatus: 'approved',
+        isDeleted: { $ne: true }
+      });
+    }
+
+    // Get total count
+    const total = await Market.countDocuments(query);
+
+    // Calculate statistics
+    const stats = await Market.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $group: {
+          _id: null,
+          totalMarkets: { $sum: 1 },
+          activeMarkets: {
+            $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] }
+          },
+          availableMarkets: {
+            $sum: { $cond: [{ $eq: ['$isAvailable', true] }, 1, 0] }
+          },
+          flaggedMarkets: {
+            $sum: { $cond: [{ $eq: ['$isAvailable', false] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: markets,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+        limit: parseInt(limit),
+        count: markets.length
+      },
+      stats: stats[0] || {
+        totalMarkets: 0,
+        activeMarkets: 0,
+        availableMarkets: 0,
+        flaggedMarkets: 0
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Get single market with usage statistics
+ * @route   GET /api/v1/admin/markets/:id
+ * @access  Private/Admin
+ */
+exports.getMarket = async (req, res, next) => {
+  try {
+    const Market = require('../models/Market');
+    const market = await Market.findById(req.params.id)
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
+      .populate('flaggedBy', 'name email')
+      .populate('deletedBy', 'name email');
+
+    if (!market) {
+      return next(new ErrorResponse(`Market not found with id of ${req.params.id}`, 404));
+    }
+
+    // Get usage statistics
+    const usageStats = await market.canBeDeleted();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        market,
+        usageStats
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Update market
+ * @route   PUT /api/v1/admin/markets/:id
+ * @access  Private/Admin
+ */
+exports.updateMarket = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(new ErrorResponse(errors.array()[0].msg, 400));
+    }
+
+    const Market = require('../models/Market');
+    let market = await Market.findById(req.params.id);
+
+    if (!market) {
+      return next(new ErrorResponse(`Market not found with id of ${req.params.id}`, 404));
+    }
+
+    if (market.isDeleted) {
+      return next(new ErrorResponse('Cannot update deleted market', 400));
+    }
+
+    // Store old values for audit log
+    const oldValues = {
+      name: market.name,
+      isActive: market.isActive,
+      isAvailable: market.isAvailable
+    };
+
+    // Update data
+    const updateData = {
+      ...req.body,
+      updatedBy: req.user.id
+    };
+
+    // Handle location updates
+    if (req.body.address || req.body['location.address'] || req.body.city || req.body['location.city']) {
+      updateData.location = {
+        address: req.body.address || req.body['location.address'] || market.location.address,
+        city: req.body.city || req.body['location.city'] || market.location.city,
+        district: req.body.district || req.body['location.district'] || market.location.district,
+        coordinates: req.body.coordinates ?
+          (typeof req.body.coordinates === 'string' ?
+            JSON.parse(req.body.coordinates) : req.body.coordinates) :
+          market.location.coordinates
+      };
+    }
+
+    // If new image was uploaded, update the image URL
+    if (req.file) {
+      updateData.image = req.file.path; // Cloudinary URL
+    }
+
+    market = await Market.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      {
+        new: true,
+        runValidators: true
+      }
+    )
+    .populate('createdBy', 'name email')
+    .populate('updatedBy', 'name email');
+
+    // Log significant changes
+    const changes = [];
+    if (oldValues.name !== market.name) changes.push(`name changed from '${oldValues.name}' to '${market.name}'`);
+    if (oldValues.isActive !== market.isActive) changes.push(`status changed to ${market.isActive ? 'active' : 'inactive'}`);
+    if (oldValues.isAvailable !== market.isAvailable) changes.push(`availability changed to ${market.isAvailable ? 'available' : 'unavailable'}`);
+
+    if (changes.length > 0) {
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: 'market_updated',
+        entityType: 'Market',
+        entityId: market._id,
+        description: `Updated market: ${changes.join(', ')}`,
+        severity: 'medium',
+        impactLevel: 'moderate',
+        metadata: { changes: oldValues }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Market updated successfully',
+      data: market
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Toggle market availability (flag system)
+ * @route   PUT /api/v1/admin/markets/:id/availability
+ * @access  Private/Admin
+ */
+exports.toggleMarketAvailability = async (req, res, next) => {
+  try {
+    const { isAvailable, flagReason } = req.body;
+
+    if (isAvailable === undefined) {
+      return next(new ErrorResponse('isAvailable field is required', 400));
+    }
+
+    if (!isAvailable && !flagReason) {
+      return next(new ErrorResponse('Flag reason is required when disabling availability', 400));
+    }
+
+    const Market = require('../models/Market');
+    const market = await Market.findById(req.params.id);
+    if (!market) {
+      return next(new ErrorResponse(`Market not found with id of ${req.params.id}`, 404));
+    }
+
+    if (market.isDeleted) {
+      return next(new ErrorResponse('Cannot modify deleted market', 400));
+    }
+
+    const oldAvailability = market.isAvailable;
+
+    // Use the model method to toggle availability
+    market.toggleAvailability(isAvailable, flagReason, req.user.id);
+    await market.save();
+
+    // Log the action
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: isAvailable ? 'market_unflagged' : 'market_flagged',
+      entityType: 'Market',
+      entityId: market._id,
+      description: `${isAvailable ? 'Enabled' : 'Disabled'} market availability: ${market.name}`,
+      reason: flagReason,
+      severity: 'medium',
+      impactLevel: 'moderate',
+      metadata: {
+        oldAvailability,
+        newAvailability: isAvailable
+      }
+    });
+
+    const updatedMarket = await Market.findById(market._id)
+      .populate('flaggedBy', 'name email')
+      .populate('updatedBy', 'name email');
+
+    res.status(200).json({
+      success: true,
+      message: `Market ${isAvailable ? 'enabled' : 'disabled'} successfully`,
+      data: updatedMarket
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Get market usage statistics
+ * @route   GET /api/v1/admin/markets/:id/usage
+ * @access  Private/Admin
+ */
+exports.getMarketUsageStats = async (req, res, next) => {
+  try {
+    const Market = require('../models/Market');
+    const market = await Market.findById(req.params.id);
+
+    if (!market) {
+      return next(new ErrorResponse(`Market not found with id of ${req.params.id}`, 404));
+    }
+
+    const usageStats = await market.canBeDeleted();
+
+    res.status(200).json({
+      success: true,
+      data: usageStats
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Safe delete market with dependency check
+ * @route   DELETE /api/v1/admin/markets/:id/safe-delete
+ * @access  Private/Admin
+ */
+exports.safeDeleteMarket = async (req, res, next) => {
+  try {
+    const Market = require('../models/Market');
+    const market = await Market.findById(req.params.id);
+    if (!market) {
+      return next(new ErrorResponse('Market not found', 404));
+    }
+
+    // Check for vendors in this market
+    const Vendor = require('../models/Vendor');
+    const vendorsInMarket = await Vendor.countDocuments({
+      markets: req.params.id,
+      isDeleted: { $ne: true }
+    });
+
+    if (vendorsInMarket > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete market with existing vendors',
+        dependencies: {
+          type: 'vendors',
+          count: vendorsInMarket
+        },
+        suggestions: [
+          'Move vendors to another market first',
+          'Or deactivate this market instead of deleting'
+        ]
+      });
+    }
+
+    // Perform soft delete
+    market.isDeleted = true;
+    market.deletedAt = new Date();
+    market.deletedBy = req.user.id;
+    market.isActive = false;
+    await market.save();
+
+    // Log the deletion
+    await AuditLog.logAction({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'market_deleted',
+      entityType: 'Market',
+      entityId: market._id,
+      description: `Deleted market: ${market.name}`,
+      severity: 'high',
+      impactLevel: 'significant'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Market deleted successfully',
+      data: { deletedId: market._id }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ================================
 // LISTING MANAGEMENT
 // ================================
 
@@ -2808,7 +3477,7 @@ exports.getAdminListing = async (req, res, next) => {
       'items.listingId': req.params.id,
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
     })
-    .populate('restaurantId', 'name email phone')
+    .populate('buyerId', 'name email phone')
     .populate('placedBy', 'name email')
     .select('orderNumber status totalAmount items createdAt deliveryInfo')
     .sort({ createdAt: -1 })
@@ -3345,11 +4014,11 @@ exports.toggleVendorVerification = async (req, res, next) => {
 
 
 /**
- * @desc    Toggle restaurant verification status
+ * @desc    Toggle buyer verification status
  * @route   PUT /api/v1/admin/restaurants/:id/verification
  * @access  Private/Admin
  */
-exports.toggleRestaurantVerification = async (req, res, next) => {
+exports.toggleBuyerVerification = async (req, res, next) => {
   const session = await mongoose.startSession();
   
   try {
@@ -3368,12 +4037,12 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
     }
 
     // Pre-calculate affected users count outside transaction for better performance
-    const affectedUsersCount = await User.countDocuments({ restaurantId: req.params.id });
+    const affectedUsersCount = await User.countDocuments({ buyerId: req.params.id });
 
     const result = await session.withTransaction(async () => {
-      const restaurant = await Restaurant.findById(req.params.id).session(session);
+      const restaurant = await Buyer.findById(req.params.id).session(session);
       if (!restaurant) {
-        throw new ErrorResponse(`Restaurant not found with id of ${req.params.id}`, 404);
+        throw new ErrorResponse(`Buyer not found with id of ${req.params.id}`, 404);
       }
 
       const oldVerificationStatus = restaurant.verificationStatus;
@@ -3403,7 +4072,7 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
         userId: req.user.id,
         userRole: req.user.role,
         action: actionMap[verificationStatus],
-        entityType: 'Restaurant',
+        entityType: 'Buyer',
         entityId: restaurant._id,
         description: descriptionMap[verificationStatus],
         reason,
@@ -3420,24 +4089,24 @@ exports.toggleRestaurantVerification = async (req, res, next) => {
     });
 
     // Move population queries outside transaction for better performance
-    const populatedRestaurant = await Restaurant.findById(result._id)
+    const populatedBuyer = await Buyer.findById(result._id)
       .populate('statusUpdatedBy', 'name email')
       .populate('managers', 'name email');
 
     // Create appropriate response message based on verification status
     const messageMap = {
-      'approved': 'Restaurant verification approved successfully',
-      'rejected': 'Restaurant verification rejected successfully', 
-      'pending': 'Restaurant status reset to pending successfully'
+      'approved': 'Buyer verification approved successfully',
+      'rejected': 'Buyer verification rejected successfully', 
+      'pending': 'Buyer status reset to pending successfully'
     };
     
     const responseMessage = messageMap[result.verificationStatus] || 
-      `Restaurant verification status updated to ${result.verificationStatus} successfully`;
+      `Buyer verification status updated to ${result.verificationStatus} successfully`;
 
     res.status(200).json({
       success: true,
       message: responseMessage,
-      data: populatedRestaurant
+      data: populatedBuyer
     });
   } catch (err) {
     // withTransaction handles abort automatically, only handle specific error cases

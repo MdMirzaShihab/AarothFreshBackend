@@ -27,7 +27,7 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'vendor', 'restaurantOwner', 'restaurantManager'],
+    enum: ['admin', 'vendor', 'buyerOwner', 'buyerManager'],
     required: [true, 'Please specify user role']
   },
   vendorId: {
@@ -37,11 +37,11 @@ const UserSchema = new mongoose.Schema({
       return this.role === 'vendor';
     }
   },
-  restaurantId: {
+  buyerId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Restaurant',
+    ref: 'Buyer',
     required: function() {
-      return this.role === 'restaurantOwner' || this.role === 'restaurantManager';
+      return this.role === 'buyerOwner' || this.role === 'buyerManager';
     }
   },
   phone: {
@@ -155,7 +155,7 @@ UserSchema.methods.changedPasswordAfter = function(JWTTimestamp) {
 UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
 UserSchema.index({ vendorId: 1 });
-UserSchema.index({ restaurantId: 1 });
+UserSchema.index({ buyerId: 1 });
 // Removed approvalStatus index - approval now handled at business entity level
 UserSchema.index({ isDeleted: 1, isActive: 1 });
 UserSchema.index({ phone: 1 });

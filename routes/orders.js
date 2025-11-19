@@ -7,7 +7,7 @@ const {
   getOrder
 } = require('../controllers/ordersController');
 const { protect, authorize } = require('../middleware/auth');
-const { requireRestaurantApproval } = require('../middleware/approval');
+const { requireBuyerApproval } = require('../middleware/approval');
 const { body } = require('express-validator');
 
 const router = express.Router();
@@ -37,11 +37,11 @@ router.get('/', getOrders);
 /**
  * @route   POST /api/v1/orders
  * @desc    Place a new order
- * @access  Private (Restaurant users - Owner/Manager)
+ * @access  Private (Buyer users - Owner/Manager)
  */
-router.post('/', 
-  authorize('restaurantOwner', 'restaurantManager'),
-  requireRestaurantApproval('place orders'),
+router.post('/',
+  authorize('buyerOwner', 'buyerManager'),
+  requireBuyerApproval('place orders'),
   placeOrderValidation,
   placeOrder
 );
@@ -56,9 +56,9 @@ router.get('/:id', getOrder);
 /**
  * @route   POST /api/v1/orders/:id/approve
  * @desc    Approve a pending order
- * @access  Private (Restaurant Owner only)
+ * @access  Private (Buyer Owner only)
  */
-router.post('/:id/approve', authorize('restaurantOwner'), requireRestaurantApproval('approve orders'), approveOrder);
+router.post('/:id/approve', authorize('buyerOwner'), requireBuyerApproval('approve orders'), approveOrder);
 
 /**
  * @route   PUT /api/v1/orders/:id/status

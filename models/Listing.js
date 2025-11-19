@@ -36,30 +36,92 @@ const ListingSchema = new mongoose.Schema({
     }
   },
 
-  // Pricing information
+  // Pricing information - Pack-based selling support
   pricing: [{
+    // Base unit (what the product is measured in)
     unit: {
       type: String,
-      required: [true, 'Unit is required']
+      required: [true, 'Unit is required'],
+      enum: ['kg', 'g', 'piece', 'bunch', 'liter', 'ml']
     },
-    pricePerUnit: {
+
+    // Price per base unit (e.g., price per kg)
+    pricePerBaseUnit: {
       type: Number,
-      required: [true, 'Price per unit is required'],
-      min: [0, 'Price cannot be negative']
+      required: [true, 'Price per base unit is required'],
+      min: [0.01, 'Price must be greater than 0']
     },
-    minimumQuantity: {
+
+    // Pack-based selling configuration
+    enablePackSelling: {
+      type: Boolean,
+      default: false
+    },
+
+    // How many base units in one pack (e.g., 60 kg per pack)
+    packSize: {
+      type: Number,
+      min: [0.01, 'Pack size must be greater than 0'],
+      validate: {
+        validator: function(value) {
+          // packSize required when pack selling is enabled
+          if (this.enablePackSelling && !value) {
+            return false;
+          }
+          return true;
+        },
+        message: 'Pack size is required when pack selling is enabled'
+      }
+    },
+
+    // Pack unit display name (optional)
+    packUnit: {
+      type: String,
+      enum: ['pack', 'bundle', 'box', 'crate', 'bag'],
+      default: 'pack'
+    },
+
+    // Minimum order in number of packs (when pack selling enabled)
+    minimumPacks: {
       type: Number,
       default: 1,
-      min: [1, 'Minimum quantity must be at least 1']
+      min: [1, 'Minimum packs must be at least 1'],
+      validate: {
+        validator: function(value) {
+          // Must be whole number
+          return Number.isInteger(value);
+        },
+        message: 'Minimum packs must be a whole number'
+      }
     },
-    maximumQuantity: {
+
+    // Maximum order in number of packs (when pack selling enabled)
+    maximumPacks: {
       type: Number,
       validate: {
         validator: function(value) {
-          return !value || value >= this.minimumQuantity;
+          if (!value) return true; // Optional field
+          // Must be greater than minimum
+          if (value < this.minimumPacks) return false;
+          // Must be whole number
+          return Number.isInteger(value);
         },
-        message: 'Maximum quantity must be greater than minimum quantity'
+        message: 'Maximum packs must be a whole number and greater than minimum packs'
       }
+    },
+
+    // Legacy fields for backward compatibility (deprecated)
+    pricePerUnit: {
+      type: Number,
+      // Will be removed in future version
+    },
+    minimumQuantity: {
+      type: Number,
+      // Will be removed in future version
+    },
+    maximumQuantity: {
+      type: Number,
+      // Will be removed in future version
     }
   }],
 
@@ -273,10 +335,52 @@ ListingSchema.pre('save', function(next) {
   if (this.listingType === 'inventory_based' && !this.inventoryId) {
     return next(new Error('Inventory-based listings must have an inventoryId'));
   }
-  
+
   // Set isInventoryTracked based on listingType
   this.isInventoryTracked = this.listingType === 'inventory_based';
-  
+
+  next();
+});
+
+// Validate pack-based selling configuration
+ListingSchema.pre('save', function(next) {
+  const pricing = this.pricing && this.pricing[0];
+
+  if (!pricing) {
+    return next();
+  }
+
+  // If pack selling is enabled, validate required fields
+  if (pricing.enablePackSelling) {
+    if (!pricing.packSize || pricing.packSize <= 0) {
+      return next(new Error('Pack size must be greater than 0 when pack selling is enabled'));
+    }
+
+    // Ensure minimum packs is a whole number
+    if (!Number.isInteger(pricing.minimumPacks)) {
+      return next(new Error('Minimum packs must be a whole number'));
+    }
+
+    // Ensure maximum packs (if set) is a whole number and >= minimum
+    if (pricing.maximumPacks) {
+      if (!Number.isInteger(pricing.maximumPacks)) {
+        return next(new Error('Maximum packs must be a whole number'));
+      }
+      if (pricing.maximumPacks < pricing.minimumPacks) {
+        return next(new Error('Maximum packs must be greater than or equal to minimum packs'));
+      }
+    }
+
+    // Validate inventory has enough for at least minimum packs
+    const minRequiredInventory = pricing.packSize * pricing.minimumPacks;
+    if (this.availability.quantityAvailable < minRequiredInventory) {
+      return next(new Error(
+        `Insufficient inventory. Need at least ${minRequiredInventory} ${pricing.unit} ` +
+        `for ${pricing.minimumPacks} pack(s) of ${pricing.packSize} ${pricing.unit} each`
+      ));
+    }
+  }
+
   next();
 });
 
@@ -299,35 +403,26 @@ ListingSchema.pre('save', function(next) {
   next();
 });
 
-// Auto-update status based on availability
+// Auto-update status based on availability (including pack-based selling)
 ListingSchema.pre('save', function(next) {
-  if (this.availability.quantityAvailable === 0 && this.status === 'active') {
-    this.status = 'out_of_stock';
-  } else if (this.availability.quantityAvailable > 0 && this.status === 'out_of_stock') {
-    this.status = 'active';
-  }
-  next();
-});
+  const pricing = this.pricing && this.pricing[0];
 
-// Sync with inventory when availability changes
-ListingSchema.pre('save', async function(next) {
-  if (this.isModified('availability.quantityAvailable') && this.inventoryId) {
-    try {
-      const VendorInventory = require('./VendorInventory');
-      const inventory = await VendorInventory.findById(this.inventoryId);
-      
-      if (inventory) {
-        // Check if we have enough stock in inventory
-        if (this.availability.quantityAvailable > inventory.currentStock.totalQuantity) {
-          const error = new Error(`Cannot list ${this.availability.quantityAvailable} ${this.availability.unit}. Only ${inventory.currentStock.totalQuantity} available in inventory.`);
-          error.name = 'InsufficientInventoryError';
-          return next(error);
-        }
-      }
-    } catch (error) {
-      return next(error);
+  // For pack-based selling, check if inventory is sufficient for at least 1 pack
+  if (pricing && pricing.enablePackSelling && pricing.packSize) {
+    if (this.availability.quantityAvailable < pricing.packSize && this.status === 'active') {
+      this.status = 'out_of_stock';
+    } else if (this.availability.quantityAvailable >= pricing.packSize && this.status === 'out_of_stock') {
+      this.status = 'active';
+    }
+  } else {
+    // Standard behavior for non-pack listings
+    if (this.availability.quantityAvailable === 0 && this.status === 'active') {
+      this.status = 'out_of_stock';
+    } else if (this.availability.quantityAvailable > 0 && this.status === 'out_of_stock') {
+      this.status = 'active';
     }
   }
+
   next();
 });
 
@@ -359,12 +454,25 @@ ListingSchema.virtual('primaryImage').get(function() {
   return null;
 });
 
+// Virtual for price per pack (calculated from base unit price * pack size)
+ListingSchema.virtual('pricePerPack').get(function() {
+  if (!this.pricing || this.pricing.length === 0) return null;
+
+  const pricing = this.pricing[0];
+  if (!pricing.enablePackSelling || !pricing.packSize) {
+    return null; // Not using pack-based selling
+  }
+
+  return pricing.pricePerBaseUnit * pricing.packSize;
+});
+
 // Virtual for effective price (considering discounts)
 ListingSchema.virtual('effectivePrice').get(function() {
   if (!this.pricing || this.pricing.length === 0) return null;
-  
-  const basePrice = this.pricing[0].pricePerUnit;
-  
+
+  const pricing = this.pricing[0];
+  const basePrice = pricing.pricePerBaseUnit || pricing.pricePerUnit; // Support legacy field
+
   if (this.discount && this.discount.validUntil > new Date()) {
     if (this.discount.type === 'percentage') {
       return basePrice * (1 - this.discount.value / 100);
@@ -372,143 +480,54 @@ ListingSchema.virtual('effectivePrice').get(function() {
       return Math.max(0, basePrice - this.discount.value);
     }
   }
-  
+
   return basePrice;
 });
 
+// Virtual for effective pack price (considering discounts)
+ListingSchema.virtual('effectivePackPrice').get(function() {
+  if (!this.pricing || this.pricing.length === 0) return null;
+
+  const pricing = this.pricing[0];
+  if (!pricing.enablePackSelling || !pricing.packSize) {
+    return null;
+  }
+
+  const effectiveBasePrice = this.effectivePrice;
+  return effectiveBasePrice * pricing.packSize;
+});
+
 // Method to check if listing is available for order
-ListingSchema.methods.isAvailableForOrder = function(quantity = 1) {
+ListingSchema.methods.isAvailableForOrder = function(quantity = 1, isPacks = false) {
+  const pricing = this.pricing && this.pricing[0];
+
+  // Convert packs to base units if pack-based selling
+  let requiredQuantity = quantity;
+  if (pricing && pricing.enablePackSelling && isPacks) {
+    requiredQuantity = quantity * pricing.packSize;
+  }
+
+  // For pack-based selling, validate quantity is in pack multiples
+  if (pricing && pricing.enablePackSelling && !isPacks) {
+    const packs = quantity / pricing.packSize;
+    if (!Number.isInteger(packs)) {
+      return false; // Quantity must be a multiple of pack size
+    }
+
+    // Check min/max pack constraints
+    if (pricing.minimumPacks && packs < pricing.minimumPacks) {
+      return false;
+    }
+    if (pricing.maximumPacks && packs > pricing.maximumPacks) {
+      return false;
+    }
+  }
+
   return (
     this.status === 'active' &&
-    this.availability.quantityAvailable >= quantity &&
+    this.availability.quantityAvailable >= requiredQuantity &&
     (!this.availability.expiryDate || this.availability.expiryDate > new Date())
   );
-};
-
-// Method to record a sale and update inventory
-ListingSchema.methods.recordSale = async function(quantitySold, salePrice, orderId) {
-  try {
-    const VendorInventory = require('./VendorInventory');
-    const inventory = await VendorInventory.findById(this.inventoryId);
-    
-    if (!inventory) {
-      throw new Error('Inventory record not found for this listing');
-    }
-
-    // Check if we have enough stock
-    if (quantitySold > this.availability.quantityAvailable) {
-      throw new Error('Cannot sell more than available quantity in listing');
-    }
-
-    // Update listing statistics
-    this.totalQuantitySold += quantitySold;
-    this.totalOrders += 1;
-    this.availability.quantityAvailable -= quantitySold;
-
-    // Update profit analytics
-    const saleRevenue = salePrice * quantitySold;
-    this.profitAnalytics.totalRevenue += saleRevenue;
-
-    // Consume stock from inventory (this will update cost and profit calculations)
-    await inventory.consumeStock(quantitySold, salePrice, orderId);
-
-    // Update cost analytics from inventory
-    this.profitAnalytics.totalCost = inventory.analytics.totalPurchaseValue - 
-      (inventory.currentStock.totalQuantity * inventory.currentStock.averagePurchasePrice);
-
-    // Save the listing
-    await this.save();
-
-    return {
-      success: true,
-      message: 'Sale recorded successfully',
-      updatedListing: this,
-      updatedInventory: inventory
-    };
-  } catch (error) {
-    throw error;
-  }
-};
-
-// Method to sync listing quantity with inventory
-ListingSchema.methods.syncWithInventory = async function() {
-  try {
-    const VendorInventory = require('./VendorInventory');
-    const inventory = await VendorInventory.findById(this.inventoryId);
-    
-    if (!inventory) {
-      throw new Error('Inventory record not found for this listing');
-    }
-
-    // Update availability to match inventory (or keep current if less than inventory)
-    const maxAvailable = inventory.currentStock.totalQuantity;
-    if (this.availability.quantityAvailable > maxAvailable) {
-      this.availability.quantityAvailable = maxAvailable;
-    }
-
-    // Update unit to match inventory
-    this.availability.unit = inventory.currentStock.unit;
-
-    await this.save();
-    return this;
-  } catch (error) {
-    throw error;
-  }
-};
-
-// Method to check if listing needs inventory attention
-ListingSchema.methods.checkInventoryHealth = async function() {
-  try {
-    const VendorInventory = require('./VendorInventory');
-    const inventory = await VendorInventory.findById(this.inventoryId);
-    
-    if (!inventory) {
-      return { status: 'error', message: 'Inventory record not found' };
-    }
-
-    const alerts = [];
-
-    // Check if listing quantity exceeds inventory
-    if (this.availability.quantityAvailable > inventory.currentStock.totalQuantity) {
-      alerts.push({
-        type: 'overselling_risk',
-        severity: 'high',
-        message: `Listing quantity (${this.availability.quantityAvailable}) exceeds inventory stock (${inventory.currentStock.totalQuantity})`
-      });
-    }
-
-    // Check if inventory is running low
-    if (inventory.status === 'low_stock' || inventory.status === 'out_of_stock') {
-      alerts.push({
-        type: 'low_inventory',
-        severity: inventory.status === 'out_of_stock' ? 'critical' : 'medium',
-        message: `Inventory status: ${inventory.status}`
-      });
-    }
-
-    // Check profit margins
-    const currentPrice = this.pricing[0]?.pricePerUnit || 0;
-    const averageCost = inventory.currentStock.averagePurchasePrice || 0;
-    const profitMargin = averageCost > 0 ? ((currentPrice - averageCost) / currentPrice) * 100 : 0;
-
-    if (profitMargin < 10) { // Less than 10% profit margin
-      alerts.push({
-        type: 'low_profit_margin',
-        severity: profitMargin < 0 ? 'critical' : 'medium',
-        message: `Low profit margin: ${profitMargin.toFixed(2)}%`
-      });
-    }
-
-    return {
-      status: alerts.length > 0 ? 'attention_needed' : 'healthy',
-      alerts,
-      inventoryStatus: inventory.status,
-      profitMargin: profitMargin.toFixed(2),
-      stockLevel: inventory.currentStock.totalQuantity
-    };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
 };
 
 // Static method for advanced search

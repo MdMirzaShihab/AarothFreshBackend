@@ -1,6 +1,5 @@
 const Listing = require('../models/Listing');
 const Product = require('../models/Product');
-const VendorInventory = require('../models/VendorInventory');
 const { ErrorResponse } = require('../middleware/error');
 const { validationResult } = require('express-validator');
 const { canUserCreateListings } = require('../middleware/approval');
@@ -39,7 +38,7 @@ exports.createListing = async (req, res, next) => {
       return next(new ErrorResponse(statusMessage, 403));
     }
 
-    const { productId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications, inventoryId, listingType = 'inventory_based' } = req.body;
+    const { productId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications } = req.body;
 
     // Verify the product exists
     const product = await Product.findById(productId);
@@ -47,68 +46,56 @@ exports.createListing = async (req, res, next) => {
       return next(new ErrorResponse('Product not found', 404));
     }
 
-    // Handle inventory validation based on listing type
-    let inventory = null;
-    
-    if (listingType === 'inventory_based') {
-      // For inventory-based listings, inventory is required
-      if (inventoryId) {
-        inventory = await VendorInventory.findById(inventoryId);
-        if (!inventory) {
-          return next(new ErrorResponse('Inventory record not found', 404));
-        }
-        
-        if (inventory.vendorId.toString() !== req.user.vendorId.toString()) {
-          return next(new ErrorResponse('Not authorized to access this inventory record', 403));
-        }
-        
-        if (inventory.productId.toString() !== productId.toString()) {
-          return next(new ErrorResponse('Inventory product does not match listing product', 400));
-        }
-      } else {
-        // Try to find inventory automatically
-        inventory = await VendorInventory.findOne({ 
-          vendorId: req.user.vendorId, 
-          productId 
-        });
-        
-        if (!inventory) {
-          return next(new ErrorResponse('No inventory found for this product. Please add inventory first before creating an inventory-based listing.', 400));
-        }
-      }
+    // Validate pack-based selling configuration
+    if (pricing && pricing.length > 0) {
+      const priceConfig = pricing[0];
 
-      // Validate that we have enough inventory for the listing
-      if (availability.quantityAvailable > inventory.currentStock.totalQuantity) {
-        return next(new ErrorResponse(
-          `Cannot list ${availability.quantityAvailable} ${availability.unit}. Only ${inventory.currentStock.totalQuantity} available in inventory.`,
-          400
-        ));
-      }
+      if (priceConfig.enablePackSelling) {
+        // Validate packSize is provided and valid
+        if (!priceConfig.packSize || priceConfig.packSize <= 0) {
+          return next(new ErrorResponse('Pack size must be greater than 0 when pack selling is enabled', 400));
+        }
 
-      // Check if units match
-      if (availability.unit !== inventory.currentStock.unit) {
-        return next(new ErrorResponse(
-          `Listing unit (${availability.unit}) must match inventory unit (${inventory.currentStock.unit})`,
-          400
-        ));
-      }
-    } else if (listingType === 'non_inventory') {
-      // For non-inventory listings, inventory is optional but can be provided for reference
-      if (inventoryId) {
-        inventory = await VendorInventory.findById(inventoryId);
-        if (!inventory || inventory.vendorId.toString() !== req.user.vendorId.toString()) {
-          return next(new ErrorResponse('Invalid inventory reference for non-inventory listing', 400));
+        // Validate minimumPacks is a whole number
+        if (priceConfig.minimumPacks && !Number.isInteger(priceConfig.minimumPacks)) {
+          return next(new ErrorResponse('Minimum packs must be a whole number', 400));
+        }
+
+        // Validate maximumPacks is a whole number and >= minimumPacks
+        if (priceConfig.maximumPacks) {
+          if (!Number.isInteger(priceConfig.maximumPacks)) {
+            return next(new ErrorResponse('Maximum packs must be a whole number', 400));
+          }
+          if (priceConfig.maximumPacks < (priceConfig.minimumPacks || 1)) {
+            return next(new ErrorResponse('Maximum packs must be greater than or equal to minimum packs', 400));
+          }
+        }
+
+        // Validate inventory is sufficient for minimum packs
+        const minRequiredInventory = priceConfig.packSize * (priceConfig.minimumPacks || 1);
+        if (availability.quantityAvailable < minRequiredInventory) {
+          return next(new ErrorResponse(
+            `Insufficient inventory for pack-based selling. Need at least ${minRequiredInventory} ${availability.unit} ` +
+            `for ${priceConfig.minimumPacks || 1} pack(s) of ${priceConfig.packSize} ${availability.unit} each`,
+            400
+          ));
+        }
+
+        // Validate inventory is a multiple of packSize (or at least 1 full pack)
+        if (availability.quantityAvailable < priceConfig.packSize) {
+          return next(new ErrorResponse(
+            `Inventory must be at least ${priceConfig.packSize} ${availability.unit} to enable pack-based selling`,
+            400
+          ));
         }
       }
-      // No stock validation needed for non-inventory listings
     }
 
-    // Create listing with inventory reference and type classification
+    // Create listing (non-inventory based for MVP)
     const listing = await Listing.create({
       vendorId: req.user.vendorId,
-      listingType,
+      listingType: 'non_inventory', // All listings are non-inventory for MVP
       productId,
-      inventoryId: inventory?._id, // Optional for non-inventory listings
       pricing,
       qualityGrade,
       availability,
@@ -170,7 +157,6 @@ exports.getVendorListings = async (req, res, next) => {
     // Build the listing query
     let listingQuery = Listing.find(query)
       .populate('productId', 'name description category images')
-      .populate('inventoryId', 'currentStock status')
       .sort(sort);
     
     // Add pagination if limit is specified

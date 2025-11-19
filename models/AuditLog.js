@@ -11,7 +11,7 @@ const AuditLogSchema = new mongoose.Schema({
   },
   userRole: {
     type: String,
-    enum: ['admin', 'vendor', 'restaurantOwner', 'restaurantManager', 'system'],
+    enum: ['admin', 'vendor', 'buyerOwner', 'buyerManager', 'system'],
     required: [true, 'User role is required']
   },
   
@@ -25,9 +25,9 @@ const AuditLogSchema = new mongoose.Schema({
       // Vendor management
       'vendor_created', 'vendor_updated', 'vendor_verified', 'vendor_deactivated', 'vendor_deleted', 'vendor_viewed',
       'vendor_verification_toggle', 'vendor_verification_revoked', 'vendor_status_reset',
-      // Restaurant management
-      'restaurant_created', 'restaurant_updated', 'restaurant_verified', 'restaurant_deactivated',
-      'restaurant_verification_toggle', 'restaurant_verification_revoked', 'restaurant_status_reset',
+      // Buyer management (replaces restaurant management)
+      'buyer_created', 'buyer_updated', 'buyer_verified', 'buyer_deactivated', 'buyer_deleted', 'buyer_viewed',
+      'buyer_verification_toggle', 'buyer_verification_revoked', 'buyer_status_reset',
       // Product management
       'product_created', 'product_updated', 'product_deleted', 'product_status_changed',
       // Category management
@@ -42,7 +42,9 @@ const AuditLogSchema = new mongoose.Schema({
       // Security and monitoring
       'high_frequency_access', 'security_alert', 'suspicious_activity', 'rate_limit_exceeded',
       // SLA and performance monitoring
-      'sla_violation_detected', 'sla_monitoring_started', 'sla_monitoring_error', 'sla_metrics_updated', 'performance_report_generated'
+      'sla_violation_detected', 'sla_monitoring_started', 'sla_monitoring_error', 'sla_metrics_updated', 'performance_report_generated',
+      // Dashboard and performance
+      'performance_dashboard_accessed', 'dashboard_viewed'
     ]
   },
   
@@ -50,12 +52,14 @@ const AuditLogSchema = new mongoose.Schema({
   entityType: {
     type: String,
     required: [true, 'Entity type is required'],
-    enum: ['User', 'Vendor', 'Restaurant', 'Product', 'ProductCategory', 'Listing', 'Order', 'Settings', 'System', 'AdminMetrics', 'SLAConfig']
+    enum: ['User', 'Vendor', 'Buyer', 'Product', 'ProductCategory', 'Listing', 'Order', 'Settings', 'System', 'AdminMetrics', 'SLAConfig', 'Inventory']
   },
   entityId: {
     type: mongoose.Schema.Types.ObjectId,
     required: function() {
-      return this.entityType !== 'System';
+      // Entity ID is optional for system-level and aggregate entity types
+      const optionalEntityIdTypes = ['System', 'AdminMetrics', 'SLAConfig', 'Inventory', 'Settings'];
+      return !optionalEntityIdTypes.includes(this.entityType);
     }
   },
   

@@ -1,6 +1,6 @@
 /**
  * @fileoverview Public Listings Routes
- * @description Handles listing access for restaurant users and general viewing
+ * @description Handles listing access for buyer users and general viewing
  * @note Vendor listing CRUD operations are handled in /vendor-dashboard/listings/*
  * @version 2.0
  * @since 2024
@@ -20,15 +20,15 @@ router.use(protect);
 
 /**
  * @route   GET /api/v1/listings
- * @desc    Get all active listings (for restaurants)
- * @access  Private (Restaurant users)
+ * @desc    Get all active listings (for buyers)
+ * @access  Private (Buyer users)
  */
-router.get("/", authorize("restaurantOwner", "restaurantManager"), getListings);
+router.get("/", authorize("buyerOwner", "buyerManager"), getListings);
 
 // ================================
 // NOTE: Vendor-specific listing CRUD operations have been moved to:
 // /api/v1/vendor-dashboard/listings/*
-// This route file now handles only public/restaurant access to listings
+// This route file now handles only public/buyer access to listings
 // ================================
 
 /**
@@ -40,7 +40,7 @@ router.get("/:id", getListing);
 
 // ================================
 // Vendor listing CRUD operations moved to /api/v1/vendor-dashboard/listings/*
-// Only public/restaurant read access remains in this file
+// Only public/buyer read access remains in this file
 // ================================
 
 module.exports = router;

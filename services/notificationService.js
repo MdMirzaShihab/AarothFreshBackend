@@ -63,7 +63,7 @@ class NotificationService {
           recipientType: 'vendor',
           type: 'order',
           title: 'New Order Received',
-          message: `New order #${order.orderNumber} from ${additionalData.restaurantName || 'restaurant'}`,
+          message: `New order #${order.orderNumber} from ${additionalData.buyerName || 'buyer'}`,
           priority: 'high',
           isActionRequired: true,
           actionUrl: `/vendor-dashboard/order-management?orderId=${order._id}`,
@@ -82,7 +82,7 @@ class NotificationService {
 
       case 'order_confirmed':
         // Notify restaurant
-        const restaurant = await User.findOne({ restaurantId: order.restaurantId });
+        const restaurant = await User.findOne({ buyerId: order.buyerId });
         if (restaurant) {
           notifications.push({
             recipientId: restaurant._id,
@@ -91,7 +91,7 @@ class NotificationService {
             title: 'Order Confirmed',
             message: `Order #${order.orderNumber} has been confirmed by the vendor`,
             priority: 'medium',
-            actionUrl: `/restaurant-dashboard/order-history?orderId=${order._id}`,
+            actionUrl: `/buyer-dashboard/order-history?orderId=${order._id}`,
             actionText: 'View Order',
             relatedEntity: {
               entityType: 'order',
@@ -108,16 +108,16 @@ class NotificationService {
 
       case 'order_delivered':
         // Notify restaurant
-        const restaurantUser = await User.findOne({ restaurantId: order.restaurantId });
-        if (restaurantUser) {
+        const buyerUser = await User.findOne({ buyerId: order.buyerId });
+        if (buyerUser) {
           notifications.push({
-            recipientId: restaurantUser._id,
-            recipientType: restaurantUser.role,
+            recipientId: buyerUser._id,
+            recipientType: buyerUser.role,
             type: 'order',
             title: 'Order Delivered',
             message: `Order #${order.orderNumber} has been delivered successfully`,
             priority: 'low',
-            actionUrl: `/restaurant-dashboard/order-history?orderId=${order._id}`,
+            actionUrl: `/buyer-dashboard/order-history?orderId=${order._id}`,
             actionText: 'View Order',
             relatedEntity: {
               entityType: 'order',
@@ -135,7 +135,7 @@ class NotificationService {
       case 'order_cancelled':
         // Notify both parties
         const vendorUser = await User.findOne({ vendorId: order.vendorId });
-        const restaurantOwner = await User.findOne({ restaurantId: order.restaurantId });
+        const buyerOwner = await User.findOne({ buyerId: order.buyerId });
 
         if (vendorUser) {
           notifications.push({
@@ -158,10 +158,10 @@ class NotificationService {
           });
         }
 
-        if (restaurantOwner) {
+        if (buyerOwner) {
           notifications.push({
-            recipientId: restaurantOwner._id,
-            recipientType: restaurantOwner.role,
+            recipientId: buyerOwner._id,
+            recipientType: buyerOwner.role,
             type: 'order',
             title: 'Order Cancelled',
             message: `Order #${order.orderNumber} has been cancelled`,
@@ -250,15 +250,15 @@ class NotificationService {
   }
 
   /**
-   * Create budget-related notifications for restaurants
+   * Create budget-related notifications for buyers
    */
-  static async createBudgetNotification(restaurantId, event, data) {
-    const restaurantOwner = await User.findOne({ restaurantId, role: 'restaurantOwner' });
-    if (!restaurantOwner) return;
+  static async createBudgetNotification(buyerId, event, data) {
+    const buyerOwner = await User.findOne({ buyerId, role: 'buyerOwner' });
+    if (!buyerOwner) return;
 
     let notificationData = {
-      recipientId: restaurantOwner._id,
-      recipientType: 'restaurantOwner',
+      recipientId: buyerOwner._id,
+      recipientType: 'buyerOwner',
       type: 'budget',
       metadata: data
     };
@@ -271,7 +271,7 @@ class NotificationService {
           message: `You've used ${data.percentageUsed}% of your ${data.period} budget`,
           priority: data.percentageUsed > 90 ? 'high' : 'medium',
           isActionRequired: data.percentageUsed > 90,
-          actionUrl: '/restaurant-dashboard/budget',
+          actionUrl: '/buyer-dashboard/budget',
           actionText: 'View Budget'
         };
         break;
@@ -283,7 +283,7 @@ class NotificationService {
           message: `You've exceeded your ${data.period} budget by ${data.overageAmount}`,
           priority: 'urgent',
           isActionRequired: true,
-          actionUrl: '/restaurant-dashboard/budget',
+          actionUrl: '/buyer-dashboard/budget',
           actionText: 'Review Spending'
         };
         break;
@@ -294,7 +294,7 @@ class NotificationService {
           title: 'Category Budget Warning',
           message: `${data.categoryName} spending is at ${data.percentageUsed}% of budget`,
           priority: 'medium',
-          actionUrl: `/restaurant-dashboard/budget?category=${data.categoryId}`,
+          actionUrl: `/buyer-dashboard/budget?category=${data.categoryId}`,
           actionText: 'View Category'
         };
         break;
@@ -435,13 +435,13 @@ class NotificationService {
     // Mock budget limits - in real implementation, these would be configurable per restaurant
     const monthlyBudget = 10000;
 
-    const restaurants = await User.find({ role: 'restaurantOwner' });
+    const buyers = await User.find({ role: 'buyerOwner' });
 
-    for (const restaurant of restaurants) {
+    for (const restaurant of buyers) {
       const monthlySpending = await Order.aggregate([
         {
           $match: {
-            restaurantId: restaurant.restaurantId,
+            buyerId: buyer.buyerId,
             createdAt: { $gte: monthStart, $lte: now }
           }
         },
@@ -466,7 +466,7 @@ class NotificationService {
 
         if (!existingWarning) {
           const event = percentageUsed > 100 ? 'budget_exceeded' : 'budget_warning';
-          await this.createBudgetNotification(restaurant.restaurantId, event, {
+          await this.createBudgetNotification(buyer.buyerId, event, {
             period: 'monthly',
             percentageUsed: Math.round(percentageUsed),
             spent,
@@ -487,21 +487,21 @@ class NotificationService {
     const overdueOrders = await Order.find({
       status: { $in: ['pending', 'confirmed'] },
       createdAt: { $lt: twoDaysAgo }
-    }).populate('vendorId restaurantId');
+    }).populate('vendorId buyerId');
 
     for (const order of overdueOrders) {
       // Notify restaurant owner about overdue order
-      const restaurantOwner = await User.findOne({ restaurantId: order.restaurantId });
-      if (restaurantOwner) {
+      const buyerOwner = await User.findOne({ buyerId: order.buyerId });
+      if (buyerOwner) {
         await this.createNotification({
-          recipientId: restaurantOwner._id,
-          recipientType: 'restaurantOwner',
+          recipientId: buyerOwner._id,
+          recipientType: 'buyerOwner',
           type: 'order',
           title: 'Order Overdue',
           message: `Order #${order.orderNumber} is overdue and needs attention`,
           priority: 'high',
           isActionRequired: true,
-          actionUrl: `/restaurant-dashboard/order-history?orderId=${order._id}`,
+          actionUrl: `/buyer-dashboard/order-history?orderId=${order._id}`,
           actionText: 'Contact Vendor',
           relatedEntity: {
             entityType: 'order',

@@ -30,8 +30,8 @@ router.get('/me', protect, getMe);
 router.get('/status', protect, getUserStatus);
 router.put('/me', protect, updateProfileValidation, updateProfile);
 router.put('/change-password', protect, changePasswordValidation, changePassword);
-router.post('/create-manager', protect, authorize('restaurantOwner', 'admin'), managerValidation, createManager);
-router.get('/managers', protect, authorize('restaurantOwner', 'admin'), getManagers);
-router.put('/managers/:id/deactivate', protect, authorize('restaurantOwner', 'admin'), deactivateManager);
+router.post('/create-manager', protect, authorize('buyerOwner', 'admin'), managerValidation, createManager);
+router.get('/managers', protect, authorize('buyerOwner', 'admin'), getManagers);
+router.put('/managers/:id/deactivate', protect, authorize('buyerOwner', 'admin'), deactivateManager);
 
 module.exports = router;

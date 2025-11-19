@@ -1,6 +1,5 @@
 const Order = require("../models/Order");
 const Listing = require("../models/Listing");
-const VendorInventory = require("../models/VendorInventory");
 const { ErrorResponse } = require("../middleware/error");
 const { validationResult } = require("express-validator");
 const { canUserPlaceOrders } = require("../middleware/approval");
@@ -20,9 +19,9 @@ exports.placeOrder = async (req, res, next) => {
 
     // Check if restaurant business is verified to place orders
     if (!canUserPlaceOrders(req.user)) {
-      const restaurantName = req.user.restaurantId?.name || 'your restaurant';
-      const verificationStatus = req.user.restaurantId?.verificationStatus || 'pending';
-      const adminNotes = req.user.restaurantId?.adminNotes;
+      const restaurantName = req.user.buyerId?.name || 'your restaurant';
+      const verificationStatus = req.user.buyerId?.verificationStatus || 'pending';
+      const adminNotes = req.user.buyerId?.adminNotes;
       
       let statusMessage = `Your restaurant "${restaurantName}" is ${verificationStatus}.`;
       
@@ -40,7 +39,7 @@ exports.placeOrder = async (req, res, next) => {
     }
 
     const { items, deliveryInfo, paymentInfo, notes } = req.body;
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
 
     // --- Start of new logic ---
     // Find the listing from the first item to get the vendorId
@@ -61,12 +60,103 @@ exports.placeOrder = async (req, res, next) => {
     const vendorId = listing.vendorId;
     // --- End of new logic ---
 
-    // Create the order
+    // Validate and enrich order items with pack-based selling information
+    const enrichedItems = [];
+    for (const item of items) {
+      const itemListing = await Listing.findById(item.listingId)
+        .populate('productId', 'name');
+
+      if (!itemListing) {
+        return next(new ErrorResponse(`Listing with ID ${item.listingId} not found`, 404));
+      }
+
+      // Check if listing is active and available
+      if (itemListing.status !== 'active') {
+        return next(new ErrorResponse(`Listing "${itemListing.productId.name}" is not currently available`, 400));
+      }
+
+      const pricing = itemListing.pricing && itemListing.pricing[0];
+
+      // Validate pack-based selling
+      if (pricing && pricing.enablePackSelling) {
+        const packSize = pricing.packSize;
+
+        // Check if quantity is a multiple of packSize
+        const numberOfPacks = item.quantity / packSize;
+        if (!Number.isInteger(numberOfPacks)) {
+          return next(new ErrorResponse(
+            `${itemListing.productId.name}: Quantity must be in multiples of ${packSize} ${pricing.unit}. ` +
+            `You can order ${Math.floor(numberOfPacks)} or ${Math.ceil(numberOfPacks)} pack(s).`,
+            400
+          ));
+        }
+
+        // Validate against minimum packs
+        if (pricing.minimumPacks && numberOfPacks < pricing.minimumPacks) {
+          return next(new ErrorResponse(
+            `${itemListing.productId.name}: Minimum order is ${pricing.minimumPacks} pack(s) (${pricing.minimumPacks * packSize} ${pricing.unit})`,
+            400
+          ));
+        }
+
+        // Validate against maximum packs
+        if (pricing.maximumPacks && numberOfPacks > pricing.maximumPacks) {
+          return next(new ErrorResponse(
+            `${itemListing.productId.name}: Maximum order is ${pricing.maximumPacks} pack(s) (${pricing.maximumPacks * packSize} ${pricing.unit})`,
+            400
+          ));
+        }
+
+        // Check inventory availability
+        if (item.quantity > itemListing.availability.quantityAvailable) {
+          return next(new ErrorResponse(
+            `${itemListing.productId.name}: Only ${itemListing.availability.quantityAvailable} ${pricing.unit} available ` +
+            `(${Math.floor(itemListing.availability.quantityAvailable / packSize)} packs)`,
+            400
+          ));
+        }
+
+        // Enrich item with pack-based information
+        enrichedItems.push({
+          ...item,
+          productId: itemListing.productId._id,
+          productName: itemListing.productId.name,
+          isPackBased: true,
+          numberOfPacks,
+          packSize,
+          pricePerPack: pricing.pricePerBaseUnit * packSize,
+          unitPrice: pricing.pricePerBaseUnit,
+          unit: pricing.unit,
+          qualityGrade: itemListing.qualityGrade
+        });
+      } else {
+        // Standard non-pack based item
+        // Check inventory availability
+        if (item.quantity > itemListing.availability.quantityAvailable) {
+          return next(new ErrorResponse(
+            `${itemListing.productId.name}: Only ${itemListing.availability.quantityAvailable} ${itemListing.availability.unit} available`,
+            400
+          ));
+        }
+
+        enrichedItems.push({
+          ...item,
+          productId: itemListing.productId._id,
+          productName: itemListing.productId.name,
+          isPackBased: false,
+          unitPrice: pricing ? pricing.pricePerBaseUnit || pricing.pricePerUnit : item.unitPrice,
+          unit: pricing ? pricing.unit : itemListing.availability.unit,
+          qualityGrade: itemListing.qualityGrade
+        });
+      }
+    }
+
+    // Create the order with enriched items
     const order = await Order.create({
-      restaurantId,
-      vendorId, // <-- Add the vendorId here
+      buyerId,
+      vendorId,
       placedBy: req.user.id,
-      items,
+      items: enrichedItems, // Use enriched items with pack-based information
       deliveryInfo,
       paymentInfo,
       notes,
@@ -91,12 +181,12 @@ exports.getOrders = async (req, res, next) => {
     let orders;
     if (req.user.role === "admin") {
       orders = await Order.find()
-        .populate("restaurantId", "name")
+        .populate("buyerId", "name")
         .populate("vendorId", "businessName");
     } else if (req.user.role === "vendor") {
       orders = await Order.getByVendor(req.user.vendorId, req.query);
     } else {
-      orders = await Order.getByRestaurant(req.user.restaurantId, req.query);
+      orders = await Order.getByRestaurant(req.user.buyerId, req.query);
     }
 
     res.status(200).json({
@@ -125,7 +215,7 @@ exports.approveOrder = async (req, res, next) => {
     }
 
     // Check if user owns this restaurant
-    if (order.restaurantId.toString() !== req.user.restaurantId.toString()) {
+    if (order.buyerId.toString() !== req.user.buyerId.toString()) {
       return next(
         new ErrorResponse("Not authorized to approve this order", 403)
       );
@@ -162,11 +252,7 @@ exports.updateOrderStatus = async (req, res, next) => {
     const order = await Order.findById(req.params.id)
       .populate({
         path: "items.listingId",
-        select: "vendorId inventoryId profitAnalytics",
-        populate: {
-          path: 'inventoryId',
-          select: 'currentStock analytics'
-        }
+        select: "vendorId profitAnalytics availability"
       })
       .populate('items.productId', 'name');
 
@@ -192,44 +278,49 @@ exports.updateOrderStatus = async (req, res, next) => {
     order.status = status;
     order.updatedBy = req.user.id;
 
-    // If order is being marked as delivered, update inventory and listing analytics
+    // If order is being marked as delivered, update listing analytics
     if (status === 'delivered' && previousStatus !== 'delivered') {
-      const inventoryUpdates = [];
       const listingUpdates = [];
 
       for (let item of order.items) {
         try {
           // Get the listing
           const listing = await Listing.findById(item.listingId._id);
-          if (listing && listing.inventoryId) {
-            // Record the sale in the listing (this will also update inventory)
-            const saleResult = await listing.recordSale(
-              item.quantity,
-              item.unitPrice,
-              order._id.toString()
-            );
+          if (listing) {
+            // Update listing statistics directly (non-inventory based for MVP)
+            listing.totalQuantitySold = (listing.totalQuantitySold || 0) + item.quantity;
+            listing.totalOrders = (listing.totalOrders || 0) + 1;
 
-            inventoryUpdates.push({
-              itemId: item._id,
-              productName: item.productName,
-              quantitySold: item.quantity,
-              salePrice: item.unitPrice,
-              success: true
-            });
+            // Update availability quantity (reduce stock)
+            if (listing.availability && listing.availability.quantityAvailable !== undefined) {
+              listing.availability.quantityAvailable = Math.max(
+                0,
+                listing.availability.quantityAvailable - item.quantity
+              );
+
+              // Auto-mark as out of stock if quantity reaches 0
+              if (listing.availability.quantityAvailable === 0) {
+                listing.status = 'out_of_stock';
+              }
+            }
+
+            await listing.save();
 
             listingUpdates.push({
               listingId: listing._id,
-              newAvailableQuantity: saleResult.updatedListing.availability.quantityAvailable,
+              productName: item.productName,
+              quantitySold: item.quantity,
+              newAvailableQuantity: listing.availability.quantityAvailable,
               success: true
             });
           }
-        } catch (inventoryError) {
-          console.error(`Failed to update inventory for item ${item._id}:`, inventoryError.message);
-          
-          inventoryUpdates.push({
+        } catch (updateError) {
+          console.error(`Failed to update listing for item ${item._id}:`, updateError.message);
+
+          listingUpdates.push({
             itemId: item._id,
             productName: item.productName,
-            error: inventoryError.message,
+            error: updateError.message,
             success: false
           });
 
@@ -241,10 +332,9 @@ exports.updateOrderStatus = async (req, res, next) => {
 
       res.status(200).json({
         success: true,
-        message: 'Order status updated and inventory synchronized',
+        message: 'Order status updated successfully',
         data: {
           order,
-          inventoryUpdates,
           listingUpdates
         }
       });
@@ -269,7 +359,7 @@ exports.updateOrderStatus = async (req, res, next) => {
 exports.getOrder = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id)
-      .populate("restaurantId", "name phone address")
+      .populate("buyerId", "name phone address")
       .populate("vendorId", "businessName phone address")
       .populate("placedBy", "name email")
       .populate("approvedBy", "name email")
@@ -288,11 +378,11 @@ exports.getOrder = async (req, res, next) => {
     if (req.user.role === "admin") {
       authorized = true;
     } else if (
-      req.user.role === "restaurantOwner" ||
-      req.user.role === "restaurantManager"
+      req.user.role === "buyerOwner" ||
+      req.user.role === "buyerManager"
     ) {
       authorized =
-        order.restaurantId._id.toString() === req.user.restaurantId.toString();
+        order.buyerId._id.toString() === req.user.buyerId.toString();
     } else if (req.user.role === "vendor") {
       authorized =
         order.vendorId._id.toString() === req.user.vendorId.toString();

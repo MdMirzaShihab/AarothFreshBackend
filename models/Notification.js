@@ -8,7 +8,7 @@ const NotificationSchema = new mongoose.Schema({
   },
   recipientType: {
     type: String,
-    enum: ['vendor', 'restaurantOwner', 'restaurantManager', 'admin'],
+    enum: ['vendor', 'buyerOwner', 'buyerManager', 'admin'],
     required: [true, 'Recipient type is required']
   },
   type: {
@@ -51,7 +51,7 @@ const NotificationSchema = new mongoose.Schema({
   relatedEntity: {
     entityType: {
       type: String,
-      enum: ['order', 'listing', 'product', 'vendor', 'restaurant', 'payment']
+      enum: ['order', 'listing', 'product', 'vendor', 'buyer', 'payment']
     },
     entityId: mongoose.Schema.Types.ObjectId,
     entityData: mongoose.Schema.Types.Mixed // Store relevant entity data snapshot

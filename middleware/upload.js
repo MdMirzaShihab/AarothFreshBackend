@@ -30,6 +30,16 @@ const categoryStorage = new CloudinaryStorage({
   }
 });
 
+// Create storage engine for markets
+const marketStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/markets',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 1200, height: 800, crop: 'limit' }]
+  }
+});
+
 // Create storage engine for products
 const productStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
@@ -50,11 +60,11 @@ const profileStorage = new CloudinaryStorage({
   }
 });
 
-// Create storage engine for restaurant logos
-const restaurantLogoStorage = new CloudinaryStorage({
+// Create storage engine for buyer logos
+const buyerLogoStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'aaroth-fresh/restaurant-logos',
+    folder: 'aaroth-fresh/buyer-logos',
     allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
     transformation: [{ width: 500, height: 500, crop: 'limit' }]
   }
@@ -136,6 +146,18 @@ module.exports = {
     return [upload.single(fieldName), handleMulterError];
   },
 
+  // Use this for market images
+  uploadMarketImage: (fieldName) => {
+    const upload = multer({
+      storage: marketStorage,
+      fileFilter,
+      limits: {
+        fileSize: 1 * 1024 * 1024 // 1MB
+      }
+    });
+    return [upload.single(fieldName), handleMulterError];
+  },
+
   // Use this for product images
   uploadProductImages: (fieldName, maxCount = 5) => {
     const upload = multer({
@@ -161,10 +183,10 @@ module.exports = {
     return [upload.single(fieldName), handleMulterError];
   },
 
-  // Use this for restaurant logo uploads
-  uploadRestaurantLogo: (fieldName) => {
+  // Use this for buyer logo uploads
+  uploadBuyerLogo: (fieldName) => {
     const upload = multer({
-      storage: restaurantLogoStorage,
+      storage: buyerLogoStorage,
       fileFilter,
       limits: {
         fileSize: 1 * 1024 * 1024 // 1MB
@@ -206,7 +228,7 @@ module.exports = {
       if (role === 'vendor') {
         storage = vendorLogoStorage;
       } else if (role === 'restaurantOwner') {
-        storage = restaurantLogoStorage;
+        storage = buyerLogoStorage;
       } else {
         // Skip file upload for non-business roles
         return next();

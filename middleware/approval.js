@@ -9,10 +9,10 @@ const { ErrorResponse } = require('./error');
  * @returns {Function} Express middleware function
  */
 const requireApproval = (options = {}) => {
-  const { 
-    roles = ['vendor', 'restaurantOwner', 'restaurantManager'], 
+  const {
+    roles = ['vendor', 'buyerOwner', 'buyerManager'],
     action = 'perform this action',
-    allowUnverified = false 
+    allowUnverified = false
   } = options;
 
   return (req, res, next) => {
@@ -46,14 +46,14 @@ const requireApproval = (options = {}) => {
       businessType = 'vendor';
       businessName = user.vendorId.businessName;
       adminNotes = user.vendorId.adminNotes;
-    } else if (['restaurantOwner', 'restaurantManager'].includes(user.role)) {
-      if (!user.restaurantId) {
-        return next(new ErrorResponse('Restaurant information not found', 400));
+    } else if (['buyerOwner', 'buyerManager'].includes(user.role)) {
+      if (!user.buyerId) {
+        return next(new ErrorResponse('Buyer information not found', 400));
       }
-      verificationStatus = user.restaurantId.verificationStatus || 'pending';
-      businessType = 'restaurant';
-      businessName = user.restaurantId.name;
-      adminNotes = user.restaurantId.adminNotes;
+      verificationStatus = user.buyerId.verificationStatus || 'pending';
+      businessType = user.buyerId.displayType || 'buyer';
+      businessName = user.buyerId.name;
+      adminNotes = user.buyerId.adminNotes;
     }
 
     if (verificationStatus !== 'approved' && !allowUnverified) {
@@ -80,11 +80,11 @@ const requireVendorApproval = (action = 'manage listings') => {
 };
 
 /**
- * Middleware to check restaurant approval specifically for order operations
+ * Middleware to check buyer approval specifically for order operations
  */
-const requireRestaurantApproval = (action = 'place orders') => {
+const requireBuyerApproval = (action = 'place orders') => {
   return requireApproval({
-    roles: ['restaurantOwner', 'restaurantManager'],
+    roles: ['buyerOwner', 'buyerManager'],
     action,
     allowPending: false
   });
@@ -106,7 +106,7 @@ const addApprovalStatus = (req, res, next) => {
     status: user.approvalStatus,
     canCreateListings: canUserCreateListings(user),
     canPlaceOrders: canUserPlaceOrders(user),
-    canManageRestaurant: canUserManageRestaurant(user),
+    canManageBuyer: canUserManageBuyer(user),
     approvalDate: user.approvalDate,
     rejectionReason: user.rejectionReason,
     nextSteps: getNextSteps(user)
@@ -128,18 +128,18 @@ function canUserCreateListings(user) {
  * Helper function to determine if user can place orders
  */
 function canUserPlaceOrders(user) {
-  if (!['restaurantOwner', 'restaurantManager'].includes(user.role)) return false;
-  if (!user.restaurantId) return false;
-  return user.restaurantId.verificationStatus === 'approved';
+  if (!['buyerOwner', 'buyerManager'].includes(user.role)) return false;
+  if (!user.buyerId) return false;
+  return user.buyerId.verificationStatus === 'approved';
 }
 
 /**
- * Helper function to determine if user can manage restaurant
+ * Helper function to determine if user can manage buyer
  */
-function canUserManageRestaurant(user) {
-  if (!['restaurantOwner', 'restaurantManager'].includes(user.role)) return false;
-  if (!user.restaurantId) return false;
-  return user.restaurantId.verificationStatus === 'approved';
+function canUserManageBuyer(user) {
+  if (!['buyerOwner', 'buyerManager'].includes(user.role)) return false;
+  if (!user.buyerId) return false;
+  return user.buyerId.verificationStatus === 'approved';
 }
 
 /**
@@ -154,10 +154,10 @@ function getBusinessVerificationMessage(role, businessType, verificationStatus, 
   } else if (verificationStatus === 'pending') {
     const messages = {
       vendor: 'As a vendor, your business is pending admin verification before you can create listings or receive orders.',
-      restaurantOwner: 'As a restaurant owner, your restaurant is pending admin verification before you can place orders.',
-      restaurantManager: 'As a restaurant manager, this restaurant is pending admin verification before you can place orders or manage operations.'
+      buyerOwner: `As a ${businessType} owner, your business is pending admin verification before you can place orders.`,
+      buyerManager: `As a ${businessType} manager, this business is pending admin verification before you can place orders or manage operations.`
     };
-    
+
     return messages[role] || `Your ${businessType} is pending admin verification to access full platform features.`;
   }
   
@@ -177,10 +177,10 @@ function getNextSteps(user) {
     verificationStatus = user.vendorId.verificationStatus || 'pending';
     businessType = 'vendor business';
     adminNotes = user.vendorId.adminNotes;
-  } else if (['restaurantOwner', 'restaurantManager'].includes(user.role) && user.restaurantId) {
-    verificationStatus = user.restaurantId.verificationStatus || 'pending';
-    businessType = 'restaurant';
-    adminNotes = user.restaurantId.adminNotes;
+  } else if (['buyerOwner', 'buyerManager'].includes(user.role) && user.buyerId) {
+    verificationStatus = user.buyerId.verificationStatus || 'pending';
+    businessType = user.buyerId.displayType || 'buyer';
+    adminNotes = user.buyerId.adminNotes;
   }
 
   if (verificationStatus === 'approved') {
@@ -188,20 +188,20 @@ function getNextSteps(user) {
       vendor: [
         'Your vendor business is verified',
         'You can now create and manage product listings',
-        'Start receiving orders from restaurants',
+        'Start receiving orders from buyers',
         'Complete your business profile for better visibility'
       ],
-      restaurantOwner: [
-        'Your restaurant is verified',
+      buyerOwner: [
+        `Your ${businessType.toLowerCase()} is verified`,
         'You can now place orders from verified vendors',
-        'Manage your restaurant profile and settings',
-        'Add restaurant managers if needed'
+        'Manage your business profile and settings',
+        'Add managers to your account if needed'
       ],
-      restaurantManager: [
-        'This restaurant is verified',
-        'You can now place orders for your restaurant',
+      buyerManager: [
+        `This ${businessType.toLowerCase()} is verified`,
+        'You can now place orders for your business',
         'View order history and manage current orders',
-        'Update restaurant operational details'
+        'Update business operational details'
       ]
     };
     return roleSpecificSteps[user.role] || ['You have full access to all platform features'];
@@ -251,10 +251,10 @@ const protectApprovalFields = (req, res, next) => {
 module.exports = {
   requireApproval,
   requireVendorApproval,
-  requireRestaurantApproval,
+  requireBuyerApproval,
   addApprovalStatus,
   protectApprovalFields,
   canUserCreateListings,
   canUserPlaceOrders,
-  canUserManageRestaurant
+  canUserManageBuyer
 };

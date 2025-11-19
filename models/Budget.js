@@ -1,10 +1,10 @@
 const mongoose = require('mongoose');
 
 const BudgetSchema = new mongoose.Schema({
-  restaurantId: {
+  buyerId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Restaurant',
-    required: [true, 'Restaurant ID is required']
+    ref: 'Buyer',
+    required: [true, 'Buyer ID is required']
   },
   budgetPeriod: {
     type: String,
@@ -98,8 +98,8 @@ const BudgetSchema = new mongoose.Schema({
 
 BudgetSchema.virtual('currentSpending', {
   ref: 'Order',
-  localField: 'restaurantId',
-  foreignField: 'restaurantId',
+  localField: 'buyerId',
+  foreignField: 'buyerId',
   justOne: false,
   match: function() {
     const start = this.budgetPeriod === 'monthly' 
@@ -152,7 +152,7 @@ BudgetSchema.methods.getCategorySpending = async function() {
   return await Order.aggregate([
     {
       $match: {
-        restaurantId: this.restaurantId,
+        buyerId: this.buyerId,
         createdAt: { $gte: start, $lte: end },
         status: { $ne: 'cancelled' }
       }
@@ -186,10 +186,10 @@ BudgetSchema.methods.getCategorySpending = async function() {
   ]);
 };
 
-BudgetSchema.statics.getCurrentBudget = async function(restaurantId, period = 'monthly') {
+BudgetSchema.statics.getCurrentBudget = async function(buyerId, period = 'monthly') {
   const now = new Date();
   const query = {
-    restaurantId: restaurantId,
+    buyerId: buyerId,
     budgetPeriod: period,
     year: now.getFullYear(),
     isActive: true,
@@ -205,13 +205,13 @@ BudgetSchema.statics.getCurrentBudget = async function(restaurantId, period = 'm
   return await this.findOne(query);
 };
 
-BudgetSchema.statics.getBudgetHistory = async function(restaurantId, months = 12) {
+BudgetSchema.statics.getBudgetHistory = async function(buyerId, months = 12) {
   const endDate = new Date();
   const startDate = new Date();
   startDate.setMonth(endDate.getMonth() - months);
 
   return await this.find({
-    restaurantId: restaurantId,
+    buyerId: buyerId,
     budgetPeriod: 'monthly',
     year: { $gte: startDate.getFullYear() },
     $or: [
@@ -224,9 +224,9 @@ BudgetSchema.statics.getBudgetHistory = async function(restaurantId, months = 12
   }).sort({ year: 1, month: 1 });
 };
 
-BudgetSchema.index({ restaurantId: 1, budgetPeriod: 1, year: 1, month: 1 }, { unique: true });
-BudgetSchema.index({ restaurantId: 1, budgetPeriod: 1, year: 1, quarter: 1 }, { unique: true });
-BudgetSchema.index({ restaurantId: 1, isActive: 1, status: 1 });
+BudgetSchema.index({ buyerId: 1, budgetPeriod: 1, year: 1, month: 1 }, { unique: true });
+BudgetSchema.index({ buyerId: 1, budgetPeriod: 1, year: 1, quarter: 1 }, { unique: true });
+BudgetSchema.index({ buyerId: 1, isActive: 1, status: 1 });
 BudgetSchema.index({ createdBy: 1, createdAt: -1 });
 BudgetSchema.index({ year: 1, month: 1 });
 

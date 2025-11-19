@@ -1,7 +1,7 @@
 const { validationResult } = require('express-validator');
 const mongoose = require('mongoose');
 const User = require('../models/User');
-const Restaurant = require('../models/Restaurant');
+const Buyer = require('../models/Buyer');
 const Order = require('../models/Order');
 const Listing = require('../models/Listing');
 const Product = require('../models/Product');
@@ -49,9 +49,9 @@ const getDateRange = (period, startDate, endDate) => {
 };
 
 /**
- * @desc    Get restaurant dashboard overview with key metrics
- * @route   GET /api/v1/restaurant-dashboard/overview
- * @access  Private (Restaurant Owner/Manager only)
+ * @desc    Get buyer dashboard overview with key metrics
+ * @route   GET /api/v1/buyer-dashboard/overview
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getDashboardOverview = async (req, res, next) => {
   try {
@@ -60,7 +60,7 @@ exports.getDashboardOverview = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
@@ -82,7 +82,7 @@ exports.getDashboardOverview = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -101,7 +101,7 @@ exports.getDashboardOverview = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: prevStart, $lte: prevEnd }
           }
         },
@@ -114,21 +114,21 @@ exports.getDashboardOverview = async (req, res, next) => {
         }
       ]),
       // Active vendors count
-      Order.distinct('vendorId', { restaurantId }).then(vendors => vendors.length),
+      Order.distinct('vendorId', { buyerId }).then(vendors => vendors.length),
       // Total unique products purchased
       Order.aggregate([
-        { $match: { restaurantId } },
+        { $match: { buyerId } },
         { $unwind: '$items' },
         { $group: { _id: '$items.productId' } },
         { $count: 'totalProducts' }
       ]),
       // Pending orders
       Order.countDocuments({ 
-        restaurantId, 
+        buyerId, 
         status: { $in: ['pending', 'confirmed', 'processing'] } 
       }),
       // Recent orders
-      Order.find({ restaurantId })
+      Order.find({ buyerId })
         .populate('vendorId', 'businessName')
         .populate('items.productId', 'name')
         .sort({ createdAt: -1 })
@@ -137,7 +137,7 @@ exports.getDashboardOverview = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -227,8 +227,8 @@ exports.getDashboardOverview = async (req, res, next) => {
 
 /**
  * @desc    Get spending analytics and trends
- * @route   GET /api/v1/restaurant-dashboard/spending
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/spending
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getSpendingAnalytics = async (req, res, next) => {
   try {
@@ -237,7 +237,7 @@ exports.getSpendingAnalytics = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
@@ -251,7 +251,7 @@ exports.getSpendingAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -270,7 +270,7 @@ exports.getSpendingAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -296,7 +296,7 @@ exports.getSpendingAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -343,7 +343,7 @@ exports.getSpendingAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 12)) }
           }
         },
@@ -375,7 +375,7 @@ exports.getSpendingAnalytics = async (req, res, next) => {
     const projectedEndOfMonthSpending = totalSpending + (averageDailySpending * daysRemaining);
     
     // Get current month budget for comparison
-    const currentBudget = await Budget.getCurrentBudget(restaurantId, 'monthly');
+    const currentBudget = await Budget.getCurrentBudget(buyerId, 'monthly');
     const monthlyBudgetLimit = currentBudget ? currentBudget.totalBudgetLimit : 10000;
 
     const analytics = {
@@ -452,8 +452,8 @@ exports.getSpendingAnalytics = async (req, res, next) => {
 
 /**
  * @desc    Get order analytics (volume, frequency, patterns)
- * @route   GET /api/v1/restaurant-dashboard/orders
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/orders
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getOrderAnalytics = async (req, res, next) => {
   try {
@@ -462,7 +462,7 @@ exports.getOrderAnalytics = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
@@ -477,7 +477,7 @@ exports.getOrderAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -507,7 +507,7 @@ exports.getOrderAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -523,7 +523,7 @@ exports.getOrderAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -541,7 +541,7 @@ exports.getOrderAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -568,7 +568,7 @@ exports.getOrderAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             status: 'delivered',
             deliveryDate: { $exists: true },
             createdAt: { $gte: start, $lte: end }
@@ -677,8 +677,8 @@ exports.getOrderAnalytics = async (req, res, next) => {
 
 /**
  * @desc    Get vendor insights and performance analytics
- * @route   GET /api/v1/restaurant-dashboard/vendors
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/vendors
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getVendorInsights = async (req, res, next) => {
   try {
@@ -687,7 +687,7 @@ exports.getVendorInsights = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { period = 'month', startDate, endDate, sort = 'spending', limit = 20 } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
@@ -703,7 +703,7 @@ exports.getVendorInsights = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -760,7 +760,7 @@ exports.getVendorInsights = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -912,8 +912,8 @@ const calculateLoyaltyScore = (vendor, reliability) => {
 
 /**
  * @desc    Get budget tracking and spending limits
- * @route   GET /api/v1/restaurant-dashboard/budget
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/budget
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getBudgetTracking = async (req, res, next) => {
   try {
@@ -922,12 +922,12 @@ exports.getBudgetTracking = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { period = 'month', startDate, endDate, category } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
     // Get current budget from database
-    const currentBudget = await Budget.getCurrentBudget(restaurantId, period === 'quarter' ? 'quarterly' : 'monthly');
+    const currentBudget = await Budget.getCurrentBudget(buyerId, period === 'quarter' ? 'quarterly' : 'monthly');
     
     // Default budget limits if no budget is set
     const defaultBudgetLimits = {
@@ -959,7 +959,7 @@ exports.getBudgetTracking = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -975,7 +975,7 @@ exports.getBudgetTracking = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end },
             ...(category && { 'items.productId': { $exists: true } })
           }
@@ -1022,7 +1022,7 @@ exports.getBudgetTracking = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end }
           }
         },
@@ -1040,7 +1040,7 @@ exports.getBudgetTracking = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { 
               $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
               $lte: new Date()
@@ -1184,9 +1184,9 @@ const generateBudgetRecommendations = (spending, limit, categorySpending) => {
 };
 
 /**
- * @desc    Create a new budget for restaurant
- * @route   POST /api/v1/restaurant-dashboard/budget
- * @access  Private (Restaurant Owner only)
+ * @desc    Create a new budget for buyer
+ * @route   POST /api/v1/buyer-dashboard/budget
+ * @access  Private (Buyer Owner only)
  */
 exports.createBudget = async (req, res, next) => {
   try {
@@ -1195,12 +1195,12 @@ exports.createBudget = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { budgetPeriod, year, month, quarter, totalBudgetLimit, categoryLimits, notes } = req.body;
 
     // Check if budget already exists for this period
     const existingBudget = await Budget.findOne({
-      restaurantId,
+      buyerId,
       budgetPeriod,
       year,
       ...(budgetPeriod === 'monthly' && { month }),
@@ -1238,7 +1238,7 @@ exports.createBudget = async (req, res, next) => {
     }
 
     const budget = new Budget({
-      restaurantId,
+      buyerId,
       budgetPeriod,
       year,
       ...(budgetPeriod === 'monthly' && { month }),
@@ -1263,8 +1263,8 @@ exports.createBudget = async (req, res, next) => {
 
 /**
  * @desc    Update an existing budget
- * @route   PUT /api/v1/restaurant-dashboard/budget/:budgetId
- * @access  Private (Restaurant Owner only)
+ * @route   PUT /api/v1/buyer-dashboard/budget/:budgetId
+ * @access  Private (Buyer Owner only)
  */
 exports.updateBudget = async (req, res, next) => {
   try {
@@ -1274,12 +1274,12 @@ exports.updateBudget = async (req, res, next) => {
     }
 
     const { budgetId } = req.params;
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { totalBudgetLimit, categoryLimits, notes, status } = req.body;
 
     const budget = await Budget.findOne({ 
       _id: budgetId, 
-      restaurantId: restaurantId 
+      buyerId: buyerId 
     });
 
     if (!budget) {
@@ -1329,8 +1329,8 @@ exports.updateBudget = async (req, res, next) => {
 
 /**
  * @desc    Get price analytics and average price tracking
- * @route   GET /api/v1/restaurant-dashboard/price-analytics
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/price-analytics
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getPriceAnalytics = async (req, res, next) => {
   try {
@@ -1339,7 +1339,7 @@ exports.getPriceAnalytics = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { groupBy = 'category', productId, categoryId, period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
@@ -1353,7 +1353,7 @@ exports.getPriceAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: last12Months },
             status: { $ne: 'cancelled' }
           }
@@ -1411,7 +1411,7 @@ exports.getPriceAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: last12Months },
             status: { $ne: 'cancelled' }
           }
@@ -1465,7 +1465,7 @@ exports.getPriceAnalytics = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end },
             status: { $ne: 'cancelled' }
           }
@@ -1606,8 +1606,8 @@ exports.getPriceAnalytics = async (req, res, next) => {
 
 /**
  * @desc    Get inventory planning and consumption insights
- * @route   GET /api/v1/restaurant-dashboard/inventory-planning
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/inventory-planning
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getInventoryPlanning = async (req, res, next) => {
   try {
@@ -1616,7 +1616,7 @@ exports.getInventoryPlanning = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
@@ -1625,7 +1625,7 @@ exports.getInventoryPlanning = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: start, $lte: end },
             status: { $ne: 'cancelled' }
           }
@@ -1688,7 +1688,7 @@ exports.getInventoryPlanning = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 12)) }
           }
         },
@@ -1729,7 +1729,7 @@ exports.getInventoryPlanning = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: new Date(new Date().setDate(new Date().getDate() - 30)) }
           }
         },
@@ -1762,7 +1762,7 @@ exports.getInventoryPlanning = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             status: 'cancelled',
             createdAt: { $gte: start, $lte: end }
           }
@@ -1928,8 +1928,8 @@ const generateInventoryAlerts = (consumptionPatterns, stockPrediction) => {
 
 /**
  * @desc    Get detailed order history with filters
- * @route   GET /api/v1/restaurant-dashboard/order-history
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/order-history
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getOrderHistory = async (req, res, next) => {
   try {
@@ -1938,7 +1938,7 @@ exports.getOrderHistory = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { 
       period = 'month', 
       startDate, 
@@ -1953,7 +1953,7 @@ exports.getOrderHistory = async (req, res, next) => {
     const skip = (page - 1) * limit;
     
     let matchConditions = {
-      restaurantId: restaurantId,
+      buyerId: buyerId,
       createdAt: { $gte: start, $lte: end }
     };
 
@@ -1977,7 +1977,7 @@ exports.getOrderHistory = async (req, res, next) => {
       Order.countDocuments(matchConditions),
       
       Order.aggregate([
-        { $match: { restaurantId: restaurantId, createdAt: { $gte: start, $lte: end } } },
+        { $match: { buyerId: buyerId, createdAt: { $gte: start, $lte: end } } },
         { $group: { _id: '$status', count: { $sum: 1 }, totalAmount: { $sum: '$totalAmount' } } }
       ])
     ]);
@@ -2045,8 +2045,8 @@ exports.getOrderHistory = async (req, res, next) => {
 
 /**
  * @desc    Get favorite vendors and frequently purchased items
- * @route   GET /api/v1/restaurant-dashboard/favorite-vendors
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/favorite-vendors
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getFavoriteVendors = async (req, res, next) => {
   try {
@@ -2055,7 +2055,7 @@ exports.getFavoriteVendors = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const restaurantId = req.user.restaurantId;
+    const buyerId = req.user.buyerId;
     const { limit = 10 } = req.query;
 
     const [favoriteVendors, frequentProducts, recentFavorites] = await Promise.all([
@@ -2063,7 +2063,7 @@ exports.getFavoriteVendors = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 6)) }
           }
         },
@@ -2116,7 +2116,7 @@ exports.getFavoriteVendors = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 3)) }
           }
         },
@@ -2159,7 +2159,7 @@ exports.getFavoriteVendors = async (req, res, next) => {
       Order.aggregate([
         {
           $match: {
-            restaurantId: restaurantId,
+            buyerId: buyerId,
             createdAt: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 2)) }
           }
         },
@@ -2278,8 +2278,8 @@ const calculateReorderUrgency = (product) => {
 
 /**
  * @desc    Get detailed cost analysis and pricing trends
- * @route   GET /api/v1/restaurant-dashboard/cost-analysis
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/cost-analysis
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getCostAnalysis = async (req, res, next) => {
   try {
@@ -2299,8 +2299,8 @@ exports.getCostAnalysis = async (req, res, next) => {
 
 /**
  * @desc    Get purchase patterns and seasonal trends
- * @route   GET /api/v1/restaurant-dashboard/purchase-patterns
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/purchase-patterns
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getPurchasePatterns = async (req, res, next) => {
   try {
@@ -2318,8 +2318,8 @@ exports.getPurchasePatterns = async (req, res, next) => {
 
 /**
  * @desc    Get delivery tracking and logistics analytics
- * @route   GET /api/v1/restaurant-dashboard/delivery-tracking
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/delivery-tracking
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getDeliveryTracking = async (req, res, next) => {
   try {
@@ -2337,8 +2337,8 @@ exports.getDeliveryTracking = async (req, res, next) => {
 
 /**
  * @desc    Get team member activity and order management
- * @route   GET /api/v1/restaurant-dashboard/team-activity
- * @access  Private (Restaurant Owner only)
+ * @route   GET /api/v1/buyer-dashboard/team-activity
+ * @access  Private (Buyer Owner only)
  */
 exports.getTeamActivity = async (req, res, next) => {
   try {
@@ -2355,9 +2355,9 @@ exports.getTeamActivity = async (req, res, next) => {
 };
 
 /**
- * @desc    Get restaurant notifications and alerts
- * @route   GET /api/v1/restaurant-dashboard/notifications
- * @access  Private (Restaurant Owner/Manager only)
+ * @desc    Get buyer notifications and alerts
+ * @route   GET /api/v1/buyer-dashboard/notifications
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getNotifications = async (req, res, next) => {
   try {
@@ -2426,8 +2426,8 @@ exports.getNotifications = async (req, res, next) => {
 
 /**
  * @desc    Get smart reorder suggestions
- * @route   GET /api/v1/restaurant-dashboard/reorder-suggestions
- * @access  Private (Restaurant Owner/Manager only)
+ * @route   GET /api/v1/buyer-dashboard/reorder-suggestions
+ * @access  Private (Buyer Owner/Manager only)
  */
 exports.getReorderSuggestions = async (req, res, next) => {
   try {

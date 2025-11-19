@@ -50,8 +50,8 @@ const protect = async (req, res, next) => {
         if (user.vendorId) {
           await user.populate('vendorId');
         }
-        if (user.restaurantId) {
-          await user.populate('restaurantId');
+        if (user.buyerId) {
+          await user.populate('buyerId');
         }
       } catch (populationError) {
         console.warn('User population warning:', populationError.message);
@@ -118,8 +118,8 @@ const checkOwnership = (resourceModel) => {
         }
       }
 
-      if ((req.user.role === 'restaurantOwner' || req.user.role === 'restaurantManager') && resource.restaurantId) {
-        if (resource.restaurantId.toString() !== req.user.restaurantId._id.toString()) {
+      if ((req.user.role === 'buyerOwner' || req.user.role === 'buyerManager') && resource.buyerId) {
+        if (resource.buyerId.toString() !== req.user.buyerId._id.toString()) {
           return next(new ErrorResponse('Not authorized to access this resource', 403));
         }
       }

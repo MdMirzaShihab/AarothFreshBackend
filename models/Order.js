@@ -5,10 +5,10 @@ const OrderSchema = new mongoose.Schema({
     type: String,
     unique: true,
   },
-  restaurantId: {
+  buyerId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Restaurant',
-    required: [true, 'Restaurant ID is required']
+    ref: 'Buyer',
+    required: [true, 'Buyer ID is required']
   },
   vendorId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -31,24 +31,55 @@ const OrderSchema = new mongoose.Schema({
       type: String,
       required: true
     },
+
+    // Pack-based selling support
+    isPackBased: {
+      type: Boolean,
+      default: false
+    },
+
+    // If pack-based, number of packs ordered
+    numberOfPacks: {
+      type: Number,
+      min: [1, 'Number of packs must be at least 1']
+    },
+
+    // Pack size (how many base units per pack)
+    packSize: {
+      type: Number,
+      min: [0.01, 'Pack size must be greater than 0']
+    },
+
+    // Price per pack (when pack-based selling)
+    pricePerPack: {
+      type: Number,
+      min: [0, 'Price per pack cannot be negative']
+    },
+
+    // Quantity in base units (e.g., kg, pieces)
     quantity: {
       type: Number,
       required: [true, 'Quantity is required'],
-      min: [1, 'Quantity must be at least 1']
+      min: [0.01, 'Quantity must be greater than 0']
     },
+
     unit: {
       type: String,
       required: true
     },
+
+    // Price per base unit (e.g., price per kg)
     unitPrice: {
       type: Number,
       required: [true, 'Unit price is required'],
       min: [0, 'Unit price cannot be negative']
     },
+
     totalPrice: {
       type: Number,
       min: [0, 'Total price cannot be negative']
     },
+
     qualityGrade: String,
     specialInstructions: String
   }],
@@ -159,9 +190,9 @@ const OrderSchema = new mongoose.Schema({
   },
   // Notes and communication
   notes: {
-    restaurant: String, // Notes from restaurant
-    vendor: String,     // Notes from vendor
-    internal: String    // Internal notes
+    buyer: String,   // Notes from buyer (restaurant/corporate/etc)
+    vendor: String,  // Notes from vendor
+    internal: String // Internal notes
   },
   // Status history for tracking
   statusHistory: [{
@@ -183,7 +214,7 @@ const OrderSchema = new mongoose.Schema({
   }],
   // Rating and feedback
   rating: {
-    restaurantRating: {
+    buyerRating: {
       score: {
         type: Number,
         min: [1, 'Rating must be at least 1'],
@@ -268,15 +299,21 @@ OrderSchema.pre('save', function(next) {
   next();
 });
 
-// Calculate totals before saving
+// Calculate totals before saving (with pack-based pricing support)
 OrderSchema.pre('save', function(next) {
   if (this.isModified('items') || this.isModified('deliveryFee') || this.isModified('tax') || this.isModified('discount')) {
     // Calculate subtotal
     this.subtotal = this.items.reduce((total, item) => {
-      item.totalPrice = item.quantity * item.unitPrice;
+      // For pack-based items, calculate using pack price
+      if (item.isPackBased && item.numberOfPacks && item.pricePerPack) {
+        item.totalPrice = item.numberOfPacks * item.pricePerPack;
+      } else {
+        // Standard calculation: quantity * unitPrice
+        item.totalPrice = item.quantity * item.unitPrice;
+      }
       return total + item.totalPrice;
     }, 0);
-    
+
     // Calculate total amount
     this.totalAmount = this.subtotal + this.deliveryFee + this.tax - this.discount;
   }
@@ -312,8 +349,8 @@ OrderSchema.methods.canBeModified = function() {
   return this.status === 'pending_approval';
 };
 
-// Static method to get orders by restaurant
-OrderSchema.statics.getByRestaurant = async function(restaurantId, options = {}) {
+// Static method to get orders by buyer
+OrderSchema.statics.getByBuyer = async function(buyerId, options = {}) {
   const {
     status,
     startDate,
@@ -324,8 +361,8 @@ OrderSchema.statics.getByRestaurant = async function(restaurantId, options = {})
     sortOrder = 'desc'
   } = options;
 
-  let query = { restaurantId };
-  
+  let query = { buyerId };
+
   if (status) query.status = status;
   if (startDate || endDate) {
     query.orderDate = {};
@@ -371,7 +408,7 @@ OrderSchema.statics.getByVendor = async function(vendorId, options = {}) {
   const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
   return await this.find(query)
-    .populate('restaurantId', 'name')
+    .populate('buyerId', 'name')
     .populate('placedBy', 'name email')
     .populate('approvedBy', 'name email')
     .populate('items.productId', 'name')
@@ -382,7 +419,7 @@ OrderSchema.statics.getByVendor = async function(vendorId, options = {}) {
 
 // Indexes for better query performance
 OrderSchema.index({ orderNumber: 1 });
-OrderSchema.index({ restaurantId: 1, status: 1, orderDate: -1 });
+OrderSchema.index({ buyerId: 1, status: 1, orderDate: -1 });
 OrderSchema.index({ vendorId: 1, status: 1, orderDate: -1 });
 OrderSchema.index({ status: 1, orderDate: -1 });
 OrderSchema.index({ placedBy: 1 });

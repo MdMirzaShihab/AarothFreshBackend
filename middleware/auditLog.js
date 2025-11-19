@@ -30,12 +30,16 @@ const auditLog = (action, entityType, description, options = {}) => {
             } = options;
 
             // Extract entity ID from params or response data
-            let entityId = req.params.id;
+            let entityId = req.params.id || null;
             if (!entityId && data.data && data.data._id) {
               entityId = data.data._id;
             }
             if (!entityId && data.data && data.data.id) {
               entityId = data.data.id;
+            }
+            // Ensure entityId is null instead of undefined
+            if (!entityId) {
+              entityId = null;
             }
 
             // Capture changes if available

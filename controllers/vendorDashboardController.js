@@ -1,7 +1,6 @@
 const { validationResult } = require('express-validator');
 const Order = require('../models/Order');
 const Listing = require('../models/Listing');
-const VendorInventory = require('../models/VendorInventory');
 const { ErrorResponse } = require('../middleware/error');
 
 /**
@@ -119,8 +118,6 @@ exports.getDashboardOverview = async (req, res, next) => {
       activeListings,
       totalProducts,
       averageRating,
-      inventoryHealth,
-      inventoryAlerts,
       recentOrders
     ] = await Promise.all([
       // Current period order stats
@@ -273,33 +270,9 @@ exports.getDashboardOverview = async (req, res, next) => {
         { $match: { vendorId } },
         { $group: { _id: null, avgRating: { $avg: '$rating.average' } } }
       ]),
-      // Inventory health summary
-      VendorInventory.aggregate([
-        { $match: { vendorId } },
-        {
-          $group: {
-            _id: null,
-            totalInventoryItems: { $sum: 1 },
-            totalValue: { $sum: { $multiply: ['$availableQuantity', '$averagePurchasePrice'] } },
-            activeItems: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
-            lowStockItems: { $sum: { $cond: [{ $eq: ['$status', 'low_stock'] }, 1, 0] } },
-            outOfStockItems: { $sum: { $cond: [{ $eq: ['$status', 'out_of_stock'] }, 1, 0] } },
-            overstockedItems: { $sum: { $cond: [{ $eq: ['$status', 'overstocked'] }, 1, 0] } }
-          }
-        }
-      ]),
-      // Critical inventory alerts count
-      VendorInventory.countDocuments({
-        vendorId,
-        $or: [
-          { 'alerts.severity': 'critical' },
-          { 'alerts.severity': 'high' }
-        ],
-        'alerts.isRead': false
-      }),
       // Recent orders
       Order.find({ vendorId })
-        .populate('restaurantId', 'name')
+        .populate('buyerId', 'name')
         .populate('items.productId', 'name')
         .sort({ createdAt: -1 })
         .limit(5)
@@ -307,18 +280,9 @@ exports.getDashboardOverview = async (req, res, next) => {
 
     const current = currentStats[0] || { totalRevenue: 0, totalOrders: 0, totalQuantity: 0, averageOrderValue: 0 };
     const previous = previousStats[0] || { totalRevenue: 0, totalOrders: 0 };
-    
+
     const currentProfit = currentProfitStats[0] || { totalRevenue: 0, totalCost: 0, grossProfit: 0, profitableListings: 0 };
     const previousProfit = previousProfitStats[0] || { totalRevenue: 0, totalCost: 0, grossProfit: 0 };
-    
-    const inventoryStats = inventoryHealth[0] || {
-      totalInventoryItems: 0,
-      totalValue: 0,
-      activeItems: 0,
-      lowStockItems: 0,
-      outOfStockItems: 0,
-      overstockedItems: 0
-    };
 
     // Calculate growth percentages
     const revenueGrowth = previous.totalRevenue ? 
@@ -329,13 +293,8 @@ exports.getDashboardOverview = async (req, res, next) => {
       ((currentProfit.grossProfit - previousProfit.grossProfit) / previousProfit.grossProfit * 100) : 0;
 
     // Calculate profit margin
-    const overallProfitMargin = currentProfit.totalRevenue ? 
+    const overallProfitMargin = currentProfit.totalRevenue ?
       ((currentProfit.grossProfit / currentProfit.totalRevenue) * 100) : 0;
-
-    // Calculate inventory health score (0-100)
-    const totalItems = inventoryStats.totalInventoryItems;
-    const healthyItems = inventoryStats.activeItems;
-    const inventoryHealthScore = totalItems ? Math.round((healthyItems / totalItems) * 100) : 100;
 
     const overview = {
       period: {
@@ -369,36 +328,17 @@ exports.getDashboardOverview = async (req, res, next) => {
         listingActivationRate: totalListings ? Math.round((activeListings / totalListings) * 100) : 0,
         profitabilityRate: totalListings ? Math.round((currentProfit.profitableListings / totalListings) * 100) : 0
       },
-      inventoryHealth: {
-        totalItems: inventoryStats.totalInventoryItems,
-        totalValue: Math.round(inventoryStats.totalValue * 100) / 100,
-        healthScore: inventoryHealthScore,
-        activeItems: inventoryStats.activeItems,
-        lowStockItems: inventoryStats.lowStockItems,
-        outOfStockItems: inventoryStats.outOfStockItems,
-        overstockedItems: inventoryStats.overstockedItems,
-        criticalAlerts: inventoryAlerts,
-        statusDistribution: {
-          active: inventoryStats.activeItems,
-          lowStock: inventoryStats.lowStockItems,
-          outOfStock: inventoryStats.outOfStockItems,
-          overstocked: inventoryStats.overstockedItems
-        }
-      },
       financialSummary: {
         totalRevenue: currentProfit.totalRevenue,
         totalCosts: currentProfit.totalCost,
         grossProfit: currentProfit.grossProfit,
-        profitMargin: overallProfitMargin,
-        inventoryValue: inventoryStats.totalValue,
-        returnOnInventory: inventoryStats.totalValue ? 
-          Math.round((currentProfit.grossProfit / inventoryStats.totalValue) * 100 * 100) / 100 : 0
+        profitMargin: overallProfitMargin
       },
       recentActivity: {
         recentOrders: recentOrders.map(order => ({
           id: order._id,
           orderNumber: order.orderNumber,
-          restaurant: order.restaurantId.name,
+          buyer: order.buyerId.name,
           amount: order.totalAmount,
           status: order.status,
           items: order.items.length,
@@ -431,10 +371,8 @@ exports.getRevenueAnalytics = async (req, res, next) => {
     const vendorId = req.user.vendorId;
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
-    
-    // Get inventory analytics for cost calculations
 
-    const [dailyRevenue, revenueByStatus, revenueByProduct, monthlyTrends, inventoryAnalytics, profitByProduct] = await Promise.all([
+    const [dailyRevenue, revenueByStatus, revenueByProduct, monthlyTrends, profitByProduct] = await Promise.all([
       // Daily revenue breakdown
       Order.aggregate([
         {
@@ -526,16 +464,12 @@ exports.getRevenueAnalytics = async (req, res, next) => {
         },
         { $sort: { '_id.year': 1, '_id.month': 1 } }
       ]),
-      
-      // Get comprehensive inventory analytics for profit calculations
-      VendorInventory.getInventoryAnalytics(vendorId, start, end),
-      
+
       // Get profit by product using listings profit analytics
       Listing.aggregate([
         {
           $match: {
-            vendorId: vendorId,
-            inventoryId: { $exists: true }
+            vendorId: vendorId
           }
         },
         {
@@ -575,13 +509,7 @@ exports.getRevenueAnalytics = async (req, res, next) => {
       ])
     ]);
 
-    // Calculate profit metrics from inventory analytics and profit by product
-    const inventoryData = inventoryAnalytics[0] || {
-      totalGrossProfit: 0,
-      totalStockValue: 0,
-      averageProfitMargin: 0
-    };
-
+    // Calculate profit metrics from profit by product
     const totalRevenue = dailyRevenue.reduce((sum, day) => sum + day.revenue, 0);
     const totalCost = profitByProduct.reduce((sum, product) => sum + product.totalCost, 0);
     const totalGrossProfit = profitByProduct.reduce((sum, product) => sum + product.grossProfit, 0);
@@ -643,13 +571,6 @@ exports.getRevenueAnalytics = async (req, res, next) => {
           costOfGoodsSold: Math.round(totalCost * 100) / 100,
           profitMargin: Math.round(overallProfitMargin * 100) / 100
         }
-      },
-      inventoryImpact: {
-        totalStockValue: Math.round(inventoryData.totalStockValue * 100) / 100,
-        averageInventoryProfitMargin: Math.round(inventoryData.averageProfitMargin * 100) / 100,
-        totalInventoryProfit: Math.round(inventoryData.totalGrossProfit * 100) / 100,
-        inventoryTurnoverInsight: profitByProduct.length > 0 ? 
-          'Based on current sales and inventory levels' : 'No inventory data available'
       }
     };
 
@@ -847,13 +768,12 @@ exports.getProductPerformance = async (req, res, next) => {
     };
 
     // Get comprehensive product performance with profit integration
-    const [listingPerformance, categoryPerformance, inventoryData] = await Promise.all([
+    const [listingPerformance, categoryPerformance] = await Promise.all([
       // Enhanced product performance with profit analytics from listings
       Listing.aggregate([
         {
           $match: {
-            vendorId: vendorId,
-            inventoryId: { $exists: true }
+            vendorId: vendorId
           }
         },
         {
@@ -875,31 +795,18 @@ exports.getProductPerformance = async (req, res, next) => {
         },
         { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
         {
-          $lookup: {
-            from: 'vendorinventories',
-            localField: 'inventoryId',
-            foreignField: '_id',
-            as: 'inventory'
-          }
-        },
-        { $unwind: { path: '$inventory', preserveNullAndEmptyArrays: true } },
-        {
           $project: {
             productId: '$productId',
             productName: '$product.name',
             category: '$category.name',
             // Revenue & Sales data
             totalRevenue: '$profitAnalytics.totalRevenue',
-            totalCost: '$profitAnalytics.totalCost', 
+            totalCost: '$profitAnalytics.totalCost',
             grossProfit: '$profitAnalytics.grossProfit',
             profitMargin: '$profitAnalytics.profitMargin',
             averageProfitPerUnit: '$profitAnalytics.averageProfitPerUnit',
             totalQuantitySold: '$totalQuantitySold',
             totalOrders: '$totalOrders',
-            // Inventory data
-            currentStock: '$inventory.currentStock.totalQuantity',
-            averagePurchasePrice: '$inventory.currentStock.averagePurchasePrice',
-            inventoryValue: '$inventory.currentStock.totalValue',
             // Calculated metrics
             roi: {
               $cond: {
@@ -908,13 +815,13 @@ exports.getProductPerformance = async (req, res, next) => {
                 else: 0
               }
             },
-            turnoverRate: '$inventory.analytics.turnoverRate',
             // Listing performance
             rating: '$rating.average',
             views: '$views',
             status: '$status',
+            currentStock: '$availability.quantityAvailable',
             // Pricing info
-            currentPrice: { $arrayElemAt: ['$pricing.pricePerUnit', 0] },
+            currentPrice: { $arrayElemAt: ['$pricing.pricePerBaseUnit', 0] },
             lastUpdated: '$updatedAt'
           }
         },
@@ -926,8 +833,7 @@ exports.getProductPerformance = async (req, res, next) => {
       Listing.aggregate([
         {
           $match: {
-            vendorId: vendorId,
-            inventoryId: { $exists: true }
+            vendorId: vendorId
           }
         },
         {
@@ -989,13 +895,8 @@ exports.getProductPerformance = async (req, res, next) => {
           }
         },
         { $sort: { grossProfit: -1 } }
-      ]),
-      
-      // Get overall inventory analytics
-      VendorInventory.getInventoryAnalytics(vendorId)
+      ])
     ]);
-
-    const inventoryAnalytics = inventoryData[0] || {};
 
     const analytics = {
       topProducts: listingPerformance.map(product => ({
@@ -1013,11 +914,7 @@ exports.getProductPerformance = async (req, res, next) => {
         orders: product.totalOrders || 0,
         quantitySold: product.totalQuantitySold || 0,
         currentPrice: Math.round((product.currentPrice || 0) * 100) / 100,
-        averagePurchasePrice: Math.round((product.averagePurchasePrice || 0) * 100) / 100,
-        // Inventory metrics
         currentStock: product.currentStock || 0,
-        inventoryValue: Math.round((product.inventoryValue || 0) * 100) / 100,
-        turnoverRate: product.turnoverRate || 0,
         // Performance metrics
         rating: product.rating || 0,
         views: product.views || 0,
@@ -1056,8 +953,7 @@ exports.getProductPerformance = async (req, res, next) => {
           : 0,
         // Performance indicators
         profitableProducts: listingPerformance.filter(p => (p.grossProfit || 0) > 0).length,
-        highMarginProducts: listingPerformance.filter(p => (p.profitMargin || 0) > 20).length,
-        totalInventoryValue: Math.round((inventoryAnalytics.totalStockValue || 0) * 100) / 100
+        highMarginProducts: listingPerformance.filter(p => (p.profitMargin || 0) > 20).length
       },
       profitInsights: {
         topProfitMakers: listingPerformance
@@ -1234,7 +1130,7 @@ exports.getCustomerInsights = async (req, res, next) => {
         {
           $group: {
             _id: {
-              restaurantId: '$_id.restaurantId'
+              restaurantId: '$_id.buyerId'
             },
             firstOrderOverall: { $min: '$firstOrderInMonth' }
           }
@@ -1254,7 +1150,7 @@ exports.getCustomerInsights = async (req, res, next) => {
 
     const insights = {
       topCustomers: customerStats.slice(0, 10).map(customer => ({
-        id: customer.restaurantId,
+        id: customer.buyerId,
         name: customer.name,
         email: customer.email,
         totalOrders: customer.totalOrders,
@@ -1339,7 +1235,7 @@ exports.getOrderManagement = async (req, res, next) => {
 
     const [orders, totalCount, statusCounts] = await Promise.all([
       Order.find(matchConditions)
-        .populate('restaurantId', 'name email phone address')
+        .populate('buyerId', 'name email phone address')
         .populate('items.productId', 'name')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -1358,11 +1254,11 @@ exports.getOrderManagement = async (req, res, next) => {
         id: order._id,
         orderNumber: order.orderNumber,
         restaurant: {
-          id: order.restaurantId._id,
-          name: order.restaurantId.name,
-          email: order.restaurantId.email,
-          phone: order.restaurantId.phone,
-          address: order.restaurantId.address
+          id: order.buyerId._id,
+          name: order.buyerId.name,
+          email: order.buyerId.email,
+          phone: order.buyerId.phone,
+          address: order.buyerId.address
         },
         items: order.items.map(item => ({
           productName: item.productName,
@@ -1842,11 +1738,7 @@ exports.getFinancialSummary = async (req, res, next) => {
     const [
       orderStats,
       paymentStatusBreakdown,
-      cogsData,
-      inventoryValuation,
-      operationalCosts,
-      profitAnalytics,
-      cashFlowData
+      profitAnalytics
     ] = await Promise.all([
       // Order and revenue statistics
       Order.aggregate([
@@ -1889,76 +1781,6 @@ exports.getFinancialSummary = async (req, res, next) => {
             _id: '$paymentStatus',
             count: { $sum: 1 },
             amount: { $sum: '$totalAmount' }
-          }
-        }
-      ]),
-
-      // Cost of Goods Sold (COGS) from inventory consumption
-      VendorInventory.aggregate([
-        { 
-          $match: { 
-            vendorId,
-            'stockConsumption.date': { $gte: start, $lte: end }
-          } 
-        },
-        {
-          $unwind: '$stockConsumption'
-        },
-        {
-          $match: {
-            'stockConsumption.date': { $gte: start, $lte: end }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalCOGS: { $sum: '$stockConsumption.costOfGoods' },
-            totalQuantitySold: { $sum: '$stockConsumption.quantity' },
-            totalTransactions: { $sum: 1 }
-          }
-        }
-      ]),
-
-      // Current inventory valuation
-      VendorInventory.aggregate([
-        { $match: { vendorId, status: { $in: ['active', 'low_stock', 'overstocked'] } } },
-        {
-          $group: {
-            _id: null,
-            currentInventoryValue: { 
-              $sum: { $multiply: ['$availableQuantity', '$averagePurchasePrice'] } 
-            },
-            totalItems: { $sum: 1 },
-            totalQuantity: { $sum: '$availableQuantity' },
-            averageCostPerUnit: { $avg: '$averagePurchasePrice' }
-          }
-        }
-      ]),
-
-      // Operational costs from inventory purchases in period
-      VendorInventory.aggregate([
-        { 
-          $match: { 
-            vendorId,
-            'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
-          } 
-        },
-        {
-          $unwind: '$purchaseHistory'
-        },
-        {
-          $match: {
-            'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalPurchases: { $sum: '$purchaseHistory.totalCost' },
-            transportationCosts: { $sum: '$purchaseHistory.transportationCost' },
-            storageCosts: { $sum: '$purchaseHistory.storageCost' },
-            otherCosts: { $sum: '$purchaseHistory.otherCosts' },
-            purchaseVolume: { $sum: '$purchaseHistory.purchasedQuantity' }
           }
         }
       ]),
@@ -2013,48 +1835,6 @@ exports.getFinancialSummary = async (req, res, next) => {
             }
           }
         }
-      ]),
-
-      // Cash flow analysis (delivered orders vs purchases)
-      Promise.all([
-        Order.aggregate([
-          {
-            $match: {
-              vendorId: vendorId,
-              status: 'delivered',
-              paymentStatus: 'paid',
-              createdAt: { $gte: start, $lte: end }
-            }
-          },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-              dailyInflow: { $sum: '$totalAmount' }
-            }
-          }
-        ]),
-        VendorInventory.aggregate([
-          { 
-            $match: { 
-              vendorId,
-              'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
-            } 
-          },
-          {
-            $unwind: '$purchaseHistory'
-          },
-          {
-            $match: {
-              'purchaseHistory.purchaseDate': { $gte: start, $lte: end }
-            }
-          },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$purchaseHistory.purchaseDate' } },
-              dailyOutflow: { $sum: '$purchaseHistory.totalCost' }
-            }
-          }
-        ])
       ])
     ]);
 
@@ -2067,27 +1847,6 @@ exports.getFinancialSummary = async (req, res, next) => {
       deliveredOrders: 0
     };
 
-    const cogs = cogsData[0] || {
-      totalCOGS: 0,
-      totalQuantitySold: 0,
-      totalTransactions: 0
-    };
-
-    const inventory = inventoryValuation[0] || {
-      currentInventoryValue: 0,
-      totalItems: 0,
-      totalQuantity: 0,
-      averageCostPerUnit: 0
-    };
-
-    const opCosts = operationalCosts[0] || {
-      totalPurchases: 0,
-      transportationCosts: 0,
-      storageCosts: 0,
-      otherCosts: 0,
-      purchaseVolume: 0
-    };
-
     const profitData = profitAnalytics[0] || {
       totalRevenue: 0,
       totalCost: 0,
@@ -2096,26 +1855,20 @@ exports.getFinancialSummary = async (req, res, next) => {
       avgProfitMargin: 0
     };
 
-    const [cashInflows, cashOutflows] = cashFlowData;
-
-    // Financial calculations
+    // Financial calculations (simplified for non-inventory MVP)
     const platformCommissionRate = 0.05;
     const estimatedCommission = orderMetrics.deliveredRevenue * platformCommissionRate;
     const netRevenue = orderMetrics.deliveredRevenue - estimatedCommission;
-    
-    // True P&L calculation
-    const grossProfit = profitData.grossProfit || (orderMetrics.deliveredRevenue - cogs.totalCOGS);
-    const operatingExpenses = opCosts.transportationCosts + opCosts.storageCosts + opCosts.otherCosts;
-    const netProfit = grossProfit - operatingExpenses - estimatedCommission;
-    
+
+    // Simplified P&L calculation using listing profit analytics
+    const grossProfit = profitData.grossProfit;
+    const netProfit = grossProfit - estimatedCommission;
+
     // Margin calculations
     const grossMargin = orderMetrics.deliveredRevenue ? (grossProfit / orderMetrics.deliveredRevenue * 100) : 0;
     const netMargin = orderMetrics.deliveredRevenue ? (netProfit / orderMetrics.deliveredRevenue * 100) : 0;
-    
-    // Inventory metrics
-    const inventoryTurnover = inventory.currentInventoryValue ? (cogs.totalCOGS / inventory.currentInventoryValue) : 0;
+
     const daysInPeriod = (end - start) / (1000 * 60 * 60 * 24);
-    const daysSalesInInventory = inventoryTurnover ? (daysInPeriod / inventoryTurnover) : 0;
 
     // Build comprehensive financial summary
     const financialSummary = {
@@ -2134,58 +1887,33 @@ exports.getFinancialSummary = async (req, res, next) => {
         pendingPayment: Math.round((orderMetrics.grossRevenue - orderMetrics.deliveredRevenue) * 100) / 100
       },
 
-      // True P&L Statement
+      // Simplified P&L Statement (non-inventory MVP)
       profitAndLoss: {
         revenue: Math.round(orderMetrics.deliveredRevenue * 100) / 100,
-        costOfGoodsSold: Math.round(cogs.totalCOGS * 100) / 100,
+        totalCost: Math.round(profitData.totalCost * 100) / 100,
         grossProfit: Math.round(grossProfit * 100) / 100,
         grossMargin: Math.round(grossMargin * 100) / 100,
-        
-        operatingExpenses: {
-          transportation: Math.round(opCosts.transportationCosts * 100) / 100,
-          storage: Math.round(opCosts.storageCosts * 100) / 100,
-          other: Math.round(opCosts.otherCosts * 100) / 100,
-          total: Math.round(operatingExpenses * 100) / 100
-        },
-        
         platformFees: Math.round(estimatedCommission * 100) / 100,
         netProfit: Math.round(netProfit * 100) / 100,
         netMargin: Math.round(netMargin * 100) / 100
-      },
-
-      // Inventory valuation and metrics
-      inventory: {
-        currentValue: Math.round(inventory.currentInventoryValue * 100) / 100,
-        totalItems: inventory.totalItems,
-        totalQuantity: inventory.totalQuantity,
-        averageCostPerUnit: Math.round(inventory.averageCostPerUnit * 100) / 100,
-        turnoverRate: Math.round(inventoryTurnover * 100) / 100,
-        daysSalesInInventory: Math.round(daysSalesInInventory),
-        purchaseVolume: opCosts.purchaseVolume,
-        totalPurchaseValue: Math.round(opCosts.totalPurchases * 100) / 100
       },
 
       // Operational metrics
       operations: {
         totalOrders: orderMetrics.totalOrders,
         deliveredOrders: orderMetrics.deliveredOrders,
-        fulfillmentRate: orderMetrics.totalOrders ? 
+        fulfillmentRate: orderMetrics.totalOrders ?
           Math.round((orderMetrics.deliveredOrders / orderMetrics.totalOrders) * 100) : 0,
-        averageOrderValue: Math.round(orderMetrics.averageOrderValue * 100) / 100,
-        quantitySold: cogs.totalQuantitySold,
-        averageCostPerSale: cogs.totalQuantitySold ? 
-          Math.round((cogs.totalCOGS / cogs.totalQuantitySold) * 100) / 100 : 0
+        averageOrderValue: Math.round(orderMetrics.averageOrderValue * 100) / 100
       },
 
       // Financial health indicators
       financialHealth: {
         profitabilityScore: Math.max(0, Math.min(100, netMargin + 50)), // 0-100 scale
-        inventoryHealth: inventoryTurnover > 0 ? Math.min(100, inventoryTurnover * 50) : 0,
         cashFlowHealth: netProfit > 0 ? 'Positive' : netProfit < 0 ? 'Negative' : 'Break-even',
-        returnOnInventory: inventory.currentInventoryValue ? 
-          Math.round((netProfit / inventory.currentInventoryValue * 100) * 100) / 100 : 0,
-        profitableProductsRatio: profitData.profitableProducts && orderMetrics.totalOrders ? 
-          Math.round((profitData.profitableProducts / orderMetrics.totalOrders) * 100) : 0
+        profitableProductsRatio: profitData.profitableProducts && orderMetrics.totalOrders ?
+          Math.round((profitData.profitableProducts / orderMetrics.totalOrders) * 100) : 0,
+        averageProfitMargin: Math.round(profitData.avgProfitMargin * 100) / 100
       },
 
       // Payment breakdown
@@ -2195,20 +1923,7 @@ exports.getFinancialSummary = async (req, res, next) => {
           amount: Math.round(payment.amount * 100) / 100
         };
         return acc;
-      }, {}),
-
-      // Cash flow summary
-      cashFlow: {
-        inflows: cashInflows.map(flow => ({
-          date: flow._id,
-          amount: Math.round(flow.dailyInflow * 100) / 100
-        })),
-        outflows: cashOutflows.map(flow => ({
-          date: flow._id,
-          amount: Math.round(flow.dailyOutflow * 100) / 100
-        })),
-        netCashFlow: Math.round(netProfit * 100) / 100
-      }
+      }, {})
     };
 
     res.status(200).json({
@@ -2221,7 +1936,7 @@ exports.getFinancialSummary = async (req, res, next) => {
 };
 
 /**
- * @desc    Get unified vendor notifications and inventory alerts
+ * @desc    Get vendor notifications (simplified for MVP without inventory alerts)
  * @route   GET /api/v1/vendor-dashboard/notifications
  * @access  Private (Vendor only)
  */
@@ -2233,242 +1948,58 @@ exports.getNotifications = async (req, res, next) => {
     }
 
     const userId = req.user.id;
-    const vendorId = req.user.vendorId;
     const { type, unreadOnly, page = 1, limit = 20 } = req.query;
 
     const NotificationService = require('../services/notificationService');
-    
+
     const options = {
       page: parseInt(page),
       limit: parseInt(limit)
     };
 
-    // Build inventory alerts query
-    let inventoryQuery = { vendorId };
-    if (unreadOnly === 'true') {
-      inventoryQuery['alerts.isRead'] = false;
-    }
-    if (type && type === 'inventory') {
-      // Only inventory alerts
-    } else if (type && type !== 'all' && type !== 'inventory') {
+    if (type && type !== 'all') {
       options.type = type;
     }
 
-    const [notificationsData, stats, inventoryAlerts] = await Promise.all([
-      // Regular notifications (excluding inventory type if specifically filtering)
-      type === 'inventory' ? 
-        { notifications: [], pagination: { total: 0, pages: 0, page: 1, limit } } :
-        NotificationService.getUserNotifications(userId, options),
-      
-      // Regular notification stats
-      type === 'inventory' ? 
-        { total: 0, unread: 0, urgent: 0, actionRequired: 0 } :
-        NotificationService.getUserNotificationStats(userId),
-      
-      // Inventory alerts from VendorInventory
-      type && type !== 'inventory' && type !== 'all' ? 
-        [] : // Skip inventory alerts if filtering for non-inventory types
-        VendorInventory.aggregate([
-          { $match: inventoryQuery },
-          { $unwind: '$alerts' },
-          { $match: unreadOnly === 'true' ? { 'alerts.isRead': false } : {} },
-          { $sort: { 'alerts.createdAt': -1 } },
-          {
-            $project: {
-              _id: '$alerts._id',
-              type: 'inventory',
-              title: {
-                $switch: {
-                  branches: [
-                    { case: { $eq: ['$alerts.type', 'low_stock'] }, then: 'Low Stock Alert' },
-                    { case: { $eq: ['$alerts.type', 'out_of_stock'] }, then: 'Out of Stock Alert' },
-                    { case: { $eq: ['$alerts.type', 'expiry_warning'] }, then: 'Product Expiry Warning' },
-                    { case: { $eq: ['$alerts.type', 'quality_decline'] }, then: 'Quality Decline Alert' },
-                    { case: { $eq: ['$alerts.type', 'overstock'] }, then: 'Overstock Alert' }
-                  ],
-                  default: 'Inventory Alert'
-                }
-              },
-              message: '$alerts.message',
-              priority: {
-                $switch: {
-                  branches: [
-                    { case: { $eq: ['$alerts.severity', 'critical'] }, then: 'urgent' },
-                    { case: { $eq: ['$alerts.severity', 'high'] }, then: 'high' },
-                    { case: { $eq: ['$alerts.severity', 'medium'] }, then: 'normal' },
-                    { case: { $eq: ['$alerts.severity', 'low'] }, then: 'low' }
-                  ],
-                  default: 'normal'
-                }
-              },
-              isRead: '$alerts.isRead',
-              isActionRequired: {
-                $in: ['$alerts.type', ['low_stock', 'out_of_stock', 'expiry_warning']]
-              },
-              actionUrl: {
-                $concat: ['/vendor/inventory/', { $toString: '$_id' }]
-              },
-              actionText: {
-                $switch: {
-                  branches: [
-                    { case: { $eq: ['$alerts.type', 'low_stock'] }, then: 'Restock Now' },
-                    { case: { $eq: ['$alerts.type', 'out_of_stock'] }, then: 'Add Stock' },
-                    { case: { $eq: ['$alerts.type', 'expiry_warning'] }, then: 'Check Expiry' },
-                    { case: { $eq: ['$alerts.type', 'quality_decline'] }, then: 'Review Quality' },
-                    { case: { $eq: ['$alerts.type', 'overstock'] }, then: 'Review Stock Levels' }
-                  ],
-                  default: 'View Details'
-                }
-              },
-              relatedEntity: {
-                type: 'inventory',
-                id: '$_id'
-              },
-              metadata: {
-                productName: '$productId',
-                currentStock: '$availableQuantity',
-                reorderLevel: '$reorderLevel',
-                alertType: '$alerts.type',
-                severity: '$alerts.severity'
-              },
-              createdAt: '$alerts.createdAt',
-              readAt: '$alerts.readAt',
-              age: {
-                $divide: [
-                  { $subtract: [new Date(), '$alerts.createdAt'] },
-                  1000 * 60 * 60 * 24 // Convert to days
-                ]
-              }
-            }
-          },
-          ...(page && limit ? [
-            { $skip: (parseInt(page) - 1) * parseInt(limit) },
-            { $limit: parseInt(limit) }
-          ] : [])
-        ])
+    const [notificationsData, stats] = await Promise.all([
+      NotificationService.getUserNotifications(userId, options),
+      NotificationService.getUserNotificationStats(userId)
     ]);
 
-    // Combine and sort all notifications
-    let allNotifications = [
-      ...notificationsData.notifications.map(notification => ({
-        id: notification._id,
-        type: notification.type,
-        title: notification.title,
-        message: notification.message,
-        priority: notification.priority,
-        isRead: notification.isRead,
-        isActionRequired: notification.isActionRequired,
-        actionUrl: notification.actionUrl,
-        actionText: notification.actionText,
-        relatedEntity: notification.relatedEntity,
-        metadata: notification.metadata,
-        age: notification.age,
-        createdAt: notification.createdAt,
-        readAt: notification.readAt,
-        source: 'notification'
-      })),
-      ...inventoryAlerts.map(alert => ({
-        id: alert._id,
-        type: alert.type,
-        title: alert.title,
-        message: alert.message,
-        priority: alert.priority,
-        isRead: alert.isRead,
-        isActionRequired: alert.isActionRequired,
-        actionUrl: alert.actionUrl,
-        actionText: alert.actionText,
-        relatedEntity: alert.relatedEntity,
-        metadata: alert.metadata,
-        age: Math.round(alert.age * 100) / 100,
-        createdAt: alert.createdAt,
-        readAt: alert.readAt,
-        source: 'inventory'
-      }))
-    ];
-
-    // Sort by priority and recency
-    const priorityOrder = { urgent: 4, high: 3, normal: 2, low: 1 };
-    allNotifications.sort((a, b) => {
-      // First by read status (unread first)
-      if (a.isRead !== b.isRead) {
-        return a.isRead ? 1 : -1;
-      }
-      // Then by priority
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[b.priority] - priorityOrder[a.priority];
-      }
-      // Finally by creation date (newest first)
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    });
-
-    // Calculate pagination for combined results
-    const totalNotifications = notificationsData.pagination.total + inventoryAlerts.length;
-    const totalPages = Math.ceil(totalNotifications / parseInt(limit));
-
-    // Apply pagination to combined results if not already applied
-    if (!type || type === 'all') {
-      const startIndex = (parseInt(page) - 1) * parseInt(limit);
-      allNotifications = allNotifications.slice(startIndex, startIndex + parseInt(limit));
-    }
-
-    // Get inventory alert stats
-    const inventoryStats = await VendorInventory.aggregate([
-      { $match: { vendorId } },
-      { $unwind: '$alerts' },
-      {
-        $group: {
-          _id: null,
-          totalInventoryAlerts: { $sum: 1 },
-          unreadInventoryAlerts: { $sum: { $cond: [{ $eq: ['$alerts.isRead', false] }, 1, 0] } },
-          urgentInventoryAlerts: { 
-            $sum: { 
-              $cond: [
-                { $in: ['$alerts.severity', ['critical', 'high']] }, 
-                1, 
-                0
-              ] 
-            } 
-          },
-          actionRequiredAlerts: {
-            $sum: {
-              $cond: [
-                { $in: ['$alerts.type', ['low_stock', 'out_of_stock', 'expiry_warning']] },
-                1,
-                0
-              ]
-            }
-          }
-        }
-      }
-    ]);
-
-    const inventoryStatsData = inventoryStats[0] || {
-      totalInventoryAlerts: 0,
-      unreadInventoryAlerts: 0,
-      urgentInventoryAlerts: 0,
-      actionRequiredAlerts: 0
-    };
+    // Format notifications
+    const allNotifications = notificationsData.notifications.map(notification => ({
+      id: notification._id,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      priority: notification.priority,
+      isRead: notification.isRead,
+      isActionRequired: notification.isActionRequired,
+      actionUrl: notification.actionUrl,
+      actionText: notification.actionText,
+      relatedEntity: notification.relatedEntity,
+      metadata: notification.metadata,
+      age: notification.age,
+      createdAt: notification.createdAt,
+      readAt: notification.readAt,
+      source: 'notification'
+    }));
 
     const response = {
       notifications: allNotifications,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: totalNotifications,
-        pages: totalPages,
-        hasNext: parseInt(page) < totalPages,
-        hasPrev: parseInt(page) > 1
-      },
+      pagination: notificationsData.pagination,
       summary: {
-        total: stats.total + inventoryStatsData.totalInventoryAlerts,
-        unread: stats.unread + inventoryStatsData.unreadInventoryAlerts,
-        urgent: stats.urgent + inventoryStatsData.urgentInventoryAlerts,
-        actionRequired: stats.actionRequired + inventoryStatsData.actionRequiredAlerts,
+        total: stats.total,
+        unread: stats.unread,
+        urgent: stats.urgent,
+        actionRequired: stats.actionRequired,
         byType: {
           system: stats.total,
-          inventory: inventoryStatsData.totalInventoryAlerts,
-          order: 0, // This could be calculated from system notifications if needed
-          payment: 0 // This could be calculated from system notifications if needed
+          order: stats.byType?.order || 0,
+          delivery: stats.byType?.delivery || 0,
+          payment: stats.byType?.payment || 0,
+          listing: stats.byType?.listing || 0,
+          other: stats.byType?.other || 0
         }
       }
     };
@@ -2481,3 +2012,5 @@ exports.getNotifications = async (req, res, next) => {
     next(error);
   }
 };
+
+// Helper function to calculate date ranges for analytics

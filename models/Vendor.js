@@ -95,6 +95,12 @@ const VendorSchema = new mongoose.Schema({
     saturday: { open: String, close: String, closed: { type: Boolean, default: false }},
     sunday: { open: String, close: String, closed: { type: Boolean, default: false }}
   },
+  // Markets where vendor operates (multi-market support)
+  markets: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Market',
+    required: [true, 'Vendor must operate in at least one market']
+  }],
   deliveryRadius: {
     type: Number,
     default: 10, // kilometers
@@ -151,6 +157,33 @@ const VendorSchema = new mongoose.Schema({
     min: 0,
     max: 100
   },
+  // Platform vendor fields
+  isPlatformOwned: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  platformName: {
+    type: String,
+    enum: ['Aaroth Mall', 'Aaroth Organics', 'Aaroth Fresh Store'],
+    required: function() {
+      return this.isPlatformOwned === true;
+    },
+    trim: true
+  },
+  isEditable: {
+    type: Boolean,
+    default: true // false for platform vendors (admin-only editing)
+  },
+  specialPrivileges: {
+    type: {
+      featuredListings: { type: Boolean, default: false },
+      prioritySupport: { type: Boolean, default: false },
+      customCommissionRate: { type: Number, default: null },
+      unlimitedListings: { type: Boolean, default: false }
+    },
+    default: {}
+  },
   // Soft delete fields
   isDeleted: {
     type: Boolean,
@@ -194,6 +227,11 @@ VendorSchema.virtual('listings', {
 });
 
 
+// Custom validation for markets array
+VendorSchema.path('markets').validate(function(markets) {
+  return markets && markets.length > 0;
+}, 'Vendor must operate in at least one market');
+
 // Indexes for better query performance
 VendorSchema.index({ 'address.coordinates': '2dsphere' });
 VendorSchema.index({ businessName: 'text', specialties: 'text' });
@@ -203,5 +241,7 @@ VendorSchema.index({ email: 1 });
 VendorSchema.index({ isDeleted: 1, isActive: 1 });
 VendorSchema.index({ performanceScore: -1 });
 VendorSchema.index({ statusUpdatedBy: 1, statusUpdatedAt: -1 });
+VendorSchema.index({ isPlatformOwned: 1, platformName: 1 });
+VendorSchema.index({ markets: 1 });
 
 module.exports = mongoose.model('Vendor', VendorSchema);

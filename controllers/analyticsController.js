@@ -570,7 +570,7 @@ exports.getUserAnalytics = async (req, res, next) => {
       User.aggregate([
         {
           $match: {
-            role: { $in: ['vendor', 'restaurantOwner', 'restaurantManager'] },
+            role: { $in: ['vendor', 'buyerOwner', 'buyerManager'] },
             isDeleted: { $ne: true }
           }
         },

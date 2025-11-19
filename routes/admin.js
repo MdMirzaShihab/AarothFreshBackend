@@ -11,6 +11,14 @@ const {
   getCategory,
   toggleCategoryAvailability,
   getCategoryUsageStats,
+  // Market Management
+  createMarket,
+  getMarkets,
+  getMarket,
+  updateMarket,
+  toggleMarketAvailability,
+  getMarketUsageStats,
+  safeDeleteMarket,
   getAllUsers,
   getUser,
   updateUser,
@@ -18,21 +26,22 @@ const {
   getAllVendors,
   getVendor,
   updateVendor,
+  createPlatformVendor,
   safeDeleteVendor,
-  getAllRestaurants,
-  getRestaurant,
-  getRestaurantStats,
-  updateRestaurant,
-  deactivateRestaurant,
-  safeDeleteRestaurant,
-  transferRestaurantOwnership,
-  requestRestaurantDocuments,
+  getAllBuyers,
+  getBuyer,
+  getBuyerStats,
+  updateBuyer,
+  deactivateBuyer,
+  safeDeleteBuyer,
+  transferBuyerOwnership,
+  requestBuyerDocuments,
   getDashboardOverview,
-  createRestaurantOwner,
-  createRestaurantManager,
+  createBuyerOwner,
+  createBuyerManager,
   // Business Entity Verification Management
   toggleVendorVerification,
-  toggleRestaurantVerification,
+  toggleBuyerVerification,
   // Safe Deletion Protection
   safeDeleteProduct,
   safeDeleteCategory,
@@ -83,7 +92,8 @@ const {
 const { protect, authorize } = require("../middleware/auth");
 const {
   uploadCategoryImage,
-  uploadRestaurantLogo,
+  uploadMarketImage,
+  uploadBuyerLogo,
   uploadVendorLogo,
   uploadProductImages
 } = require("../middleware/upload");
@@ -97,15 +107,18 @@ const {
   categoryValidation,
   userUpdateValidation,
   mongoIdValidation,
-  adminRestaurantOwnerValidation,
-  adminRestaurantManagerValidation,
+  adminBuyerOwnerValidation,
+  adminBuyerManagerValidation,
   settingsValidation,
   analyticsValidation,
   dateRangeValidation,
   // Enhanced listing validations
   adminListingFlagValidation,
   // Enhanced category validations
-  categoryAvailabilityValidation
+  categoryAvailabilityValidation,
+  // Market validations
+  marketValidation,
+  marketAvailabilityValidation
 } = require("../middleware/validation");
 
 const router = express.Router();
@@ -150,6 +163,25 @@ router
 // Query params: ?status=pending|approved|rejected&page=1&limit=20&search=businessName
 router.route("/vendors").get(getAllVendors);
 
+// Create platform vendor (Aaroth Mall, etc.) - Admin only
+router.post("/vendors/platform",
+  [
+    body('platformName')
+      .notEmpty().withMessage('Platform name is required')
+      .isIn(['Aaroth Mall', 'Aaroth Organics', 'Aaroth Fresh Store']).withMessage('Invalid platform name'),
+    body('name').notEmpty().isLength({ min: 2, max: 50 }).withMessage('Manager name must be 2-50 characters'),
+    body('email').notEmpty().isEmail().withMessage('Valid email is required'),
+    body('phone').notEmpty().matches(/^\+?[1-9]\d{1,14}$/).withMessage('Valid phone number is required'),
+    body('password').notEmpty().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('address.street').notEmpty().withMessage('Street address is required'),
+    body('address.city').notEmpty().withMessage('City is required'),
+    body('address.area').notEmpty().withMessage('Area is required'),
+    body('address.postalCode').notEmpty().withMessage('Postal code is required'),
+  ],
+  auditSecurity('platform_vendor_created', 'Created platform vendor account', { severity: 'critical', impactLevel: 'significant' }),
+  createPlatformVendor
+);
+
 // Individual vendor management
 router.route("/vendors/:id")
   .get(
@@ -192,89 +224,89 @@ router.delete("/vendors/:id/safe-delete",
 
 
 // ================================
-// RESTAURANT MANAGEMENT
+// BUYER MANAGEMENT
 // ================================
 
-// Restaurant statistics
-router.get("/restaurants/stats", getRestaurantStats);
+// Buyer statistics
+router.get("/buyers/stats", getBuyerStats);
 
-// Unified restaurant route with query parameter filtering
+// Unified buyer route with query parameter filtering
 // Query params: ?status=pending|approved|rejected&page=1&limit=20&search=name
-router.route("/restaurants").get(getAllRestaurants);
+router.route("/buyers").get(getAllBuyers);
 
-// Individual restaurant management
-router.route("/restaurants/:id")
+// Individual buyer management
+router.route("/buyers/:id")
   .get(
     mongoIdValidation("id"),
-    auditLog('restaurant_viewed', 'Restaurant', 'Viewed restaurant details: {name}', { severity: 'low', impactLevel: 'minor' }),
-    getRestaurant
+    auditLog('buyer_viewed', 'Buyer', 'Viewed buyer details: {name}', { severity: 'low', impactLevel: 'minor' }),
+    getBuyer
   )
   .put(
     mongoIdValidation("id"),
-    uploadRestaurantLogo('logo'),
+    uploadBuyerLogo('logo'),
     [
-      body('name').optional().isLength({ min: 2 }).withMessage('Restaurant name must be at least 2 characters'),
+      body('name').optional().isLength({ min: 2 }).withMessage('Buyer name must be at least 2 characters'),
       body('email').optional().isEmail().withMessage('Valid email is required'),
       body('phone').optional().isMobilePhone().withMessage('Valid phone number is required'),
       body('tradeLicenseNo').optional().isLength({ min: 3 }).withMessage('Trade license number is required'),
     ],
-    auditSecurity('restaurant_updated', 'Updated restaurant details', { severity: 'medium', impactLevel: 'moderate' }),
-    updateRestaurant
+    auditSecurity('buyer_updated', 'Updated buyer details', { severity: 'medium', impactLevel: 'moderate' }),
+    updateBuyer
   );
 
-// Restaurant deactivation
-router.put("/restaurants/:id/deactivate",
+// Buyer deactivation
+router.put("/buyers/:id/deactivate",
   mongoIdValidation("id"),
   [
     body('reason').notEmpty().withMessage('Deactivation reason is required'),
   ],
-  auditSecurity('restaurant_deactivated', 'Deactivated restaurant account', { severity: 'high', impactLevel: 'major' }),
-  deactivateRestaurant
+  auditSecurity('buyer_deactivated', 'Deactivated buyer account', { severity: 'high', impactLevel: 'major' }),
+  deactivateBuyer
 );
 
-// Restaurant safe deletion
-router.delete("/restaurants/:id/safe-delete",
+// Buyer safe deletion
+router.delete("/buyers/:id/safe-delete",
   mongoIdValidation("id"),
   [
     body('reason').optional().isLength({ min: 3 }).withMessage('Deletion reason must be at least 3 characters'),
   ],
-  auditSecurity('restaurant_deleted', 'Deleted restaurant account', { severity: 'critical', impactLevel: 'major' }),
-  safeDeleteRestaurant
+  auditSecurity('buyer_deleted', 'Deleted buyer account', { severity: 'critical', impactLevel: 'major' }),
+  safeDeleteBuyer
 );
 
-// Transfer restaurant ownership
-router.post("/restaurants/:id/transfer-ownership",
+// Transfer buyer ownership
+router.post("/buyers/:id/transfer-ownership",
   mongoIdValidation("id"),
   [
     body('newOwnerId').isMongoId().withMessage('Valid new owner ID is required'),
     body('reason').optional().isLength({ min: 3, max: 500 }).withMessage('Reason must be between 3-500 characters'),
   ],
-  auditSecurity('restaurant_ownership_transferred', 'Transferred restaurant ownership', { severity: 'critical', impactLevel: 'major' }),
-  transferRestaurantOwnership
+  auditSecurity('buyer_ownership_transferred', 'Transferred buyer ownership', { severity: 'critical', impactLevel: 'major' }),
+  transferBuyerOwnership
 );
 
-// Request additional documents from restaurant
-router.put("/restaurants/:id/request-documents",
+// Request additional documents from buyer
+router.put("/buyers/:id/request-documents",
   mongoIdValidation("id"),
   [
     body('documentTypes').isArray({ min: 1 }).withMessage('Document types array is required'),
     body('message').optional().isLength({ max: 1000 }).withMessage('Message cannot exceed 1000 characters'),
     body('deadline').optional().isISO8601().withMessage('Deadline must be a valid date'),
   ],
-  auditLog('restaurant_documents_requested', 'Restaurant', 'Requested documents from restaurant', { severity: 'medium', impactLevel: 'moderate' }),
-  requestRestaurantDocuments
+  auditLog('buyer_documents_requested', 'Buyer', 'Requested documents from buyer', { severity: 'medium', impactLevel: 'moderate' }),
+  requestBuyerDocuments
 );
 
-// Restaurant owner and manager creation
-router.post("/restaurant-owners", 
-  adminRestaurantOwnerValidation,
-  auditLog('restaurant_owner_created', 'User', 'Created restaurant owner: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-  createRestaurantOwner
+// Buyer owner and manager creation
+router.post("/buyer-owners", 
+  adminBuyerOwnerValidation,
+  auditLog('buyer_owner_created', 'User', 'Created buyer owner: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+  createBuyerOwner
 );
-router.post("/restaurant-managers", 
-  adminRestaurantManagerValidation,
-  auditLog('restaurant_manager_created', 'User', 'Created restaurant manager: {name}', { severity: 'medium', impactLevel: 'moderate' }),
-  createRestaurantManager
+router.post("/buyer-managers", 
+  adminBuyerManagerValidation,
+  auditLog('buyer_manager_created', 'User', 'Created buyer manager: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+  createBuyerManager
 );
 
 // ================================
@@ -375,6 +407,56 @@ router.get("/categories/:id/usage",
 );
 
 // ================================
+// MARKET MANAGEMENT
+// ================================
+
+// Market CRUD routes
+router
+  .route("/markets")
+  .get(getMarkets)
+  .post(
+    ...uploadMarketImage('image'),
+    marketValidation,
+    auditLog('market_created', 'Market', 'Created market: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+    createMarket
+  );
+
+router
+  .route("/markets/:id")
+  .get(
+    mongoIdValidation("id"),
+    getMarket
+  )
+  .put(
+    mongoIdValidation("id"),
+    ...uploadMarketImage('image'),
+    marketValidation,
+    auditLog('market_updated', 'Market', 'Updated market: {name}', { severity: 'medium', impactLevel: 'moderate' }),
+    updateMarket
+  );
+
+// Safe delete market route
+router.delete("/markets/:id/safe-delete",
+  mongoIdValidation("id"),
+  auditLog('market_deleted', 'Market', 'Safely deleted market: {name}', { severity: 'high', impactLevel: 'significant' }),
+  safeDeleteMarket
+);
+
+// Toggle market availability (flag system)
+router.put("/markets/:id/availability",
+  mongoIdValidation("id"),
+  marketAvailabilityValidation,
+  auditLog('market_availability_toggled', 'Market', 'Toggled market availability', { severity: 'medium', impactLevel: 'moderate' }),
+  toggleMarketAvailability
+);
+
+// Get market usage statistics
+router.get("/markets/:id/usage",
+  mongoIdValidation("id"),
+  getMarketUsageStats
+);
+
+// ================================
 // LISTING MANAGEMENT
 // ================================
 
@@ -463,8 +545,8 @@ router.put("/vendors/:id/verification",
   toggleVendorVerification
 );
 
-// Direct restaurant verification toggle
-router.put("/restaurants/:id/verification",
+// Direct buyer verification toggle
+router.put("/buyers/:id/verification",
   mongoIdValidation("id"),
   [
     body('status').isIn(['pending', 'approved', 'rejected']).withMessage('status must be one of: pending, approved, rejected'),
@@ -474,8 +556,8 @@ router.put("/restaurants/:id/verification",
       .isLength({ min: 5, max: 500 }).withMessage('Reason must be between 5 and 500 characters'),
     handleValidationErrors
   ],
-  auditSecurity('restaurant_verification_toggle', 'Toggled restaurant verification status', { severity: 'high', impactLevel: 'significant' }),
-  toggleRestaurantVerification
+  auditSecurity('buyer_verification_toggle', 'Toggled buyer verification status', { severity: 'high', impactLevel: 'significant' }),
+  toggleBuyerVerification
 );
 
 // ================================
