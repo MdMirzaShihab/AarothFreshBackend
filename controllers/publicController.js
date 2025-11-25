@@ -1,6 +1,7 @@
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const Listing = require('../models/Listing');
+const Market = require('../models/Market');
 const { ErrorResponse } = require('../middleware/error');
 
 /**
@@ -275,6 +276,66 @@ exports.getFeaturedListings = async (req, res, next) => {
       page,
       pages: Math.ceil(total / limit),
       data: featuredListings
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @desc    Get all active markets (public)
+ * @route   GET /api/v1/public/markets
+ * @access  Public
+ */
+exports.getPublicMarkets = async (req, res, next) => {
+  try {
+    // Build query - only show active and available markets
+    let query = { isActive: true, isAvailable: true };
+
+    // Allow filtering by status for more control
+    if (req.query.status === 'active') {
+      query.isActive = true;
+    }
+
+    // Filter by city if provided
+    if (req.query.city) {
+      query['location.city'] = { $regex: req.query.city, $options: 'i' };
+    }
+
+    // Search by market name
+    if (req.query.search) {
+      query.name = { $regex: req.query.search, $options: 'i' };
+    }
+
+    // Pagination
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 100;
+    const skip = (page - 1) * limit;
+
+    // Sort options
+    let sortBy = {};
+    if (req.query.sortBy) {
+      const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
+      sortBy[req.query.sortBy] = sortOrder;
+    } else {
+      sortBy.name = 1; // Default: alphabetical
+    }
+
+    const markets = await Market.find(query)
+      .select('name description image location slug')
+      .sort(sortBy)
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Market.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      count: markets.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      data: markets
     });
   } catch (err) {
     next(err);

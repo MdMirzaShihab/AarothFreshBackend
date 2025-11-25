@@ -5,7 +5,8 @@ const {
   getPublicCategories,
   getPublicListings,
   getPublicListing,
-  getFeaturedListings
+  getFeaturedListings,
+  getPublicMarkets
 } = require('../controllers/publicController');
 
 const router = express.Router();
@@ -51,5 +52,12 @@ router.get('/listings/:id', getPublicListing);
  * @access  Public
  */
 router.get('/featured-listings', getFeaturedListings);
+
+/**
+ * @route   GET /api/v1/public/markets
+ * @desc    Get all active markets (public)
+ * @access  Public
+ */
+router.get('/markets', getPublicMarkets);
 
 module.exports = router;

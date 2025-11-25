@@ -61,6 +61,7 @@ const VendorSchema = new mongoose.Schema({
   tradeLicenseNo: {
     type: String,
     unique: true,
+    sparse: true, // Allows multiple null values, enforces uniqueness only on non-null values
     trim: true,
     maxlength: [30, 'Trade license number cannot be more than 30 characters'],
     required: [true, 'Please add trade license number']
