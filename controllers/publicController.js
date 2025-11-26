@@ -66,13 +66,21 @@ exports.getPublicProduct = async (req, res, next) => {
     }
 
     // Get active listings for this product
-    const listings = await Listing.find({ 
-      productId: req.params.id, 
-      status: 'active' 
-    })
+    let listingQuery = {
+      productId: req.params.id,
+      status: 'active'
+    };
+
+    // Optional market filter
+    if (req.query.marketId) {
+      listingQuery.marketId = req.query.marketId;
+    }
+
+    const listings = await Listing.find(listingQuery)
     .populate('vendorId', 'businessName')
-    .select('pricing qualityGrade availability vendorId')
-    .sort({ 'pricing.pricePerUnit': 1 });
+    .populate('marketId', 'name location.city')
+    .select('pricing qualityGrade availability vendorId marketId')
+    .sort({ 'pricing.pricePerBaseUnit': 1 });
 
     res.status(200).json({
       success: true,
@@ -146,11 +154,16 @@ exports.getPublicListings = async (req, res, next) => {
       query.vendorId = req.query.vendor;
     }
 
+    // Filter by market
+    if (req.query.marketId) {
+      query.marketId = req.query.marketId;
+    }
+
     // Price range filter
     if (req.query.minPrice || req.query.maxPrice) {
-      query['pricing.pricePerUnit'] = {};
-      if (req.query.minPrice) query['pricing.pricePerUnit'].$gte = parseFloat(req.query.minPrice);
-      if (req.query.maxPrice) query['pricing.pricePerUnit'].$lte = parseFloat(req.query.maxPrice);
+      query['pricing.pricePerBaseUnit'] = {};
+      if (req.query.minPrice) query['pricing.pricePerBaseUnit'].$gte = parseFloat(req.query.minPrice);
+      if (req.query.maxPrice) query['pricing.pricePerBaseUnit'].$lte = parseFloat(req.query.maxPrice);
     }
 
     // Pagination
@@ -178,7 +191,8 @@ exports.getPublicListings = async (req, res, next) => {
         }
       })
       .populate('vendorId', 'businessName rating')
-      .select('productId vendorId pricing qualityGrade availability images createdAt rating')
+      .populate('marketId', 'name location.city location.address')
+      .select('productId vendorId marketId pricing qualityGrade availability images createdAt rating')
       .sort(sortBy)
       .skip(skip)
       .limit(limit);
@@ -214,7 +228,8 @@ exports.getPublicListing = async (req, res, next) => {
           select: 'name description'
         }
       })
-      .populate('vendorId', 'businessName phone address rating verificationStatus');
+      .populate('vendorId', 'businessName phone address rating verificationStatus')
+      .populate('marketId', 'name description location');
 
     if (!listing) {
       return next(new ErrorResponse(`Listing not found with id of ${req.params.id}`, 404));
@@ -247,10 +262,15 @@ exports.getFeaturedListings = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     // Query for active and featured listings
-    const query = { 
-      status: 'active', 
-      featured: true 
+    const query = {
+      status: 'active',
+      featured: true
     };
+
+    // Optional market filter
+    if (req.query.marketId) {
+      query.marketId = req.query.marketId;
+    }
 
     const featuredListings = await Listing.find(query)
       .populate({
@@ -262,7 +282,8 @@ exports.getFeaturedListings = async (req, res, next) => {
         }
       })
       .populate('vendorId', 'businessName rating verificationStatus')
-      .select('productId vendorId pricing qualityGrade availability images createdAt rating featured')
+      .populate('marketId', 'name location.city location.address')
+      .select('productId vendorId marketId pricing qualityGrade availability images createdAt rating featured')
       .sort({ createdAt: -1 }) // Newest featured first
       .skip(skip)
       .limit(limit);

@@ -45,6 +45,43 @@ const router = express.Router();
 // Comprehensive validation rules for vendor listing operations
 const listingValidation = [
   body("productId").isMongoId().withMessage("Valid product ID is required"),
+  body("marketId")
+    .notEmpty()
+    .withMessage("Market ID is required")
+    .isMongoId()
+    .withMessage("Valid market ID is required")
+    .custom(async (marketId, { req }) => {
+      const Market = require('../models/Market');
+      const Vendor = require('../models/Vendor');
+
+      // Check market exists and is available
+      const market = await Market.findOne({
+        _id: marketId,
+        isDeleted: { $ne: true },
+        isAvailable: true,
+        isActive: true
+      });
+
+      if (!market) {
+        throw new Error('Selected market does not exist or is not available');
+      }
+
+      // Check vendor operates in this market
+      const vendor = await Vendor.findById(req.user.vendorId);
+      if (!vendor) {
+        throw new Error('Vendor not found');
+      }
+
+      const hasMarket = vendor.markets.some(
+        m => m.toString() === marketId.toString()
+      );
+
+      if (!hasMarket) {
+        throw new Error('You cannot create listings in this market. Your vendor account does not operate in the selected market.');
+      }
+
+      return true;
+    }),
   body("title")
     .optional()
     .isLength({ min: 3, max: 100 })
@@ -68,9 +105,9 @@ const listingValidation = [
   body("pricing")
     .isArray({ min: 1 })
     .withMessage("At least one pricing option is required"),
-  body("pricing.*.pricePerUnit")
+  body("pricing.*.pricePerBaseUnit")
     .isFloat({ min: 0.01 })
-    .withMessage("Price per unit must be a positive number"),
+    .withMessage("Price per base unit must be a positive number"),
   body("pricing.*.unit")
     .not()
     .isEmpty()
@@ -91,21 +128,150 @@ const listingValidation = [
   
   // Quality and harvest info
   body("qualityGrade")
-    .optional()
+    .notEmpty()
+    .withMessage("Quality grade is required")
     .isIn(["Premium", "Grade A", "Grade B", "Standard"])
-    .withMessage("Invalid quality grade"),
+    .withMessage("Quality grade must be one of: Premium, Grade A, Grade B, Standard"),
   body("harvestDate")
     .optional()
     .isISO8601()
     .withMessage("Harvest date must be a valid date"),
+
+  // Discount validation
+  body("discount.type")
+    .optional()
+    .isIn(['percentage', 'fixed'])
+    .withMessage("Discount type must be either 'percentage' or 'fixed'"),
+  body("discount.value")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Discount value must be a non-negative number"),
+  body("discount")
+    .optional()
+    .custom((discount) => {
+      if (discount && Object.keys(discount).length > 0) {
+        if (!discount.type || !discount.value) {
+          throw new Error('Both discount type and value are required when providing a discount');
+        }
+        if (discount.type === 'percentage' && (discount.value < 0 || discount.value > 100)) {
+          throw new Error('Percentage discount must be between 0 and 100');
+        }
+      }
+      return true;
+    }),
+  body("discount.validUntil")
+    .optional()
+    .isISO8601()
+    .withMessage("Discount valid until date must be a valid date"),
+  body("discount.minimumQuantity")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("Discount minimum quantity must be a positive integer"),
+
+  // Image replacement control
+  body("replaceImages")
+    .optional()
+    .isBoolean()
+    .withMessage("Replace images flag must be boolean"),
+
+  // Order quantity limits (REQUIRED when pack-based selling is disabled)
+  body("minimumOrderQuantity")
+    .custom((value, { req }) => {
+      const pricing = req.body.pricing && req.body.pricing[0];
+      const isPackBased = pricing && pricing.enablePackSelling === true;
+
+      // Required when NOT using pack-based selling
+      if (!isPackBased) {
+        if (value === null || value === undefined || value === '') {
+          throw new Error('Minimum order quantity is required when not using pack-based selling');
+        }
+      }
+      return true;
+    })
+    .isFloat({ min: 0 })
+    .withMessage("Minimum order quantity must be a non-negative number")
+    .custom((value, { req }) => {
+      if (value && req.body.availability?.quantityAvailable) {
+        if (value > req.body.availability.quantityAvailable) {
+          throw new Error('Minimum order quantity cannot exceed available quantity');
+        }
+      }
+      return true;
+    }),
+  body("maximumOrderQuantity")
+    .custom((value, { req }) => {
+      const pricing = req.body.pricing && req.body.pricing[0];
+      const isPackBased = pricing && pricing.enablePackSelling === true;
+
+      // Required when NOT using pack-based selling
+      if (!isPackBased) {
+        if (value === null || value === undefined || value === '') {
+          throw new Error('Maximum order quantity is required when not using pack-based selling');
+        }
+      }
+      return true;
+    })
+    .isFloat({ min: 0 })
+    .withMessage("Maximum order quantity must be a non-negative number")
+    .custom((value, { req }) => {
+      const minQty = req.body.minimumOrderQuantity || 0;
+
+      if (value && value < minQty) {
+        throw new Error('Maximum order quantity must be greater than or equal to minimum');
+      }
+
+      if (value && req.body.availability?.quantityAvailable) {
+        if (value > req.body.availability.quantityAvailable) {
+          throw new Error('Maximum order quantity cannot exceed available quantity');
+        }
+      }
+
+      return true;
+    }),
 ];
 
 // Update listing validation (similar but all optional)
 const updateListingValidation = [
-  body("pricing.*.pricePerUnit")
+  body("marketId")
+    .optional()
+    .isMongoId()
+    .withMessage("Valid market ID is required")
+    .custom(async (marketId, { req }) => {
+      const Market = require('../models/Market');
+      const Vendor = require('../models/Vendor');
+
+      // Check market exists and is available
+      const market = await Market.findOne({
+        _id: marketId,
+        isDeleted: { $ne: true },
+        isAvailable: true,
+        isActive: true
+      });
+
+      if (!market) {
+        throw new Error('Selected market does not exist or is not available');
+      }
+
+      // Check vendor operates in this market
+      const vendor = await Vendor.findById(req.user.vendorId);
+      if (!vendor) {
+        throw new Error('Vendor not found');
+      }
+
+      const hasMarket = vendor.markets.some(
+        m => m.toString() === marketId.toString()
+      );
+
+      if (!hasMarket) {
+        throw new Error('Cannot move listing to this market. Your vendor account does not operate in the selected market.');
+      }
+
+      return true;
+    }),
+  body("pricing.*.pricePerBaseUnit")
     .optional()
     .isFloat({ min: 0.01 })
-    .withMessage("Price per unit must be a positive number"),
+    .withMessage("Price per base unit must be a positive number"),
   body("pricing.*.unit")
     .optional()
     .not()
@@ -127,6 +293,48 @@ const updateListingValidation = [
     .optional()
     .isLength({ min: 10, max: 500 })
     .withMessage("Description must be between 10 and 500 characters"),
+
+  // Order quantity limits (REQUIRED when pack-based selling is disabled)
+  body("minimumOrderQuantity")
+    .custom((value, { req }) => {
+      const pricing = req.body.pricing && req.body.pricing[0];
+      const isPackBased = pricing && pricing.enablePackSelling === true;
+
+      // Required when NOT using pack-based selling
+      if (!isPackBased && pricing) {
+        if (value === null || value === undefined || value === '') {
+          throw new Error('Minimum order quantity is required when not using pack-based selling');
+        }
+      }
+      return true;
+    })
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Minimum order quantity must be a non-negative number"),
+  body("maximumOrderQuantity")
+    .custom((value, { req }) => {
+      const pricing = req.body.pricing && req.body.pricing[0];
+      const isPackBased = pricing && pricing.enablePackSelling === true;
+
+      // Required when NOT using pack-based selling
+      if (!isPackBased && pricing) {
+        if (value === null || value === undefined || value === '') {
+          throw new Error('Maximum order quantity is required when not using pack-based selling');
+        }
+      }
+      return true;
+    })
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Maximum order quantity must be a non-negative number")
+    .custom((value, { req }) => {
+      if (value && req.body.minimumOrderQuantity) {
+        if (value < req.body.minimumOrderQuantity) {
+          throw new Error('Maximum must be >= minimum order quantity');
+        }
+      }
+      return true;
+    }),
 ];
 
 // Apply authentication and vendor authorization to all routes
@@ -309,6 +517,14 @@ router.get('/listings',
       .optional()
       .isIn(['all', 'active', 'inactive', 'out_of_stock'])
       .withMessage('Status must be one of: all, active, inactive, out_of_stock'),
+    query('marketId')
+      .optional()
+      .custom((value) => {
+        if (value === 'all') return true;
+        const mongoose = require('mongoose');
+        return mongoose.Types.ObjectId.isValid(value);
+      })
+      .withMessage('Market ID must be "all" or a valid MongoDB ObjectId'),
     query('page')
       .optional()
       .isInt({ min: 1 })

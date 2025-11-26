@@ -118,7 +118,8 @@ exports.getDashboardOverview = async (req, res, next) => {
       activeListings,
       totalProducts,
       averageRating,
-      recentOrders
+      recentOrders,
+      marketBreakdown
     ] = await Promise.all([
       // Current period order stats
       Order.aggregate([
@@ -275,7 +276,45 @@ exports.getDashboardOverview = async (req, res, next) => {
         .populate('buyerId', 'name')
         .populate('items.productId', 'name')
         .sort({ createdAt: -1 })
-        .limit(5)
+        .limit(5),
+      // Market breakdown
+      Listing.aggregate([
+        {
+          $match: { vendorId, status: { $in: ['active', 'out_of_stock'] } }
+        },
+        {
+          $group: {
+            _id: '$marketId',
+            totalListings: { $sum: 1 },
+            activeListings: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
+            totalRevenue: { $sum: '$profitAnalytics.totalRevenue' },
+            totalOrders: { $sum: '$totalOrders' },
+            totalQuantitySold: { $sum: '$totalQuantitySold' }
+          }
+        },
+        {
+          $lookup: {
+            from: 'markets',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'market'
+          }
+        },
+        { $unwind: '$market' },
+        {
+          $project: {
+            marketId: '$_id',
+            marketName: '$market.name',
+            marketCity: '$market.location.city',
+            totalListings: 1,
+            activeListings: 1,
+            totalRevenue: 1,
+            totalOrders: 1,
+            totalQuantitySold: 1
+          }
+        },
+        { $sort: { totalRevenue: -1 } }
+      ])
     ]);
 
     const current = currentStats[0] || { totalRevenue: 0, totalOrders: 0, totalQuantity: 0, averageOrderValue: 0 };
@@ -344,7 +383,18 @@ exports.getDashboardOverview = async (req, res, next) => {
           items: order.items.length,
           createdAt: order.createdAt
         }))
-      }
+      },
+      marketBreakdown: marketBreakdown.map(market => ({
+        marketId: market.marketId,
+        marketName: market.marketName,
+        marketCity: market.marketCity,
+        totalListings: market.totalListings,
+        activeListings: market.activeListings,
+        totalRevenue: Math.round(market.totalRevenue * 100) / 100,
+        totalOrders: market.totalOrders,
+        totalQuantitySold: market.totalQuantitySold,
+        activationRate: market.totalListings ? Math.round((market.activeListings / market.totalListings) * 100) : 0
+      }))
     };
 
     res.status(200).json({

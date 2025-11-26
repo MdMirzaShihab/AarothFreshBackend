@@ -2,7 +2,6 @@ const Listing = require('../models/Listing');
 const Product = require('../models/Product');
 const { ErrorResponse } = require('../middleware/error');
 const { validationResult } = require('express-validator');
-const { canUserCreateListings } = require('../middleware/approval');
 
 /**
  * @desc    Create a new listing
@@ -17,28 +16,7 @@ exports.createListing = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    // Check if vendor business is verified to create listings
-    if (!canUserCreateListings(req.user)) {
-      const businessName = req.user.vendorId?.businessName || 'your vendor business';
-      const verificationStatus = req.user.vendorId?.verificationStatus || 'pending';
-      const adminNotes = req.user.vendorId?.adminNotes;
-      
-      let statusMessage = `Your vendor business "${businessName}" is ${verificationStatus}.`;
-      
-      if (verificationStatus === 'rejected') {
-        statusMessage += adminNotes 
-          ? ` Admin feedback: "${adminNotes}". Please address the issues mentioned and resubmit your application.`
-          : ' Please review the issues mentioned by admin and resubmit your application.';
-      } else if (verificationStatus === 'pending') {
-        statusMessage += ' You cannot create listings until your business is verified by admin. Please wait for admin approval.';
-      }
-      
-      statusMessage += ' You cannot create listings until approved.';
-      
-      return next(new ErrorResponse(statusMessage, 403));
-    }
-
-    const { productId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications } = req.body;
+    const { productId, marketId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications, minimumOrderQuantity, maximumOrderQuantity } = req.body;
 
     // Verify the product exists
     const product = await Product.findById(productId);
@@ -46,68 +24,62 @@ exports.createListing = async (req, res, next) => {
       return next(new ErrorResponse('Product not found', 404));
     }
 
-    // Validate pack-based selling configuration
-    if (pricing && pricing.length > 0) {
-      const priceConfig = pricing[0];
+    // Verify the market exists and is available
+    const Market = require('../models/Market');
+    const market = await Market.findOne({
+      _id: marketId,
+      isDeleted: { $ne: true },
+      isAvailable: true
+    });
 
-      if (priceConfig.enablePackSelling) {
-        // Validate packSize is provided and valid
-        if (!priceConfig.packSize || priceConfig.packSize <= 0) {
-          return next(new ErrorResponse('Pack size must be greater than 0 when pack selling is enabled', 400));
-        }
-
-        // Validate minimumPacks is a whole number
-        if (priceConfig.minimumPacks && !Number.isInteger(priceConfig.minimumPacks)) {
-          return next(new ErrorResponse('Minimum packs must be a whole number', 400));
-        }
-
-        // Validate maximumPacks is a whole number and >= minimumPacks
-        if (priceConfig.maximumPacks) {
-          if (!Number.isInteger(priceConfig.maximumPacks)) {
-            return next(new ErrorResponse('Maximum packs must be a whole number', 400));
-          }
-          if (priceConfig.maximumPacks < (priceConfig.minimumPacks || 1)) {
-            return next(new ErrorResponse('Maximum packs must be greater than or equal to minimum packs', 400));
-          }
-        }
-
-        // Validate inventory is sufficient for minimum packs
-        const minRequiredInventory = priceConfig.packSize * (priceConfig.minimumPacks || 1);
-        if (availability.quantityAvailable < minRequiredInventory) {
-          return next(new ErrorResponse(
-            `Insufficient inventory for pack-based selling. Need at least ${minRequiredInventory} ${availability.unit} ` +
-            `for ${priceConfig.minimumPacks || 1} pack(s) of ${priceConfig.packSize} ${availability.unit} each`,
-            400
-          ));
-        }
-
-        // Validate inventory is a multiple of packSize (or at least 1 full pack)
-        if (availability.quantityAvailable < priceConfig.packSize) {
-          return next(new ErrorResponse(
-            `Inventory must be at least ${priceConfig.packSize} ${availability.unit} to enable pack-based selling`,
-            400
-          ));
-        }
-      }
+    if (!market) {
+      return next(new ErrorResponse('Market not found or is not available', 404));
     }
 
-    // Create listing (non-inventory based for MVP)
-    const listing = await Listing.create({
+    // Verify vendor operates in this market
+    const Vendor = require('../models/Vendor');
+    const vendor = await Vendor.findById(req.user.vendorId);
+    const hasMarket = vendor.markets.some(m => m.toString() === marketId.toString());
+
+    if (!hasMarket) {
+      return next(new ErrorResponse(
+        `You cannot create listings in ${market.name}. Your vendor account does not operate in this market.`,
+        403
+      ));
+    }
+
+    // Build listing data
+    const listingData = {
       vendorId: req.user.vendorId,
-      listingType: 'non_inventory', // All listings are non-inventory for MVP
       productId,
+      marketId,
       pricing,
       qualityGrade,
       availability,
       description,
-      images: req.files ? req.files.map(file => ({ url: file.path })) : [],
       deliveryOptions,
       minimumOrderValue,
       leadTime,
+      minimumOrderQuantity,
+      maximumOrderQuantity,
       discount,
       certifications,
       createdBy: req.user.id
-    });
+    };
+
+    // Image upload with validation
+    if (req.files && req.files.length > 0) {
+      const images = req.files.map(file => {
+        if (!file.path || typeof file.path !== 'string') {
+          throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
+        }
+        return { url: file.path };
+      });
+      listingData.images = images;
+    }
+
+    // Create listing
+    const listing = await Listing.create(listingData);
 
     res.status(201).json({
       success: true,
@@ -144,19 +116,25 @@ exports.getListings = async (req, res, next) => {
  */
 exports.getVendorListings = async (req, res, next) => {
   try {
-    const { status = 'all', limit, page = 1, sort = '-createdAt' } = req.query;
-    
+    const { status = 'all', limit, page = 1, sort = '-createdAt', marketId } = req.query;
+
     // Build query for vendor's own listings
     let query = { vendorId: req.user.vendorId };
-    
+
     // Add status filter if specified and not 'all'
     if (status && status !== 'all') {
       query.status = status;
     }
-    
+
+    // Add market filter if specified and not 'all'
+    if (marketId && marketId !== 'all') {
+      query.marketId = marketId;
+    }
+
     // Build the listing query
     let listingQuery = Listing.find(query)
       .populate('productId', 'name description category images')
+      .populate('marketId', 'name location.city location.address')
       .sort(sort);
     
     // Add pagination if limit is specified
@@ -202,27 +180,6 @@ exports.updateListing = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    // Check if vendor business is verified to modify listings
-    if (!canUserCreateListings(req.user)) {
-      const businessName = req.user.vendorId?.businessName || 'your vendor business';
-      const verificationStatus = req.user.vendorId?.verificationStatus || 'pending';
-      const adminNotes = req.user.vendorId?.adminNotes;
-      
-      let statusMessage = `Your vendor business "${businessName}" is ${verificationStatus}.`;
-      
-      if (verificationStatus === 'rejected') {
-        statusMessage += adminNotes 
-          ? ` Admin feedback: "${adminNotes}". Please address the issues mentioned and resubmit your application.`
-          : ' Please review the issues mentioned by admin and resubmit your application.';
-      } else if (verificationStatus === 'pending') {
-        statusMessage += ' You cannot modify listings until your business is verified by admin. Please wait for admin approval.';
-      }
-      
-      statusMessage += ' You cannot modify listings until approved.';
-      
-      return next(new ErrorResponse(statusMessage, 403));
-    }
-
     let listing = await Listing.findById(req.params.id);
 
     if (!listing) {
@@ -234,19 +191,58 @@ exports.updateListing = async (req, res, next) => {
       return next(new ErrorResponse('Not authorized to update this listing', 403));
     }
 
+    // If marketId is being updated, validate the new market
+    if (req.body.marketId && req.body.marketId !== listing.marketId.toString()) {
+      const Market = require('../models/Market');
+      const Vendor = require('../models/Vendor');
+
+      const market = await Market.findOne({
+        _id: req.body.marketId,
+        isDeleted: { $ne: true },
+        isAvailable: true,
+        isActive: true
+      });
+
+      if (!market) {
+        return next(new ErrorResponse('Selected market not found or is not available', 404));
+      }
+
+      const vendor = await Vendor.findById(req.user.vendorId);
+      const hasMarket = vendor.markets.some(m => m.toString() === req.body.marketId.toString());
+
+      if (!hasMarket) {
+        return next(new ErrorResponse(
+          `Cannot move listing to ${market.name}. Your vendor account does not operate in this market.`,
+          403
+        ));
+      }
+    }
+
     // Add updated by field
     req.body.updatedBy = req.user.id;
 
-    // Handle new image uploads
+    // Image handling with explicit control
     if (req.files && req.files.length > 0) {
-      const newImages = req.files.map(file => ({ url: file.path }));
-      req.body.images = [...(listing.images || []), ...newImages];
+      const newImages = req.files.map(file => {
+        if (!file.path || typeof file.path !== 'string') {
+          throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
+        }
+        return { url: file.path };
+      });
+
+      if (req.body.replaceImages === true) {
+        req.body.images = newImages;  // REPLACE
+      } else {
+        req.body.images = [...(listing.images || []), ...newImages];  // APPEND (default)
+      }
     }
 
     listing = await Listing.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true
-    }).populate('productId', 'name description category');
+    })
+    .populate('productId', 'name description category')
+    .populate('marketId', 'name location.city');
 
     res.status(200).json({
       success: true,
@@ -264,27 +260,6 @@ exports.updateListing = async (req, res, next) => {
  */
 exports.deleteListing = async (req, res, next) => {
   try {
-    // Check if vendor business is verified to delete listings
-    if (!canUserCreateListings(req.user)) {
-      const businessName = req.user.vendorId?.businessName || 'your vendor business';
-      const verificationStatus = req.user.vendorId?.verificationStatus || 'pending';
-      const adminNotes = req.user.vendorId?.adminNotes;
-      
-      let statusMessage = `Your vendor business "${businessName}" is ${verificationStatus}.`;
-      
-      if (verificationStatus === 'rejected') {
-        statusMessage += adminNotes 
-          ? ` Admin feedback: "${adminNotes}". Please address the issues mentioned and resubmit your application.`
-          : ' Please review the issues mentioned by admin and resubmit your application.';
-      } else if (verificationStatus === 'pending') {
-        statusMessage += ' You cannot delete listings until your business is verified by admin. Please wait for admin approval.';
-      }
-      
-      statusMessage += ' You cannot delete listings until approved.';
-      
-      return next(new ErrorResponse(statusMessage, 403));
-    }
-
     const listing = await Listing.findById(req.params.id);
 
     if (!listing) {
@@ -316,7 +291,8 @@ exports.getListing = async (req, res, next) => {
   try {
     const listing = await Listing.findById(req.params.id)
       .populate('productId', 'name description category images')
-      .populate('vendorId', 'businessName phone address');
+      .populate('vendorId', 'businessName phone address')
+      .populate('marketId', 'name description location');
 
     if (!listing) {
       return next(new ErrorResponse(`Listing not found with id of ${req.params.id}`, 404));

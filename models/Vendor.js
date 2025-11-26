@@ -233,6 +233,37 @@ VendorSchema.path('markets').validate(function(markets) {
   return markets && markets.length > 0;
 }, 'Vendor must operate in at least one market');
 
+// Auto-deactivate listings when markets are removed
+VendorSchema.post('save', async function(doc, next) {
+  if (this.isModified('markets')) {
+    const Listing = require('./Listing');
+
+    const allListings = await Listing.find({
+      vendorId: doc._id,
+      status: { $in: ['active', 'out_of_stock'] }
+    });
+
+    const validMarketIds = doc.markets.map(m => m.toString());
+
+    const listingsToDeactivate = allListings.filter(
+      listing => !validMarketIds.includes(listing.marketId.toString())
+    );
+
+    if (listingsToDeactivate.length > 0) {
+      console.log(`Auto-deactivating ${listingsToDeactivate.length} listings due to market removal`);
+
+      for (const listing of listingsToDeactivate) {
+        listing.status = 'inactive';
+        listing.isFlagged = true;
+        listing.flagReason = 'Automatically deactivated: Vendor no longer operates in market';
+        listing.lastStatusUpdate = new Date();
+        await listing.save({ validateBeforeSave: false });
+      }
+    }
+  }
+  next();
+});
+
 // Indexes for better query performance
 VendorSchema.index({ 'address.coordinates': '2dsphere' });
 VendorSchema.index({ businessName: 'text', specialties: 'text' });

@@ -50,7 +50,7 @@ exports.placeOrder = async (req, res, next) => {
     }
 
     const firstListingId = items[0].listingId;
-    const listing = await Listing.findById(firstListingId);
+    const listing = await Listing.findById(firstListingId).populate('marketId', 'name isActive isAvailable');
 
     if (!listing) {
       return next(
@@ -58,16 +58,41 @@ exports.placeOrder = async (req, res, next) => {
       );
     }
     const vendorId = listing.vendorId;
+
+    // Validate market exists and is available
+    if (!listing.marketId) {
+      return next(new ErrorResponse('Listing does not have a valid market assigned', 400));
+    }
+
+    if (!listing.marketId.isActive || !listing.marketId.isAvailable) {
+      return next(new ErrorResponse(`Market "${listing.marketId.name}" is currently unavailable for orders`, 400));
+    }
+
+    const orderMarketId = listing.marketId._id.toString();
     // --- End of new logic ---
 
     // Validate and enrich order items with pack-based selling information
     const enrichedItems = [];
     for (const item of items) {
       const itemListing = await Listing.findById(item.listingId)
-        .populate('productId', 'name');
+        .populate('productId', 'name')
+        .populate('marketId', 'name isActive isAvailable');
 
       if (!itemListing) {
         return next(new ErrorResponse(`Listing with ID ${item.listingId} not found`, 404));
+      }
+
+      // Validate all listings belong to the same market
+      if (!itemListing.marketId || itemListing.marketId._id.toString() !== orderMarketId) {
+        return next(new ErrorResponse(
+          `All items in an order must be from the same market. Item "${itemListing.productId.name}" is from a different market.`,
+          400
+        ));
+      }
+
+      // Validate market is active and available
+      if (!itemListing.marketId.isActive || !itemListing.marketId.isAvailable) {
+        return next(new ErrorResponse(`Market "${itemListing.marketId.name}" is currently unavailable for orders`, 400));
       }
 
       // Check if listing is active and available
@@ -252,7 +277,11 @@ exports.updateOrderStatus = async (req, res, next) => {
     const order = await Order.findById(req.params.id)
       .populate({
         path: "items.listingId",
-        select: "vendorId profitAnalytics availability"
+        select: "vendorId profitAnalytics availability marketId",
+        populate: {
+          path: 'marketId',
+          select: 'name'
+        }
       })
       .populate('items.productId', 'name');
 

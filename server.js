@@ -42,7 +42,7 @@ app.use(cors({
 if (process.env.NODE_ENV === 'production') {
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    max: 500, // limit each IP to 500 requests per windowMs
     message: {
       success: false,
       error: 'Too many requests from this IP, please try again later.'
@@ -57,7 +57,7 @@ if (process.env.NODE_ENV === 'production') {
   // Stricter rate limiting for auth endpoints
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // limit each IP to 5 auth requests per windowMs
+    max: 100, // limit each IP to 100 auth requests per windowMs
     message: {
       success: false,
       error: 'Too many authentication attempts, please try again later.'

@@ -3341,6 +3341,7 @@ exports.getAdminListings = async (req, res, next) => {
       flagged,
       vendor,
       product,
+      marketId,
       search,
       sortBy = 'createdAt',
       sortOrder = 'desc'
@@ -3374,6 +3375,11 @@ exports.getAdminListings = async (req, res, next) => {
       query.productId = product;
     }
 
+    // Filter by market
+    if (marketId) {
+      query.marketId = marketId;
+    }
+
     // Text search
     if (search) {
       query.$or = [
@@ -3398,6 +3404,7 @@ exports.getAdminListings = async (req, res, next) => {
         }
       })
       .populate('vendorId', 'businessName contactInfo email phone address tradeLicenseNo logo ownerName')
+      .populate('marketId', 'name location.city location.address')
       .populate('moderatedBy', 'name email')
       .populate('deletedBy', 'name email')
       .sort(sortOptions)
@@ -3463,6 +3470,7 @@ exports.getAdminListing = async (req, res, next) => {
         }
       })
       .populate('vendorId', 'businessName contactInfo email phone address tradeLicenseNo logo ownerName')
+      .populate('marketId', 'name description location')
       .populate('moderatedBy', 'name email role')
       .populate('deletedBy', 'name email role')
       .populate('createdBy', 'name email role')

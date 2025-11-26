@@ -181,6 +181,25 @@ MarketSchema.methods.canBeDeleted = async function() {
     dependencies.blockers.push(`${dependencies.activeVendors} active vendors are operating in this market`);
   }
 
+  // Check for listings in this market
+  const Listing = require('./Listing');
+
+  dependencies.listings = await Listing.countDocuments({
+    marketId: this._id,
+    isDeleted: { $ne: true }
+  });
+
+  dependencies.activeListings = await Listing.countDocuments({
+    marketId: this._id,
+    status: 'active',
+    isDeleted: { $ne: true }
+  });
+
+  if (dependencies.activeListings > 0) {
+    dependencies.canDelete = false;
+    dependencies.blockers.push(`${dependencies.activeListings} active listings exist in this market`);
+  }
+
   return dependencies;
 };
 

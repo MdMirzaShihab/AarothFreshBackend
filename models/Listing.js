@@ -11,13 +11,29 @@ const ListingSchema = new mongoose.Schema({
     ref: 'Product',
     required: [true, 'Product ID is required']
   },
-  
+  marketId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Market',
+    required: [true, 'Market ID is required'],
+    validate: {
+      validator: async function(marketId) {
+        const Market = mongoose.model('Market');
+        const market = await Market.findOne({
+          _id: marketId,
+          isDeleted: { $ne: true }
+        });
+        return !!market;
+      },
+      message: 'Selected market does not exist or is unavailable'
+    }
+  },
+
   // Listing type classification
   listingType: {
     type: String,
     enum: ['inventory_based', 'non_inventory'],
     required: [true, 'Listing type is required'],
-    default: 'inventory_based'
+    default: 'non_inventory'  // MVP: simplified non-inventory approach
   },
 
   // Inventory relationship - optional for non-inventory listings
@@ -108,20 +124,6 @@ const ListingSchema = new mongoose.Schema({
         },
         message: 'Maximum packs must be a whole number and greater than minimum packs'
       }
-    },
-
-    // Legacy fields for backward compatibility (deprecated)
-    pricePerUnit: {
-      type: Number,
-      // Will be removed in future version
-    },
-    minimumQuantity: {
-      type: Number,
-      // Will be removed in future version
-    },
-    maximumQuantity: {
-      type: Number,
-      // Will be removed in future version
     }
   }],
 
@@ -198,6 +200,60 @@ const ListingSchema = new mongoose.Schema({
     min: [0, 'Lead time cannot be negative']
   }, // hours needed before delivery/pickup
 
+  // Order quantity limits (in base units from pricing array)
+  // REQUIRED when pack-based selling is disabled
+  minimumOrderQuantity: {
+    type: Number,
+    min: [0, 'Minimum order quantity cannot be negative'],
+    validate: {
+      validator: function(value) {
+        const pricing = this.pricing && this.pricing[0];
+
+        // Required when pack-based selling is NOT enabled
+        if (!pricing || !pricing.enablePackSelling) {
+          if (value === null || value === undefined) {
+            return false;
+          }
+        }
+
+        // If set, must be less than or equal to available quantity
+        if (value > 0 && this.availability?.quantityAvailable) {
+          return value <= this.availability.quantityAvailable;
+        }
+        return true;
+      },
+      message: 'Minimum order quantity is required when not using pack-based selling, and cannot exceed available quantity'
+    }
+  },
+  maximumOrderQuantity: {
+    type: Number,
+    min: [0, 'Maximum order quantity cannot be negative'],
+    validate: {
+      validator: function(value) {
+        const pricing = this.pricing && this.pricing[0];
+
+        // Required when pack-based selling is NOT enabled
+        if (!pricing || !pricing.enablePackSelling) {
+          if (value === null || value === undefined) {
+            return false;
+          }
+        }
+
+        // Must be greater than minimum
+        if (this.minimumOrderQuantity && value < this.minimumOrderQuantity) {
+          return false;
+        }
+
+        // Cannot exceed available quantity
+        if (this.availability?.quantityAvailable && value > this.availability.quantityAvailable) {
+          return false;
+        }
+
+        return true;
+      },
+      message: 'Maximum order quantity is required when not using pack-based selling, must be >= minimum, and <= available quantity'
+    }
+  },
 
   // Special offers
   discount: {
@@ -342,6 +398,29 @@ ListingSchema.pre('save', function(next) {
   next();
 });
 
+// Validate marketId belongs to vendor's markets array
+ListingSchema.pre('save', async function(next) {
+  if (this.isModified('marketId') || this.isModified('vendorId')) {
+    const Vendor = mongoose.model('Vendor');
+    const vendor = await Vendor.findById(this.vendorId);
+
+    if (!vendor) {
+      return next(new Error('Vendor not found'));
+    }
+
+    const hasMarket = vendor.markets.some(
+      m => m.toString() === this.marketId.toString()
+    );
+
+    if (!hasMarket) {
+      return next(new Error(
+        'Market validation failed: Vendor does not operate in the selected market'
+      ));
+    }
+  }
+  next();
+});
+
 // Validate pack-based selling configuration
 ListingSchema.pre('save', function(next) {
   const pricing = this.pricing && this.pricing[0];
@@ -445,6 +524,24 @@ ListingSchema.pre('save', function(next) {
   next();
 });
 
+// Validate simple quantity limits vs pack-based selling
+ListingSchema.pre('save', function(next) {
+  const pricing = this.pricing && this.pricing[0];
+
+  // If pack-based selling is enabled, simple limits should not be set
+  if (pricing && pricing.enablePackSelling) {
+    if (this.minimumOrderQuantity !== null && this.minimumOrderQuantity !== undefined) {
+      console.warn(
+        `Listing ${this._id}: Pack-based selling is enabled. ` +
+        `Simple quantity limits (minimumOrderQuantity/maximumOrderQuantity) will be ignored. ` +
+        `Use minimumPacks/maximumPacks instead.`
+      );
+    }
+  }
+
+  next();
+});
+
 // Virtual for primary image
 ListingSchema.virtual('primaryImage').get(function() {
   if (this.images && this.images.length > 0) {
@@ -471,7 +568,7 @@ ListingSchema.virtual('effectivePrice').get(function() {
   if (!this.pricing || this.pricing.length === 0) return null;
 
   const pricing = this.pricing[0];
-  const basePrice = pricing.pricePerBaseUnit || pricing.pricePerUnit; // Support legacy field
+  const basePrice = pricing.pricePerBaseUnit;
 
   if (this.discount && this.discount.validUntil > new Date()) {
     if (this.discount.type === 'percentage') {
@@ -495,6 +592,14 @@ ListingSchema.virtual('effectivePackPrice').get(function() {
 
   const effectiveBasePrice = this.effectivePrice;
   return effectiveBasePrice * pricing.packSize;
+});
+
+// Virtual for market population
+ListingSchema.virtual('market', {
+  ref: 'Market',
+  localField: 'marketId',
+  foreignField: '_id',
+  justOne: true
 });
 
 // Method to check if listing is available for order
@@ -523,6 +628,19 @@ ListingSchema.methods.isAvailableForOrder = function(quantity = 1, isPacks = fal
     }
   }
 
+  // Check simple quantity limits (when NOT using pack-based selling)
+  if (!pricing || !pricing.enablePackSelling) {
+    // Check minimum order quantity
+    if (this.minimumOrderQuantity && requiredQuantity < this.minimumOrderQuantity) {
+      return false;
+    }
+
+    // Check maximum order quantity
+    if (this.maximumOrderQuantity && requiredQuantity > this.maximumOrderQuantity) {
+      return false;
+    }
+  }
+
   return (
     this.status === 'active' &&
     this.availability.quantityAvailable >= requiredQuantity &&
@@ -536,6 +654,7 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
     keyword,
     category,
     vendorId,
+    marketId,
     minPrice,
     maxPrice,
     location,
@@ -573,11 +692,16 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
     query.vendorId = vendorId;
   }
 
+  // Market filter
+  if (marketId) {
+    query.marketId = marketId;
+  }
+
   // Price range filter
   if (minPrice || maxPrice) {
-    query['pricing.pricePerUnit'] = {};
-    if (minPrice) query['pricing.pricePerUnit'].$gte = minPrice;
-    if (maxPrice) query['pricing.pricePerUnit'].$lte = maxPrice;
+    query['pricing.pricePerBaseUnit'] = {};
+    if (minPrice) query['pricing.pricePerBaseUnit'].$gte = minPrice;
+    if (maxPrice) query['pricing.pricePerBaseUnit'].$lte = maxPrice;
   }
 
   // Quality grade filter
@@ -609,8 +733,17 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
         as: 'vendor'
       }
     },
+    {
+      $lookup: {
+        from: 'markets',
+        localField: 'marketId',
+        foreignField: '_id',
+        as: 'market'
+      }
+    },
     { $unwind: '$product' },
     { $unwind: '$vendor' },
+    { $unwind: { path: '$market', preserveNullAndEmptyArrays: true } },
     { $match: query }
   ];
 
@@ -643,12 +776,14 @@ ListingSchema.index({ vendorId: 1, status: 1 });
 ListingSchema.index({ productId: 1, status: 1 });
 ListingSchema.index({ inventoryId: 1 });
 ListingSchema.index({ status: 1, featured: 1, createdAt: -1 });
-ListingSchema.index({ 'pricing.pricePerUnit': 1 });
+ListingSchema.index({ 'pricing.pricePerBaseUnit': 1 });
 ListingSchema.index({ qualityGrade: 1 });
 ListingSchema.index({ description: 'text' });
 ListingSchema.index({ isFlagged: 1, status: 1 });
 ListingSchema.index({ 'profitAnalytics.profitMargin': -1 }); // For profit analytics queries
 ListingSchema.index({ isDeleted: 1, status: 1 });
 ListingSchema.index({ moderatedBy: 1, lastStatusUpdate: -1 });
+ListingSchema.index({ marketId: 1, status: 1 }); // For market-based queries
+ListingSchema.index({ vendorId: 1, marketId: 1, status: 1 }); // For vendor-market listing queries
 
 module.exports = mongoose.model('Listing', ListingSchema);
