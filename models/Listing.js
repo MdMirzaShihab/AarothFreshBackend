@@ -171,7 +171,7 @@ const ListingSchema = new mongoose.Schema({
     selfPickup: {
       enabled: {
         type: Boolean,
-        default: true
+        default: false
       },
       address: String,
       instructions: String
@@ -179,26 +179,36 @@ const ListingSchema = new mongoose.Schema({
     delivery: {
       enabled: {
         type: Boolean,
-        default: false
+        default: true
       },
-      radius: Number, // in kilometers
-      fee: Number,
-      freeDeliveryMinimum: Number,
-      estimatedTime: String // e.g., "2-4 hours"
+      fee: {
+        type: Number,
+        default: 0,
+        min: [0, 'Delivery fee cannot be negative']
+      },
+      // Quantity-based free delivery (not money-based)
+      freeDeliveryMinimumQuantity: {
+        type: Number,
+        min: [0, 'Free delivery minimum quantity cannot be negative']
+      },
+      freeDeliveryMinimumUnit: {
+        type: String,
+        enum: ['kg', 'g', 'piece', 'bunch', 'liter', 'ml']
+      },
+      estimatedDeliveryTime: {
+        type: Number, // hours: 3 for "2-4 hours", 12 for "same day", 24 for "next day"
+        required: [true, 'Estimated delivery time is required'],
+        min: [0, 'Estimated delivery time cannot be negative']
+      }
     }
   },
 
-  // Order requirements
-  minimumOrderValue: {
-    type: Number,
-    default: 0,
-    min: [0, 'Minimum order value cannot be negative']
-  },
+  // leadTime field kept for backward compatibility (now calculated from estimatedDeliveryTime)
   leadTime: {
     type: Number,
     default: 0,
     min: [0, 'Lead time cannot be negative']
-  }, // hours needed before delivery/pickup
+  }, // hours needed before delivery
 
   // Order quantity limits (in base units from pricing array)
   // REQUIRED when pack-based selling is disabled
