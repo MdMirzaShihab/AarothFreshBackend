@@ -144,8 +144,14 @@ const ListingSchema = new mongoose.Schema({
       type: String,
       required: [true, 'Availability unit is required']
     },
-    harvestDate: Date,
-    expiryDate: Date,
+    harvestDate: {
+      type: Date,
+      required: false
+    },
+    expiryDate: {
+      type: Date,
+      required: false
+    },
     isInSeason: {
       type: Boolean,
       default: true
@@ -165,17 +171,33 @@ const ListingSchema = new mongoose.Schema({
       default: false
     }
   }],
+  videos: [{
+    url: {
+      type: String,
+      required: [true, 'Video URL is required']
+    },
+    thumbnail: {
+      type: String,
+      required: false
+    },
+    duration: {
+      type: Number,
+      required: false,
+      max: [10, 'Video duration cannot exceed 10 seconds']
+    },
+    format: {
+      type: String,
+      enum: ['mp4', 'webm', 'mov'],
+      required: false
+    },
+    publicId: {
+      type: String,
+      required: false
+    }
+  }],
 
   // Delivery and logistics
   deliveryOptions: {
-    selfPickup: {
-      enabled: {
-        type: Boolean,
-        default: false
-      },
-      address: String,
-      instructions: String
-    },
     delivery: {
       enabled: {
         type: Boolean,
@@ -202,13 +224,6 @@ const ListingSchema = new mongoose.Schema({
       }
     }
   },
-
-  // leadTime field kept for backward compatibility (now calculated from estimatedDeliveryTime)
-  leadTime: {
-    type: Number,
-    default: 0,
-    min: [0, 'Lead time cannot be negative']
-  }, // hours needed before delivery
 
   // Order quantity limits (in base units from pricing array)
   // REQUIRED when pack-based selling is disabled
@@ -280,15 +295,6 @@ const ListingSchema = new mongoose.Schema({
   },
 
 
-  // Certifications
-  certifications: [{
-    name: String, // e.g., 'Organic', 'Fair Trade', 'Non-GMO'
-    issuedBy: String,
-    validUntil: Date,
-    certificateNumber: String
-  }],
-
-
   // Status and visibility
   status: {
     type: String,
@@ -338,44 +344,17 @@ const ListingSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  
-  // Profit and performance tracking
-  profitAnalytics: {
-    totalRevenue: {
-      type: Number,
-      default: 0,
-      min: [0, 'Total revenue cannot be negative']
-    },
-    totalCost: {
-      type: Number,
-      default: 0,
-      min: [0, 'Total cost cannot be negative']
-    },
-    grossProfit: {
-      type: Number,
-      default: 0
-    },
-    profitMargin: {
-      type: Number,
-      default: 0,
-      min: [0, 'Profit margin cannot be negative']
-    },
-    averageProfitPerUnit: {
-      type: Number,
-      default: 0
-    }
-  },
   rating: {
     average: {
       type: Number,
       min: [0, 'Rating must be at least 0'],
       max: [5, 'Rating cannot be more than 5'],
       default: 0
-  },
-  count: {
+    },
+    count: {
       type: Number,
       default: 0
-  }
+    }
   },
 
   
@@ -492,6 +471,23 @@ ListingSchema.pre('save', function(next) {
   next();
 });
 
+// Validate video constraints
+ListingSchema.pre('save', function(next) {
+  if (this.videos && this.videos.length > 0) {
+    // Check maximum 2 videos
+    if (this.videos.length > 2) {
+      return next(new Error('Maximum 2 videos allowed per listing'));
+    }
+
+    // Check duration constraint (10 seconds max)
+    const longVideos = this.videos.filter(v => v.duration && v.duration > 10);
+    if (longVideos.length > 0) {
+      return next(new Error('Videos must be 10 seconds or less'));
+    }
+  }
+  next();
+});
+
 // Auto-update status based on availability (including pack-based selling)
 ListingSchema.pre('save', function(next) {
   const pricing = this.pricing && this.pricing[0];
@@ -509,43 +505,6 @@ ListingSchema.pre('save', function(next) {
       this.status = 'out_of_stock';
     } else if (this.availability.quantityAvailable > 0 && this.status === 'out_of_stock') {
       this.status = 'active';
-    }
-  }
-
-  next();
-});
-
-// Update profit analytics when sales occur
-ListingSchema.pre('save', function(next) {
-  if (this.isModified('totalQuantitySold') || this.isModified('profitAnalytics.totalRevenue')) {
-    // Calculate gross profit
-    this.profitAnalytics.grossProfit = this.profitAnalytics.totalRevenue - this.profitAnalytics.totalCost;
-    
-    // Calculate profit margin percentage
-    if (this.profitAnalytics.totalRevenue > 0) {
-      this.profitAnalytics.profitMargin = (this.profitAnalytics.grossProfit / this.profitAnalytics.totalRevenue) * 100;
-    }
-    
-    // Calculate average profit per unit
-    if (this.totalQuantitySold > 0) {
-      this.profitAnalytics.averageProfitPerUnit = this.profitAnalytics.grossProfit / this.totalQuantitySold;
-    }
-  }
-  next();
-});
-
-// Validate simple quantity limits vs pack-based selling
-ListingSchema.pre('save', function(next) {
-  const pricing = this.pricing && this.pricing[0];
-
-  // If pack-based selling is enabled, simple limits should not be set
-  if (pricing && pricing.enablePackSelling) {
-    if (this.minimumOrderQuantity !== null && this.minimumOrderQuantity !== undefined) {
-      console.warn(
-        `Listing ${this._id}: Pack-based selling is enabled. ` +
-        `Simple quantity limits (minimumOrderQuantity/maximumOrderQuantity) will be ignored. ` +
-        `Use minimumPacks/maximumPacks instead.`
-      );
     }
   }
 
@@ -790,7 +749,6 @@ ListingSchema.index({ 'pricing.pricePerBaseUnit': 1 });
 ListingSchema.index({ qualityGrade: 1 });
 ListingSchema.index({ description: 'text' });
 ListingSchema.index({ isFlagged: 1, status: 1 });
-ListingSchema.index({ 'profitAnalytics.profitMargin': -1 }); // For profit analytics queries
 ListingSchema.index({ isDeleted: 1, status: 1 });
 ListingSchema.index({ moderatedBy: 1, lastStatusUpdate: -1 });
 ListingSchema.index({ marketId: 1, status: 1 }); // For market-based queries

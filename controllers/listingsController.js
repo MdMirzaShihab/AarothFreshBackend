@@ -16,7 +16,7 @@ exports.createListing = async (req, res, next) => {
       return next(new ErrorResponse(errors.array()[0].msg, 400));
     }
 
-    const { productId, marketId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, leadTime, discount, certifications, minimumOrderQuantity, maximumOrderQuantity } = req.body;
+    const { productId, marketId, pricing, qualityGrade, availability, description, deliveryOptions, minimumOrderValue, discount, minimumOrderQuantity, maximumOrderQuantity } = req.body;
 
     // Verify the product exists
     const product = await Product.findById(productId);
@@ -59,23 +59,54 @@ exports.createListing = async (req, res, next) => {
       description,
       deliveryOptions,
       minimumOrderValue,
-      leadTime,
       minimumOrderQuantity,
       maximumOrderQuantity,
       discount,
-      certifications,
       createdBy: req.user.id
     };
 
     // Image upload with validation
-    if (req.files && req.files.length > 0) {
-      const images = req.files.map(file => {
-        if (!file.path || typeof file.path !== 'string') {
-          throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
+    if (req.files) {
+      // Handle images array
+      if (req.files.images && req.files.images.length > 0) {
+        const images = req.files.images.map(file => {
+          if (!file.path || typeof file.path !== 'string') {
+            throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
+          }
+          return { url: file.path };
+        });
+        listingData.images = images;
+      }
+      // Handle legacy single array format (for backward compatibility)
+      else if (Array.isArray(req.files) && req.files.length > 0) {
+        const images = req.files.map(file => {
+          if (!file.path || typeof file.path !== 'string') {
+            throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
+          }
+          return { url: file.path };
+        });
+        listingData.images = images;
+      }
+
+      // Handle videos array
+      if (req.files.videos && req.files.videos.length > 0) {
+        if (req.files.videos.length > 2) {
+          return next(new ErrorResponse('Maximum 2 videos allowed per listing', 400));
         }
-        return { url: file.path };
-      });
-      listingData.images = images;
+
+        const videos = req.files.videos.map(file => {
+          if (!file.path || typeof file.path !== 'string') {
+            throw new ErrorResponse('Invalid video upload: missing or invalid file path', 400);
+          }
+          return {
+            url: file.path,
+            thumbnail: file.path.replace('/upload/', '/upload/so_0/'), // First frame as thumbnail
+            publicId: file.filename,
+            format: file.mimetype.split('/')[1]
+          };
+        });
+        listingData.videos = videos;
+      }
     }
 
     // Create listing
@@ -221,19 +252,68 @@ exports.updateListing = async (req, res, next) => {
     // Add updated by field
     req.body.updatedBy = req.user.id;
 
-    // Image handling with explicit control
-    if (req.files && req.files.length > 0) {
-      const newImages = req.files.map(file => {
-        if (!file.path || typeof file.path !== 'string') {
-          throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
-        }
-        return { url: file.path };
-      });
+    // Image and video handling with explicit control
+    if (req.files) {
+      // Handle images
+      if (req.files.images && req.files.images.length > 0) {
+        const newImages = req.files.images.map(file => {
+          if (!file.path || typeof file.path !== 'string') {
+            throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
+          }
+          return { url: file.path };
+        });
 
-      if (req.body.replaceImages === true) {
-        req.body.images = newImages;  // REPLACE
-      } else {
-        req.body.images = [...(listing.images || []), ...newImages];  // APPEND (default)
+        if (req.body.replaceImages === true || req.body.replaceImages === 'true') {
+          req.body.images = newImages;  // REPLACE
+        } else {
+          req.body.images = [...(listing.images || []), ...newImages];  // APPEND (default)
+        }
+      }
+      // Handle legacy single array format (for backward compatibility)
+      else if (Array.isArray(req.files) && req.files.length > 0) {
+        const newImages = req.files.map(file => {
+          if (!file.path || typeof file.path !== 'string') {
+            throw new ErrorResponse('Invalid image upload: missing or invalid file path', 400);
+          }
+          return { url: file.path };
+        });
+
+        if (req.body.replaceImages === true || req.body.replaceImages === 'true') {
+          req.body.images = newImages;  // REPLACE
+        } else {
+          req.body.images = [...(listing.images || []), ...newImages];  // APPEND (default)
+        }
+      }
+
+      // Handle videos
+      if (req.files.videos && req.files.videos.length > 0) {
+        const newVideos = req.files.videos.map(file => {
+          if (!file.path || typeof file.path !== 'string') {
+            throw new ErrorResponse('Invalid video upload: missing or invalid file path', 400);
+          }
+          return {
+            url: file.path,
+            thumbnail: file.path.replace('/upload/', '/upload/so_0/'), // First frame as thumbnail
+            publicId: file.filename,
+            format: file.mimetype.split('/')[1]
+          };
+        });
+
+        // Check total video count after append
+        const existingVideoCount = (listing.videos || []).length;
+        const totalVideoCount = req.body.replaceVideos === true || req.body.replaceVideos === 'true'
+          ? newVideos.length
+          : existingVideoCount + newVideos.length;
+
+        if (totalVideoCount > 2) {
+          return next(new ErrorResponse('Maximum 2 videos allowed per listing. Use replaceVideos=true to replace existing videos.', 400));
+        }
+
+        if (req.body.replaceVideos === true || req.body.replaceVideos === 'true') {
+          req.body.videos = newVideos;  // REPLACE
+        } else {
+          req.body.videos = [...(listing.videos || []), ...newVideos];  // APPEND (default)
+        }
       }
     }
 

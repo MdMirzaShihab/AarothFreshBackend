@@ -4,53 +4,6 @@ const Listing = require('../models/Listing');
 const { ErrorResponse } = require('../middleware/error');
 
 /**
- * Helper function to calculate profit margin distribution
- */
-const calculateProfitMarginDistribution = (profitByProduct) => {
-  if (!profitByProduct || profitByProduct.length === 0) {
-    return {
-      highMargin: { count: 0, percentage: 0, range: '> 30%' },
-      mediumMargin: { count: 0, percentage: 0, range: '10-30%' },
-      lowMargin: { count: 0, percentage: 0, range: '0-10%' },
-      negative: { count: 0, percentage: 0, range: '< 0%' }
-    };
-  }
-
-  const total = profitByProduct.length;
-  const distribution = profitByProduct.reduce((acc, product) => {
-    const margin = product.averageProfitMargin || 0;
-    if (margin > 30) acc.highMargin++;
-    else if (margin >= 10) acc.mediumMargin++;
-    else if (margin >= 0) acc.lowMargin++;
-    else acc.negative++;
-    return acc;
-  }, { highMargin: 0, mediumMargin: 0, lowMargin: 0, negative: 0 });
-
-  return {
-    highMargin: { 
-      count: distribution.highMargin, 
-      percentage: Math.round((distribution.highMargin / total) * 100), 
-      range: '> 30%' 
-    },
-    mediumMargin: { 
-      count: distribution.mediumMargin, 
-      percentage: Math.round((distribution.mediumMargin / total) * 100), 
-      range: '10-30%' 
-    },
-    lowMargin: { 
-      count: distribution.lowMargin, 
-      percentage: Math.round((distribution.lowMargin / total) * 100), 
-      range: '0-10%' 
-    },
-    negative: { 
-      count: distribution.negative, 
-      percentage: Math.round((distribution.negative / total) * 100), 
-      range: '< 0%' 
-    }
-  };
-};
-
-/**
  * Helper function to get date range based on period or custom dates
  */
 const getDateRange = (period, startDate, endDate) => {
@@ -112,8 +65,6 @@ exports.getDashboardOverview = async (req, res, next) => {
     const [
       currentStats,
       previousStats,
-      currentProfitStats,
-      previousProfitStats,
       totalListings,
       activeListings,
       totalProducts,
@@ -155,111 +106,6 @@ exports.getDashboardOverview = async (req, res, next) => {
           }
         }
       ]),
-      // Current period profit analytics from listings
-      Listing.aggregate([
-        { $match: { vendorId, 'profitAnalytics.totalRevenue': { $gt: 0 } } },
-        {
-          $addFields: {
-            periodRevenue: {
-              $reduce: {
-                input: '$profitAnalytics.salesHistory',
-                initialValue: 0,
-                in: {
-                  $cond: {
-                    if: {
-                      $and: [
-                        { $gte: ['$$this.date', start] },
-                        { $lte: ['$$this.date', end] }
-                      ]
-                    },
-                    then: { $add: ['$$value', '$$this.revenue'] },
-                    else: '$$value'
-                  }
-                }
-              }
-            },
-            periodCost: {
-              $reduce: {
-                input: '$profitAnalytics.salesHistory',
-                initialValue: 0,
-                in: {
-                  $cond: {
-                    if: {
-                      $and: [
-                        { $gte: ['$$this.date', start] },
-                        { $lte: ['$$this.date', end] }
-                      ]
-                    },
-                    then: { $add: ['$$value', '$$this.totalCost'] },
-                    else: '$$value'
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalRevenue: { $sum: '$periodRevenue' },
-            totalCost: { $sum: '$periodCost' },
-            grossProfit: { $sum: { $subtract: ['$periodRevenue', '$periodCost'] } },
-            profitableListings: { $sum: { $cond: [{ $gt: ['$profitAnalytics.profitMargin', 0] }, 1, 0] } }
-          }
-        }
-      ]),
-      // Previous period profit analytics
-      Listing.aggregate([
-        { $match: { vendorId, 'profitAnalytics.totalRevenue': { $gt: 0 } } },
-        {
-          $addFields: {
-            prevPeriodRevenue: {
-              $reduce: {
-                input: '$profitAnalytics.salesHistory',
-                initialValue: 0,
-                in: {
-                  $cond: {
-                    if: {
-                      $and: [
-                        { $gte: ['$$this.date', prevStart] },
-                        { $lte: ['$$this.date', prevEnd] }
-                      ]
-                    },
-                    then: { $add: ['$$value', '$$this.revenue'] },
-                    else: '$$value'
-                  }
-                }
-              }
-            },
-            prevPeriodCost: {
-              $reduce: {
-                input: '$profitAnalytics.salesHistory',
-                initialValue: 0,
-                in: {
-                  $cond: {
-                    if: {
-                      $and: [
-                        { $gte: ['$$this.date', prevStart] },
-                        { $lte: ['$$this.date', prevEnd] }
-                      ]
-                    },
-                    then: { $add: ['$$value', '$$this.totalCost'] },
-                    else: '$$value'
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalRevenue: { $sum: '$prevPeriodRevenue' },
-            totalCost: { $sum: '$prevPeriodCost' },
-            grossProfit: { $sum: { $subtract: ['$prevPeriodRevenue', '$prevPeriodCost'] } }
-          }
-        }
-      ]),
       // Total listings
       Listing.countDocuments({ vendorId }),
       // Active listings
@@ -287,7 +133,6 @@ exports.getDashboardOverview = async (req, res, next) => {
             _id: '$marketId',
             totalListings: { $sum: 1 },
             activeListings: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
-            totalRevenue: { $sum: '$profitAnalytics.totalRevenue' },
             totalOrders: { $sum: '$totalOrders' },
             totalQuantitySold: { $sum: '$totalQuantitySold' }
           }
@@ -308,32 +153,22 @@ exports.getDashboardOverview = async (req, res, next) => {
             marketCity: '$market.location.city',
             totalListings: 1,
             activeListings: 1,
-            totalRevenue: 1,
             totalOrders: 1,
             totalQuantitySold: 1
           }
         },
-        { $sort: { totalRevenue: -1 } }
+        { $sort: { totalOrders: -1 } }
       ])
     ]);
 
     const current = currentStats[0] || { totalRevenue: 0, totalOrders: 0, totalQuantity: 0, averageOrderValue: 0 };
     const previous = previousStats[0] || { totalRevenue: 0, totalOrders: 0 };
 
-    const currentProfit = currentProfitStats[0] || { totalRevenue: 0, totalCost: 0, grossProfit: 0, profitableListings: 0 };
-    const previousProfit = previousProfitStats[0] || { totalRevenue: 0, totalCost: 0, grossProfit: 0 };
-
     // Calculate growth percentages
-    const revenueGrowth = previous.totalRevenue ? 
+    const revenueGrowth = previous.totalRevenue ?
       ((current.totalRevenue - previous.totalRevenue) / previous.totalRevenue * 100) : 0;
-    const orderGrowth = previous.totalOrders ? 
+    const orderGrowth = previous.totalOrders ?
       ((current.totalOrders - previous.totalOrders) / previous.totalOrders * 100) : 0;
-    const profitGrowth = previousProfit.grossProfit ? 
-      ((currentProfit.grossProfit - previousProfit.grossProfit) / previousProfit.grossProfit * 100) : 0;
-
-    // Calculate profit margin
-    const overallProfitMargin = currentProfit.totalRevenue ?
-      ((currentProfit.grossProfit / currentProfit.totalRevenue) * 100) : 0;
 
     const overview = {
       period: {
@@ -350,11 +185,6 @@ exports.getDashboardOverview = async (req, res, next) => {
           current: current.totalOrders,
           growth: Math.round(orderGrowth * 100) / 100
         },
-        profit: {
-          current: currentProfit.grossProfit,
-          growth: Math.round(profitGrowth * 100) / 100,
-          margin: Math.round(overallProfitMargin * 100) / 100
-        },
         averageOrderValue: Math.round(current.averageOrderValue * 100) / 100,
         totalQuantitySold: current.totalQuantity
       },
@@ -362,16 +192,13 @@ exports.getDashboardOverview = async (req, res, next) => {
         totalListings,
         activeListings,
         totalProducts,
-        profitableListings: currentProfit.profitableListings,
         averageRating: averageRating[0]?.avgRating || 0,
-        listingActivationRate: totalListings ? Math.round((activeListings / totalListings) * 100) : 0,
-        profitabilityRate: totalListings ? Math.round((currentProfit.profitableListings / totalListings) * 100) : 0
+        listingActivationRate: totalListings ? Math.round((activeListings / totalListings) * 100) : 0
       },
       financialSummary: {
-        totalRevenue: currentProfit.totalRevenue,
-        totalCosts: currentProfit.totalCost,
-        grossProfit: currentProfit.grossProfit,
-        profitMargin: overallProfitMargin
+        totalRevenue: current.totalRevenue,
+        totalOrders: current.totalOrders,
+        averageOrderValue: Math.round(current.averageOrderValue * 100) / 100
       },
       recentActivity: {
         recentOrders: recentOrders.map(order => ({
@@ -390,7 +217,6 @@ exports.getDashboardOverview = async (req, res, next) => {
         marketCity: market.marketCity,
         totalListings: market.totalListings,
         activeListings: market.activeListings,
-        totalRevenue: Math.round(market.totalRevenue * 100) / 100,
         totalOrders: market.totalOrders,
         totalQuantitySold: market.totalQuantitySold,
         activationRate: market.totalListings ? Math.round((market.activeListings / market.totalListings) * 100) : 0
@@ -422,7 +248,7 @@ exports.getRevenueAnalytics = async (req, res, next) => {
     const { period = 'month', startDate, endDate } = req.query;
     const { start, end } = getDateRange(period, startDate, endDate);
 
-    const [dailyRevenue, revenueByStatus, revenueByProduct, monthlyTrends, profitByProduct] = await Promise.all([
+    const [dailyRevenue, revenueByStatus, revenueByProduct, monthlyTrends] = await Promise.all([
       // Daily revenue breakdown
       Order.aggregate([
         {
@@ -513,68 +339,21 @@ exports.getRevenueAnalytics = async (req, res, next) => {
           }
         },
         { $sort: { '_id.year': 1, '_id.month': 1 } }
-      ]),
-
-      // Get profit by product using listings profit analytics
-      Listing.aggregate([
-        {
-          $match: {
-            vendorId: vendorId
-          }
-        },
-        {
-          $lookup: {
-            from: 'products',
-            localField: 'productId',
-            foreignField: '_id',
-            as: 'product'
-          }
-        },
-        { $unwind: '$product' },
-        {
-          $lookup: {
-            from: 'productcategories', 
-            localField: 'product.category',
-            foreignField: '_id',
-            as: 'category'
-          }
-        },
-        { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
-        {
-          $group: {
-            _id: {
-              productId: '$productId',
-              productName: '$product.name',
-              categoryName: '$category.name'
-            },
-            totalRevenue: { $sum: '$profitAnalytics.totalRevenue' },
-            totalCost: { $sum: '$profitAnalytics.totalCost' },
-            grossProfit: { $sum: '$profitAnalytics.grossProfit' },
-            averageProfitMargin: { $avg: '$profitAnalytics.profitMargin' },
-            totalQuantitySold: { $sum: '$totalQuantitySold' }
-          }
-        },
-        { $sort: { grossProfit: -1 } },
-        { $limit: 20 }
       ])
     ]);
 
-    // Calculate profit metrics from profit by product
+    // Calculate revenue metrics
     const totalRevenue = dailyRevenue.reduce((sum, day) => sum + day.revenue, 0);
-    const totalCost = profitByProduct.reduce((sum, product) => sum + product.totalCost, 0);
-    const totalGrossProfit = profitByProduct.reduce((sum, product) => sum + product.grossProfit, 0);
-    const overallProfitMargin = totalRevenue > 0 ? (totalGrossProfit / totalRevenue) * 100 : 0;
+    const totalOrders = dailyRevenue.reduce((sum, day) => sum + day.orders, 0);
 
     const analytics = {
       summary: {
-        totalRevenue,
-        totalOrders: dailyRevenue.reduce((sum, day) => sum + day.orders, 0),
-        totalCost: Math.round(totalCost * 100) / 100,
-        totalGrossProfit: Math.round(totalGrossProfit * 100) / 100,
-        profitMargin: Math.round(overallProfitMargin * 100) / 100,
-        netProfitMargin: Math.round(overallProfitMargin * 100) / 100, // Same as gross for now, could subtract operational costs
-        averageDailyRevenue: dailyRevenue.length ? 
-          dailyRevenue.reduce((sum, day) => sum + day.revenue, 0) / dailyRevenue.length : 0
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        totalOrders,
+        averageDailyRevenue: dailyRevenue.length ?
+          Math.round((totalRevenue / dailyRevenue.length) * 100) / 100 : 0,
+        averageOrderValue: totalOrders > 0 ?
+          Math.round((totalRevenue / totalOrders) * 100) / 100 : 0
       },
       dailyTrends: dailyRevenue.map(day => ({
         date: day._id,
@@ -598,30 +377,7 @@ exports.getRevenueAnalytics = async (req, res, next) => {
         month: `${month._id.year}-${month._id.month.toString().padStart(2, '0')}`,
         revenue: Math.round(month.revenue * 100) / 100,
         orders: month.orders
-      })),
-      // New profit analytics sections
-      profitAnalytics: {
-        topProfitableProducts: profitByProduct.slice(0, 10).map(product => ({
-          productId: product._id.productId,
-          productName: product._id.productName,
-          category: product._id.categoryName || 'Uncategorized',
-          totalRevenue: Math.round(product.totalRevenue * 100) / 100,
-          totalCost: Math.round(product.totalCost * 100) / 100,
-          grossProfit: Math.round(product.grossProfit * 100) / 100,
-          profitMargin: Math.round(product.averageProfitMargin * 100) / 100,
-          quantitySold: product.totalQuantitySold,
-          profitPerUnit: product.totalQuantitySold > 0 ? 
-            Math.round((product.grossProfit / product.totalQuantitySold) * 100) / 100 : 0
-        })),
-        profitMarginDistribution: calculateProfitMarginDistribution(profitByProduct),
-        costBreakdown: {
-          totalRevenue: Math.round(totalRevenue * 100) / 100,
-          totalCost: Math.round(totalCost * 100) / 100,
-          grossProfit: Math.round(totalGrossProfit * 100) / 100,
-          costOfGoodsSold: Math.round(totalCost * 100) / 100,
-          profitMargin: Math.round(overallProfitMargin * 100) / 100
-        }
-      }
+      }))
     };
 
     // Calculate percentages for revenue by status
@@ -804,22 +560,19 @@ exports.getProductPerformance = async (req, res, next) => {
     }
 
     const vendorId = req.user.vendorId;
-    const { sort = 'profit', limit = 20 } = req.query;
+    const { sort = 'orders', limit = 20 } = req.query;
 
-    // Enhanced sort mapping to include profit-based metrics
+    // Sort mapping based on basic sales metrics
     const sortMapping = {
-      revenue: { totalRevenue: -1 },
-      profit: { grossProfit: -1 },
-      profitMargin: { profitMargin: -1 },
       quantity: { totalQuantitySold: -1 },
       orders: { totalOrders: -1 },
       rating: { rating: -1 },
-      roi: { roi: -1 }
+      views: { views: -1 }
     };
 
-    // Get comprehensive product performance with profit integration
+    // Get comprehensive product performance based on basic sales metrics
     const [listingPerformance, categoryPerformance] = await Promise.all([
-      // Enhanced product performance with profit analytics from listings
+      // Product performance with basic sales metrics
       Listing.aggregate([
         {
           $match: {
@@ -849,22 +602,9 @@ exports.getProductPerformance = async (req, res, next) => {
             productId: '$productId',
             productName: '$product.name',
             category: '$category.name',
-            // Revenue & Sales data
-            totalRevenue: '$profitAnalytics.totalRevenue',
-            totalCost: '$profitAnalytics.totalCost',
-            grossProfit: '$profitAnalytics.grossProfit',
-            profitMargin: '$profitAnalytics.profitMargin',
-            averageProfitPerUnit: '$profitAnalytics.averageProfitPerUnit',
+            // Sales data
             totalQuantitySold: '$totalQuantitySold',
             totalOrders: '$totalOrders',
-            // Calculated metrics
-            roi: {
-              $cond: {
-                if: { $gt: ['$profitAnalytics.totalCost', 0] },
-                then: { $multiply: [{ $divide: ['$profitAnalytics.grossProfit', '$profitAnalytics.totalCost'] }, 100] },
-                else: 0
-              }
-            },
             // Listing performance
             rating: '$rating.average',
             views: '$views',
@@ -875,11 +615,11 @@ exports.getProductPerformance = async (req, res, next) => {
             lastUpdated: '$updatedAt'
           }
         },
-        { $sort: sortMapping[sort] || sortMapping.profit },
+        { $sort: sortMapping[sort] || sortMapping.orders },
         { $limit: parseInt(limit) }
       ]),
       
-      // Category performance with profit integration
+      // Category performance based on sales
       Listing.aggregate([
         {
           $match: {
@@ -889,7 +629,7 @@ exports.getProductPerformance = async (req, res, next) => {
         {
           $lookup: {
             from: 'products',
-            localField: 'productId', 
+            localField: 'productId',
             foreignField: '_id',
             as: 'product'
           }
@@ -909,9 +649,6 @@ exports.getProductPerformance = async (req, res, next) => {
             _id: '$category._id',
             categoryName: { $first: '$category.name' },
             totalProducts: { $sum: 1 },
-            totalRevenue: { $sum: '$profitAnalytics.totalRevenue' },
-            totalCost: { $sum: '$profitAnalytics.totalCost' },
-            grossProfit: { $sum: '$profitAnalytics.grossProfit' },
             totalQuantitySold: { $sum: '$totalQuantitySold' },
             totalOrders: { $sum: '$totalOrders' },
             averageRating: { $avg: '$rating.average' }
@@ -922,29 +659,12 @@ exports.getProductPerformance = async (req, res, next) => {
             categoryId: '$_id',
             categoryName: 1,
             totalProducts: 1,
-            totalRevenue: 1,
-            totalCost: 1,
-            grossProfit: 1,
-            profitMargin: {
-              $cond: {
-                if: { $gt: ['$totalRevenue', 0] },
-                then: { $multiply: [{ $divide: ['$grossProfit', '$totalRevenue'] }, 100] },
-                else: 0
-              }
-            },
             totalQuantitySold: 1,
             totalOrders: 1,
-            averageRating: 1,
-            roi: {
-              $cond: {
-                if: { $gt: ['$totalCost', 0] },
-                then: { $multiply: [{ $divide: ['$grossProfit', '$totalCost'] }, 100] },
-                else: 0
-              }
-            }
+            averageRating: 1
           }
         },
-        { $sort: { grossProfit: -1 } }
+        { $sort: { totalOrders: -1 } }
       ])
     ]);
 
@@ -953,13 +673,6 @@ exports.getProductPerformance = async (req, res, next) => {
         productId: product.productId,
         name: product.productName,
         category: product.category || 'Uncategorized',
-        // Financial metrics
-        revenue: Math.round((product.totalRevenue || 0) * 100) / 100,
-        cost: Math.round((product.totalCost || 0) * 100) / 100,
-        grossProfit: Math.round((product.grossProfit || 0) * 100) / 100,
-        profitMargin: Math.round((product.profitMargin || 0) * 100) / 100,
-        profitPerUnit: Math.round((product.averageProfitPerUnit || 0) * 100) / 100,
-        roi: Math.round((product.roi || 0) * 100) / 100,
         // Sales metrics
         orders: product.totalOrders || 0,
         quantitySold: product.totalQuantitySold || 0,
@@ -971,19 +684,12 @@ exports.getProductPerformance = async (req, res, next) => {
         status: product.status || 'inactive',
         lastUpdated: product.lastUpdated,
         // Health indicators
-        stockHealth: product.currentStock > 0 ? 'in_stock' : 'out_of_stock',
-        profitHealth: product.profitMargin > 10 ? 'healthy' : product.profitMargin > 0 ? 'low' : 'negative'
+        stockHealth: product.currentStock > 0 ? 'in_stock' : 'out_of_stock'
       })),
       categoryPerformance: categoryPerformance.map(category => ({
         categoryId: category.categoryId,
         name: category.categoryName || 'Uncategorized',
         totalProducts: category.totalProducts,
-        // Financial metrics
-        revenue: Math.round((category.totalRevenue || 0) * 100) / 100,
-        cost: Math.round((category.totalCost || 0) * 100) / 100,
-        grossProfit: Math.round((category.grossProfit || 0) * 100) / 100,
-        profitMargin: Math.round((category.profitMargin || 0) * 100) / 100,
-        roi: Math.round((category.roi || 0) * 100) / 100,
         // Sales metrics
         orders: category.totalOrders,
         quantitySold: category.totalQuantitySold,
@@ -991,44 +697,39 @@ exports.getProductPerformance = async (req, res, next) => {
       })),
       summary: {
         totalProducts: listingPerformance.length,
-        totalRevenue: Math.round(listingPerformance.reduce((sum, p) => sum + (p.totalRevenue || 0), 0) * 100) / 100,
-        totalCost: Math.round(listingPerformance.reduce((sum, p) => sum + (p.totalCost || 0), 0) * 100) / 100,
-        totalGrossProfit: Math.round(listingPerformance.reduce((sum, p) => sum + (p.grossProfit || 0), 0) * 100) / 100,
-        averageProfitMargin: listingPerformance.length > 0 
-          ? Math.round((listingPerformance.reduce((sum, p) => sum + (p.profitMargin || 0), 0) / listingPerformance.length) * 100) / 100
-          : 0,
         totalQuantitySold: listingPerformance.reduce((sum, p) => sum + (p.totalQuantitySold || 0), 0),
+        totalOrders: listingPerformance.reduce((sum, p) => sum + (p.totalOrders || 0), 0),
         averageRating: listingPerformance.length > 0
           ? Math.round((listingPerformance.reduce((sum, p) => sum + (p.rating || 0), 0) / listingPerformance.length) * 100) / 100
           : 0,
         // Performance indicators
-        profitableProducts: listingPerformance.filter(p => (p.grossProfit || 0) > 0).length,
-        highMarginProducts: listingPerformance.filter(p => (p.profitMargin || 0) > 20).length
+        inStockProducts: listingPerformance.filter(p => (p.currentStock || 0) > 0).length,
+        outOfStockProducts: listingPerformance.filter(p => (p.currentStock || 0) === 0).length
       },
-      profitInsights: {
-        topProfitMakers: listingPerformance
-          .filter(p => (p.grossProfit || 0) > 0)
+      performanceInsights: {
+        topSellers: listingPerformance
+          .filter(p => (p.totalOrders || 0) > 0)
           .slice(0, 5)
           .map(p => ({
             name: p.productName,
-            profit: Math.round((p.grossProfit || 0) * 100) / 100,
-            margin: Math.round((p.profitMargin || 0) * 100) / 100
+            orders: p.totalOrders || 0,
+            quantitySold: p.totalQuantitySold || 0
           })),
-        lowMarginAlert: listingPerformance
-          .filter(p => (p.profitMargin || 0) < 10 && (p.profitMargin || 0) > 0)
+        highlyRated: listingPerformance
+          .filter(p => (p.rating || 0) >= 4.0)
           .slice(0, 5)
           .map(p => ({
             name: p.productName,
-            margin: Math.round((p.profitMargin || 0) * 100) / 100,
-            suggestion: 'Consider adjusting pricing or reducing costs'
+            rating: Math.round((p.rating || 0) * 100) / 100,
+            orders: p.totalOrders || 0
           })),
-        lossmakers: listingPerformance
-          .filter(p => (p.grossProfit || 0) < 0)
-          .slice(0, 3)
+        lowStockAlert: listingPerformance
+          .filter(p => (p.currentStock || 0) > 0 && (p.currentStock || 0) < 10 && p.status === 'active')
+          .slice(0, 5)
           .map(p => ({
             name: p.productName,
-            loss: Math.abs(Math.round((p.grossProfit || 0) * 100) / 100),
-            suggestion: 'Review pricing strategy or discontinue'
+            currentStock: p.currentStock || 0,
+            suggestion: 'Restock soon to avoid running out'
           }))
       }
     };
@@ -1787,8 +1488,7 @@ exports.getFinancialSummary = async (req, res, next) => {
 
     const [
       orderStats,
-      paymentStatusBreakdown,
-      profitAnalytics
+      paymentStatusBreakdown
     ] = await Promise.all([
       // Order and revenue statistics
       Order.aggregate([
@@ -1833,58 +1533,6 @@ exports.getFinancialSummary = async (req, res, next) => {
             amount: { $sum: '$totalAmount' }
           }
         }
-      ]),
-
-      // Profit analytics from listings
-      Listing.aggregate([
-        { 
-          $match: { 
-            vendorId,
-            'profitAnalytics.totalRevenue': { $gt: 0 }
-          } 
-        },
-        {
-          $addFields: {
-            periodProfitData: {
-              $filter: {
-                input: '$profitAnalytics.salesHistory',
-                cond: {
-                  $and: [
-                    { $gte: ['$$this.date', start] },
-                    { $lte: ['$$this.date', end] }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        {
-          $addFields: {
-            periodRevenue: { $sum: '$periodProfitData.revenue' },
-            periodCost: { $sum: '$periodProfitData.totalCost' },
-            periodProfit: { $subtract: [{ $sum: '$periodProfitData.revenue' }, { $sum: '$periodProfitData.totalCost' }] }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalRevenue: { $sum: '$periodRevenue' },
-            totalCost: { $sum: '$periodCost' },
-            grossProfit: { $sum: '$periodProfit' },
-            profitableProducts: { 
-              $sum: { $cond: [{ $gt: ['$periodProfit', 0] }, 1, 0] } 
-            },
-            avgProfitMargin: { 
-              $avg: { 
-                $cond: [
-                  { $gt: ['$periodRevenue', 0] },
-                  { $multiply: [{ $divide: ['$periodProfit', '$periodRevenue'] }, 100] },
-                  0
-                ]
-              }
-            }
-          }
-        }
       ])
     ]);
 
@@ -1897,55 +1545,37 @@ exports.getFinancialSummary = async (req, res, next) => {
       deliveredOrders: 0
     };
 
-    const profitData = profitAnalytics[0] || {
-      totalRevenue: 0,
-      totalCost: 0,
-      grossProfit: 0,
-      profitableProducts: 0,
-      avgProfitMargin: 0
-    };
-
-    // Financial calculations (simplified for non-inventory MVP)
+    // Financial calculations (simplified for MVP - revenue only)
     const platformCommissionRate = 0.05;
     const estimatedCommission = orderMetrics.deliveredRevenue * platformCommissionRate;
     const netRevenue = orderMetrics.deliveredRevenue - estimatedCommission;
 
-    // Simplified P&L calculation using listing profit analytics
-    const grossProfit = profitData.grossProfit;
-    const netProfit = grossProfit - estimatedCommission;
-
-    // Margin calculations
-    const grossMargin = orderMetrics.deliveredRevenue ? (grossProfit / orderMetrics.deliveredRevenue * 100) : 0;
-    const netMargin = orderMetrics.deliveredRevenue ? (netProfit / orderMetrics.deliveredRevenue * 100) : 0;
-
     const daysInPeriod = (end - start) / (1000 * 60 * 60 * 24);
 
-    // Build comprehensive financial summary
+    // Build simplified financial summary (MVP - revenue focused)
     const financialSummary = {
-      period: { 
-        start, 
-        end, 
+      period: {
+        start,
+        end,
         label: period,
         daysInPeriod: Math.round(daysInPeriod)
       },
-      
+
       // Revenue breakdown
       revenue: {
         gross: Math.round(orderMetrics.grossRevenue * 100) / 100,
         delivered: Math.round(orderMetrics.deliveredRevenue * 100) / 100,
         net: Math.round(netRevenue * 100) / 100,
-        pendingPayment: Math.round((orderMetrics.grossRevenue - orderMetrics.deliveredRevenue) * 100) / 100
+        pendingPayment: Math.round((orderMetrics.grossRevenue - orderMetrics.deliveredRevenue) * 100) / 100,
+        averageDaily: daysInPeriod > 0 ?
+          Math.round((orderMetrics.deliveredRevenue / daysInPeriod) * 100) / 100 : 0
       },
 
-      // Simplified P&L Statement (non-inventory MVP)
-      profitAndLoss: {
-        revenue: Math.round(orderMetrics.deliveredRevenue * 100) / 100,
-        totalCost: Math.round(profitData.totalCost * 100) / 100,
-        grossProfit: Math.round(grossProfit * 100) / 100,
-        grossMargin: Math.round(grossMargin * 100) / 100,
+      // Simplified financial summary
+      summary: {
+        totalRevenue: Math.round(orderMetrics.deliveredRevenue * 100) / 100,
         platformFees: Math.round(estimatedCommission * 100) / 100,
-        netProfit: Math.round(netProfit * 100) / 100,
-        netMargin: Math.round(netMargin * 100) / 100
+        netRevenue: Math.round(netRevenue * 100) / 100
       },
 
       // Operational metrics
@@ -1955,15 +1585,6 @@ exports.getFinancialSummary = async (req, res, next) => {
         fulfillmentRate: orderMetrics.totalOrders ?
           Math.round((orderMetrics.deliveredOrders / orderMetrics.totalOrders) * 100) : 0,
         averageOrderValue: Math.round(orderMetrics.averageOrderValue * 100) / 100
-      },
-
-      // Financial health indicators
-      financialHealth: {
-        profitabilityScore: Math.max(0, Math.min(100, netMargin + 50)), // 0-100 scale
-        cashFlowHealth: netProfit > 0 ? 'Positive' : netProfit < 0 ? 'Negative' : 'Break-even',
-        profitableProductsRatio: profitData.profitableProducts && orderMetrics.totalOrders ?
-          Math.round((profitData.profitableProducts / orderMetrics.totalOrders) * 100) : 0,
-        averageProfitMargin: Math.round(profitData.avgProfitMargin * 100) / 100
       },
 
       // Payment breakdown

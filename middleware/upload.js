@@ -90,12 +90,37 @@ const generalStorage = new CloudinaryStorage({
   }
 });
 
+// Create storage engine for listing videos
+const listingVideoStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aaroth-fresh/listing-videos',
+    resource_type: 'video',
+    allowed_formats: ['mp4', 'webm', 'mov'],
+    transformation: [
+      { width: 640, height: 480, crop: 'fill' },
+      { quality: 'auto', fetch_format: 'auto' },
+      { bit_rate: '500k' },
+      { duration: 10 }
+    ]
+  }
+});
+
 // Generic file filter for images
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
     cb(new ErrorResponse('Only image files are allowed', 400), false);
+  }
+};
+
+// Generic file filter for videos
+const videoFileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('video/')) {
+    cb(null, true);
+  } else {
+    cb(new ErrorResponse('Only video files are allowed', 400), false);
   }
 };
 
@@ -224,7 +249,7 @@ module.exports = {
     return (req, res, next) => {
       const role = req.body.role;
       let storage;
-      
+
       if (role === 'vendor') {
         storage = vendorLogoStorage;
       } else if (role === 'restaurantOwner') {
@@ -250,6 +275,52 @@ module.exports = {
         next();
       });
     };
+  },
+
+  // Use this for listing videos
+  uploadListingVideos: (fieldName, maxCount = 2) => {
+    const upload = multer({
+      storage: listingVideoStorage,
+      fileFilter: videoFileFilter,
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB
+        files: maxCount
+      }
+    });
+    return [upload.array(fieldName, maxCount), handleMulterError];
+  },
+
+  // Use this for listing images and videos combined
+  uploadListingMediaFiles: () => {
+    const upload = multer({
+      storage: (req, file, cb) => {
+        // Use video storage for videos, listing storage for images
+        if (file.mimetype.startsWith('video/')) {
+          cb(null, listingVideoStorage);
+        } else {
+          cb(null, listingStorage);
+        }
+      },
+      fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+          cb(null, true);
+        } else {
+          cb(new ErrorResponse('Only image and video files are allowed', 400), false);
+        }
+      },
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB (max for videos)
+        files: 7 // 5 images + 2 videos
+      }
+    });
+
+    return [
+      upload.fields([
+        { name: 'images', maxCount: 5 },
+        { name: 'videos', maxCount: 2 }
+      ]),
+      handleMulterError
+    ];
   },
 
   // Cloudinary instance for manual operations

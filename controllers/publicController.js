@@ -133,19 +133,24 @@ exports.getPublicCategories = async (req, res, next) => {
  */
 exports.getPublicListings = async (req, res, next) => {
   try {
-    let query = { status: 'active' };
+    let query = { status: 'active', isDeleted: { $ne: true } };
+
+    // Build product-based filters (search, category, etc.)
+    const productFilters = [];
 
     // Search by product name
     if (req.query.search) {
-      const products = await Product.find({
-        name: { $regex: req.query.search, $options: 'i' }
-      }).select('_id');
-      query.productId = { $in: products.map(p => p._id) };
+      productFilters.push({ name: { $regex: req.query.search, $options: 'i' } });
     }
 
-    // Filter by category
-    if (req.query.category) {
-      const products = await Product.find({ category: req.query.category }).select('_id');
+    // Filter by category (skip if 'all')
+    if (req.query.category && req.query.category !== 'all') {
+      productFilters.push({ category: req.query.category });
+    }
+
+    // If any product filters exist, combine them with $and
+    if (productFilters.length > 0) {
+      const products = await Product.find({ $and: productFilters }).select('_id');
       query.productId = { $in: products.map(p => p._id) };
     }
 

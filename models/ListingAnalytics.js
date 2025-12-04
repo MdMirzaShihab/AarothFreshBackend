@@ -152,23 +152,6 @@ const ListingAnalyticsSchema = new mongoose.Schema({
     }
   },
 
-  // Profitability analysis (for inventory-based listings)
-  profitability: {
-    grossProfit: {
-      type: Number,
-      default: 0
-    },
-    profitMargin: {
-      type: Number,
-      default: 0
-    },
-    costOfGoodsSold: {
-      type: Number,
-      default: 0,
-      min: [0, 'COGS cannot be negative']
-    }
-  },
-
   // Last updated tracking
   lastOrderDate: {
     type: Date
@@ -266,19 +249,6 @@ ListingAnalyticsSchema.methods.recordSale = function(orderData) {
   return this.save();
 };
 
-// Method to update profitability for inventory-based listings
-ListingAnalyticsSchema.methods.updateProfitability = function(costData) {
-  if (this.listingType === 'inventory_based') {
-    const { costPerUnit } = costData;
-    this.profitability.costOfGoodsSold = this.salesData.totalQuantitySold * costPerUnit;
-    this.profitability.grossProfit = this.salesData.totalRevenue - this.profitability.costOfGoodsSold;
-    this.profitability.profitMargin = this.salesData.totalRevenue > 0 
-      ? (this.profitability.grossProfit / this.salesData.totalRevenue) * 100 
-      : 0;
-  }
-  return this.save();
-};
-
 // Static method to get analytics for vendor
 ListingAnalyticsSchema.statics.getVendorAnalytics = async function(vendorId, options = {}) {
   const { startDate, endDate, listingType, period = 'monthly' } = options;
@@ -313,8 +283,7 @@ ListingAnalyticsSchema.statics.getVendorAnalytics = async function(vendorId, opt
         totalOrders: { $sum: '$salesData.totalOrders' },
         totalRevenue: { $sum: '$salesData.totalRevenue' },
         totalQuantitySold: { $sum: '$salesData.totalQuantitySold' },
-        averageRevenue: { $avg: '$salesData.totalRevenue' },
-        totalGrossProfit: { $sum: '$profitability.grossProfit' }
+        averageRevenue: { $avg: '$salesData.totalRevenue' }
       }
     }
   ];

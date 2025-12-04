@@ -277,7 +277,7 @@ exports.updateOrderStatus = async (req, res, next) => {
     const order = await Order.findById(req.params.id)
       .populate({
         path: "items.listingId",
-        select: "vendorId profitAnalytics availability marketId",
+        select: "vendorId availability marketId",
         populate: {
           path: 'marketId',
           select: 'name'

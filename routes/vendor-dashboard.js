@@ -37,7 +37,7 @@ const {
 
 const { protect, authorize } = require('../middleware/auth');
 const { requireVendorApproval } = require('../middleware/approval');
-const { uploadListingImages } = require('../middleware/upload');
+const { uploadListingImages, uploadListingMediaFiles } = require('../middleware/upload');
 const { query, body } = require('express-validator');
 
 const router = express.Router();
@@ -173,6 +173,12 @@ const listingValidation = [
     .optional()
     .isBoolean()
     .withMessage("Replace images flag must be boolean"),
+
+  // Video replacement control
+  body("replaceVideos")
+    .optional()
+    .isBoolean()
+    .withMessage("Replace videos flag must be boolean"),
 
   // Order quantity limits (REQUIRED when pack-based selling is disabled)
   body("minimumOrderQuantity")
@@ -543,12 +549,12 @@ router.get('/listings',
 
 /**
  * @route   POST /api/v1/vendor-dashboard/listings
- * @desc    Create a new listing
+ * @desc    Create a new listing (supports both images and videos)
  * @access  Private (Vendor only)
  */
 router.post('/listings',
   requireVendorApproval("create listings"),
-  ...uploadListingImages("images", 5),
+  ...uploadListingMediaFiles(),
   listingValidation,
   createListing
 );
@@ -562,12 +568,12 @@ router.get('/listings/:id', getListing);
 
 /**
  * @route   PUT /api/v1/vendor-dashboard/listings/:id
- * @desc    Update a listing
+ * @desc    Update a listing (supports both images and videos)
  * @access  Private (Vendor only - own listings)
  */
 router.put('/listings/:id',
   requireVendorApproval("update listings"),
-  ...uploadListingImages("images", 5),
+  ...uploadListingMediaFiles(),
   updateListingValidation,
   updateListing
 );
