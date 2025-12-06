@@ -11,29 +11,70 @@ const { ErrorResponse } = require('../middleware/error');
  */
 exports.getPublicProducts = async (req, res, next) => {
   try {
-    let query = {};
+    // Base query - only show active products
+    let query = {
+      isActive: true,
+      adminStatus: 'active',
+      isDeleted: { $ne: true }
+    };
 
-    // Search by name
+    // Search by name or tags
     if (req.query.search) {
-      query.name = { $regex: req.query.search, $options: 'i' };
+      query.$or = [
+        { name: { $regex: req.query.search, $options: 'i' } },
+        { tags: { $regex: req.query.search, $options: 'i' } }
+      ];
     }
 
-    // Filter by category
-    if (req.query.category) {
+    // Filter by category (optional)
+    if (req.query.category && req.query.category !== 'all') {
       query.category = req.query.category;
     }
 
     // Pagination
     const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
+    const limit = parseInt(req.query.limit, 10) || 100;
     const skip = (page - 1) * limit;
 
+    // Fetch products with category population
     const products = await Product.find(query)
-      .populate('category', 'name description')
-      .select('name description category images')
+      .populate('category', 'name slug')
+      .select('name description category images isOrganic isSeasonal variety')
       .sort({ name: 1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    // Get active listing count for each product
+    const productIds = products.map(p => p._id);
+    const listingCounts = await Listing.aggregate([
+      {
+        $match: {
+          productId: { $in: productIds },
+          status: 'active',
+          isDeleted: { $ne: true }
+        }
+      },
+      {
+        $group: {
+          _id: '$productId',
+          listingCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Map listing counts to products
+    const listingCountMap = {};
+    listingCounts.forEach(item => {
+      listingCountMap[item._id.toString()] = item.listingCount;
+    });
+
+    // Add listing count to each product
+    const productsWithListings = products.map(product => ({
+      ...product,
+      listingCount: listingCountMap[product._id.toString()] || 0,
+      hasListings: (listingCountMap[product._id.toString()] || 0) > 0
+    }));
 
     const total = await Product.countDocuments(query);
 
@@ -43,7 +84,7 @@ exports.getPublicProducts = async (req, res, next) => {
       total,
       page,
       pages: Math.ceil(total / limit),
-      data: products
+      data: productsWithListings
     });
   } catch (err) {
     next(err);
@@ -162,6 +203,11 @@ exports.getPublicListings = async (req, res, next) => {
     // Filter by market
     if (req.query.marketId) {
       query.marketId = req.query.marketId;
+    }
+
+    // Filter by specific product
+    if (req.query.productId && req.query.productId !== 'all') {
+      query.productId = req.query.productId;
     }
 
     // Price range filter
