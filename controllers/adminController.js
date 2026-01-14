@@ -1209,13 +1209,23 @@ exports.getBuyerStats = async (req, res, next) => {
       }
     ]);
 
-    // Get top cities/locations
-    const topCities = await Buyer.aggregate([
-      { $match: { isDeleted: { $ne: true } } },
-      { $match: { 'address.city': { $exists: true, $ne: null, $ne: '' } } },
+    // Get top locations (by division)
+    const topLocations = await Buyer.aggregate([
+      { $match: { isDeleted: { $ne: true }, 'address.division': { $exists: true } } },
+      {
+        $lookup: {
+          from: 'divisions',
+          localField: 'address.division',
+          foreignField: '_id',
+          as: 'divisionData'
+        }
+      },
+      { $unwind: '$divisionData' },
       {
         $group: {
-          _id: '$address.city',
+          _id: '$address.division',
+          name: { $first: '$divisionData.name.en' },
+          nameBn: { $first: '$divisionData.name.bn' },
           count: { $sum: 1 }
         }
       },
@@ -1224,7 +1234,8 @@ exports.getBuyerStats = async (req, res, next) => {
       {
         $project: {
           _id: 0,
-          name: '$_id',
+          name: 1,
+          nameBn: 1,
           count: 1
         }
       }
@@ -1246,7 +1257,7 @@ exports.getBuyerStats = async (req, res, next) => {
         inactiveBuyers: restaurantStats.inactiveBuyers || 0,
         totalManagers: managerStatsData.totalManagers || 0,
         avgManagersPerBuyer: Number((managerStatsData.avgManagersPerBuyer || 0).toFixed(2)),
-        topCities: topCities || []
+        topLocations: topLocations || [] // Updated from topCities to topLocations (divisions)
       }
     });
   } catch (err) {
@@ -2875,18 +2886,25 @@ exports.createMarket = async (req, res, next) => {
     }
 
     // Create market data with image URL from Cloudinary
+    // Location uses BD address hierarchy: division -> district -> upazila -> union
     const marketData = {
-      ...req.body,
+      name: req.body.name,
+      description: req.body.description,
       location: {
-        address: req.body.address || req.body['location.address'],
-        city: req.body.city || req.body['location.city'],
-        district: req.body.district || req.body['location.district'],
+        division: req.body['location.division'] || req.body.division,
+        district: req.body['location.district'] || req.body.district,
+        upazila: req.body['location.upazila'] || req.body.upazila,
+        union: req.body['location.union'] || req.body.union || undefined,
+        address: req.body['location.address'] || req.body.address,
+        landmark: req.body['location.landmark'] || req.body.landmark || undefined,
+        postalCode: req.body['location.postalCode'] || req.body.postalCode,
         coordinates: req.body.coordinates ?
           (typeof req.body.coordinates === 'string' ?
             JSON.parse(req.body.coordinates) : req.body.coordinates) :
           undefined
       },
       image: req.file.path, // Cloudinary URL
+      isActive: req.body.isActive !== 'false' && req.body.isActive !== false,
       createdBy: req.user.id
     };
 
@@ -2906,6 +2924,10 @@ exports.createMarket = async (req, res, next) => {
     });
 
     const populatedMarket = await Market.findById(market._id)
+      .populate('location.division', 'name code')
+      .populate('location.district', 'name code')
+      .populate('location.upazila', 'name code')
+      .populate('location.union', 'name code')
       .populate('createdBy', 'name email');
 
     res.status(201).json({
@@ -2972,6 +2994,10 @@ exports.getMarkets = async (req, res, next) => {
 
     // Execute query
     const markets = await Market.find(query)
+      .populate('location.division', 'name code')
+      .populate('location.district', 'name code')
+      .populate('location.upazila', 'name code')
+      .populate('location.union', 'name code')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
       .populate('flaggedBy', 'name email')
@@ -3050,6 +3076,10 @@ exports.getMarket = async (req, res, next) => {
   try {
     const Market = require('../models/Market');
     const market = await Market.findById(req.params.id)
+      .populate('location.division', 'name code')
+      .populate('location.district', 'name code')
+      .populate('location.upazila', 'name code')
+      .populate('location.union', 'name code')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
       .populate('flaggedBy', 'name email')
@@ -3104,18 +3134,30 @@ exports.updateMarket = async (req, res, next) => {
       isAvailable: market.isAvailable
     };
 
-    // Update data
+    // Update data - only include allowed fields
     const updateData = {
-      ...req.body,
       updatedBy: req.user.id
     };
 
-    // Handle location updates
-    if (req.body.address || req.body['location.address'] || req.body.city || req.body['location.city']) {
+    // Handle basic field updates
+    if (req.body.name) updateData.name = req.body.name;
+    if (req.body.description !== undefined) updateData.description = req.body.description;
+    if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive !== 'false' && req.body.isActive !== false;
+
+    // Handle location updates - BD address hierarchy
+    const hasLocationUpdates = req.body['location.division'] || req.body.division ||
+                               req.body['location.address'] || req.body.address ||
+                               req.body['location.postalCode'] || req.body.postalCode;
+
+    if (hasLocationUpdates) {
       updateData.location = {
-        address: req.body.address || req.body['location.address'] || market.location.address,
-        city: req.body.city || req.body['location.city'] || market.location.city,
-        district: req.body.district || req.body['location.district'] || market.location.district,
+        division: req.body['location.division'] || req.body.division || market.location.division,
+        district: req.body['location.district'] || req.body.district || market.location.district,
+        upazila: req.body['location.upazila'] || req.body.upazila || market.location.upazila,
+        union: req.body['location.union'] || req.body.union || market.location.union,
+        address: req.body['location.address'] || req.body.address || market.location.address,
+        landmark: req.body['location.landmark'] || req.body.landmark || market.location.landmark,
+        postalCode: req.body['location.postalCode'] || req.body.postalCode || market.location.postalCode,
         coordinates: req.body.coordinates ?
           (typeof req.body.coordinates === 'string' ?
             JSON.parse(req.body.coordinates) : req.body.coordinates) :
@@ -3136,6 +3178,10 @@ exports.updateMarket = async (req, res, next) => {
         runValidators: true
       }
     )
+    .populate('location.division', 'name code')
+    .populate('location.district', 'name code')
+    .populate('location.upazila', 'name code')
+    .populate('location.union', 'name code')
     .populate('createdBy', 'name email')
     .populate('updatedBy', 'name email');
 

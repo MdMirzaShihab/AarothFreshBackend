@@ -26,6 +26,9 @@ router.use('/orders', require('./orders'));
 // Public Information (no auth required)
 router.use('/public', require('./public'));
 
+// Location Data (Bangladesh administrative divisions, districts, upazilas, unions)
+router.use('/locations', require('./locations'));
+
 // Dashboard Interfaces
 router.use('/vendor-dashboard', require('./vendor-dashboard')); // Complete vendor operations + listings CRUD
 router.use('/buyer-dashboard', require('./buyer-dashboard'));

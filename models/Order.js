@@ -140,11 +140,54 @@ const OrderSchema = new mongoose.Schema({
       required: true
     },
     address: {
-      street: String,
-      city: String,
-      state: String,
-      zipCode: String,
-      coordinates: [Number]
+      // Hierarchical location references (optional for pickup, required for delivery)
+      division: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Division'
+      },
+      district: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'District'
+      },
+      upazila: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Upazila'
+      },
+      union: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Union'
+      },
+      // Detailed street address
+      street: {
+        type: String,
+        trim: true,
+        maxlength: [200, 'Street address cannot exceed 200 characters']
+      },
+      // Additional landmark
+      landmark: {
+        type: String,
+        trim: true,
+        maxlength: [100, 'Landmark cannot exceed 100 characters']
+      },
+      // Postal code
+      postalCode: {
+        type: String,
+        trim: true,
+        match: [/^\d{4}$/, 'Postal code must be 4 digits']
+      },
+      // GPS coordinates
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        validate: {
+          validator: function(v) {
+            if (!v || v.length === 0) return true;
+            return v.length === 2 &&
+                   v[0] >= -180 && v[0] <= 180 &&
+                   v[1] >= -90 && v[1] <= 90;
+          },
+          message: 'Coordinates must be [longitude, latitude] with valid ranges'
+        }
+      }
     },
     contactPerson: {
       name: String,

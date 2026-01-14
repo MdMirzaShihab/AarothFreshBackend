@@ -14,6 +14,150 @@ const handleValidationErrors = (req, res, next) => {
 };
 
 /**
+ * BD Address validation rules (hierarchical validation)
+ */
+const bdAddressValidation = [
+  body('address.division')
+    .isMongoId()
+    .withMessage('Valid division is required')
+    .custom(async (divisionId) => {
+      const Division = require('../models/Division');
+      const division = await Division.findById(divisionId);
+      if (!division || !division.isActive) {
+        throw new Error('Invalid or inactive division');
+      }
+      return true;
+    }),
+
+  body('address.district')
+    .isMongoId()
+    .withMessage('Valid district is required')
+    .custom(async (districtId, { req }) => {
+      const District = require('../models/District');
+      const district = await District.findById(districtId);
+
+      if (!district || !district.isActive) {
+        throw new Error('Invalid or inactive district');
+      }
+
+      // Validate district belongs to division
+      if (req.body.address?.division &&
+          district.division.toString() !== req.body.address.division) {
+        throw new Error('District does not belong to selected division');
+      }
+
+      return true;
+    }),
+
+  body('address.upazila')
+    .isMongoId()
+    .withMessage('Valid upazila is required')
+    .custom(async (upazilaId, { req }) => {
+      const Upazila = require('../models/Upazila');
+      const upazila = await Upazila.findById(upazilaId);
+
+      if (!upazila || !upazila.isActive) {
+        throw new Error('Invalid or inactive upazila');
+      }
+
+      // Validate upazila belongs to district
+      if (req.body.address?.district &&
+          upazila.district.toString() !== req.body.address.district) {
+        throw new Error('Upazila does not belong to selected district');
+      }
+
+      // Validate upazila belongs to division
+      if (req.body.address?.division &&
+          upazila.division.toString() !== req.body.address.division) {
+        throw new Error('Upazila does not belong to selected division');
+      }
+
+      return true;
+    }),
+
+  body('address.union')
+    .optional()
+    .isMongoId()
+    .withMessage('Valid union is required if provided')
+    .custom(async (unionId, { req }) => {
+      if (!unionId) return true;
+
+      const Union = require('../models/Union');
+      const union = await Union.findById(unionId);
+
+      if (!union || !union.isActive) {
+        throw new Error('Invalid or inactive union');
+      }
+
+      // Validate union belongs to upazila
+      if (req.body.address?.upazila &&
+          union.upazila.toString() !== req.body.address.upazila) {
+        throw new Error('Union does not belong to selected upazila');
+      }
+
+      return true;
+    }),
+
+  body('address.street')
+    .notEmpty()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage('Street address is required and cannot exceed 200 characters'),
+
+  body('address.landmark')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Landmark cannot exceed 100 characters'),
+
+  body('address.postalCode')
+    .notEmpty()
+    .trim()
+    .matches(/^\d{4}$/)
+    .withMessage('Postal code must be 4 digits')
+    .custom(async (postalCode, { req }) => {
+      // Validate postal code exists in upazila or union
+      const Upazila = require('../models/Upazila');
+      const Union = require('../models/Union');
+
+      if (req.body.address?.union) {
+        const union = await Union.findById(req.body.address.union);
+        if (union && union.postalCode && union.postalCode !== postalCode) {
+          throw new Error(`Postal code does not match selected union. Expected: ${union.postalCode}`);
+        }
+      } else if (req.body.address?.upazila) {
+        const upazila = await Upazila.findById(req.body.address.upazila);
+        if (upazila && upazila.postalCodes && upazila.postalCodes.length > 0) {
+          if (!upazila.postalCodes.includes(postalCode)) {
+            throw new Error(`Postal code not valid for selected upazila. Valid codes: ${upazila.postalCodes.join(', ')}`);
+          }
+        }
+      }
+
+      return true;
+    }),
+
+  body('address.coordinates')
+    .optional()
+    .isArray()
+    .custom((coords) => {
+      if (!coords || coords.length === 0) return true;
+      if (coords.length !== 2) {
+        throw new Error('Coordinates must be [longitude, latitude]');
+      }
+      if (coords[0] < -180 || coords[0] > 180) {
+        throw new Error('Longitude must be between -180 and 180');
+      }
+      if (coords[1] < -90 || coords[1] > 90) {
+        throw new Error('Latitude must be between -90 and 90');
+      }
+      return true;
+    }),
+
+  handleValidationErrors
+];
+
+/**
  * Registration validation rules
  */
 const registerValidation = [
@@ -61,13 +205,8 @@ const registerValidation = [
     .withMessage(
       "Buyer type is required for buyer owners and must be one of: restaurant, corporate, supershop, catering"
     ),
-  body("address.street")
-    .notEmpty()
-    .trim()
-    .withMessage("Street address is required"),
-  body("address.city").notEmpty().trim().withMessage("City is required"),
-  body("address.area").notEmpty().trim().withMessage("Area is required"),
-  body("address.postalCode").notEmpty().trim().withMessage("Postal code is required"),
+  // Use BD Address validation for hierarchical address structure
+  ...bdAddressValidation.slice(0, -1), // Include all bd address validators except the final handler
   body("tradeLicenseNo")
     .notEmpty()
     .trim()
@@ -302,18 +441,8 @@ const adminBuyerOwnerValidation = [
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage("Owner name must be between 2 and 50 characters"),
-  body("address.street")
-    .notEmpty()
-    .trim()
-    .withMessage("Street address is required"),
-  body("address.city")
-    .notEmpty()
-    .trim()
-    .withMessage("City is required"),
-  body("address.area")
-    .notEmpty()
-    .trim()
-    .withMessage("Area is required"),
+  // Use BD Address validation for hierarchical address structure
+  ...bdAddressValidation.slice(0, -1), // Include all bd address validators except the final handler
   body("tradeLicenseNo")
     .optional()
     .trim(),
@@ -586,42 +715,72 @@ const marketValidation = [
     .isLength({ max: 500 })
     .withMessage("Market description must not exceed 500 characters"),
 
-  // Location validation
-  body("address")
+  // Use BD Location validation for hierarchical address structure
+  // Note: Market uses 'location' prefix instead of 'address'
+  body('location.division')
+    .isMongoId()
+    .withMessage('Valid division is required')
+    .custom(async (divisionId) => {
+      const Division = require('../models/Division');
+      const division = await Division.findById(divisionId);
+      if (!division || !division.isActive) {
+        throw new Error('Invalid or inactive division');
+      }
+      return true;
+    }),
+
+  body('location.district')
+    .isMongoId()
+    .withMessage('Valid district is required')
+    .custom(async (districtId, { req }) => {
+      const District = require('../models/District');
+      const district = await District.findById(districtId);
+      if (!district || !district.isActive) {
+        throw new Error('Invalid or inactive district');
+      }
+      if (req.body.location?.division &&
+          district.division.toString() !== req.body.location.division) {
+        throw new Error('District does not belong to selected division');
+      }
+      return true;
+    }),
+
+  body('location.upazila')
+    .isMongoId()
+    .withMessage('Valid upazila is required')
+    .custom(async (upazilaId, { req }) => {
+      const Upazila = require('../models/Upazila');
+      const upazila = await Upazila.findById(upazilaId);
+      if (!upazila || !upazila.isActive) {
+        throw new Error('Invalid or inactive upazila');
+      }
+      if (req.body.location?.district &&
+          upazila.district.toString() !== req.body.location.district) {
+        throw new Error('Upazila does not belong to selected district');
+      }
+      if (req.body.location?.division &&
+          upazila.division.toString() !== req.body.location.division) {
+        throw new Error('Upazila does not belong to selected division');
+      }
+      return true;
+    }),
+
+  body('location.union')
     .optional()
+    .isMongoId()
+    .withMessage('Valid union is required if provided'),
+
+  body('location.address')
+    .notEmpty()
     .trim()
     .isLength({ max: 200 })
-    .withMessage("Address must not exceed 200 characters"),
+    .withMessage('Address is required and must not exceed 200 characters'),
 
-  body("location.address")
-    .optional()
+  body('location.postalCode')
+    .notEmpty()
     .trim()
-    .isLength({ max: 200 })
-    .withMessage("Address must not exceed 200 characters"),
-
-  body("city")
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage("City name must not exceed 50 characters"),
-
-  body("location.city")
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage("City name must not exceed 50 characters"),
-
-  body("district")
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage("District name must not exceed 50 characters"),
-
-  body("location.district")
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage("District name must not exceed 50 characters"),
+    .matches(/^\d{4}$/)
+    .withMessage('Postal code must be 4 digits'),
 
   // Note: Image validation is handled in controller middleware as files are processed there
   handleValidationErrors,
@@ -698,4 +857,6 @@ module.exports = {
   marketValidation,
   marketAvailabilityValidation,
   vendorMarketValidation,
+  // BD Address validation
+  bdAddressValidation,
 };

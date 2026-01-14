@@ -32,25 +32,63 @@ const VendorSchema = new mongoose.Schema({
     ]
   },
   address: {
+    // Hierarchical location references (required)
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: [true, 'Division is required'],
+      index: true
+    },
+    district: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'District',
+      required: [true, 'District is required'],
+      index: true
+    },
+    upazila: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Upazila',
+      required: [true, 'Upazila is required'],
+      index: true
+    },
+    union: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Union',
+      required: false // Optional - not all areas have unions
+    },
+    // Detailed street address (free text)
     street: {
       type: String,
-      required: [true, 'Please add street address']
+      required: [true, 'Street address is required'],
+      trim: true,
+      maxlength: [200, 'Street address cannot exceed 200 characters']
     },
-    city: {
+    // Additional landmark or building info (optional)
+    landmark: {
       type: String,
-      required: [true, 'Please add city']
+      trim: true,
+      maxlength: [100, 'Landmark cannot exceed 100 characters']
     },
-    area: {
-      type: String,
-      required: [true, 'Please add area']
-    },
+    // 4-digit postal code (validated against upazila/union)
     postalCode: {
       type: String,
-      required: [true, 'Please add postal code']
+      required: [true, 'Postal code is required'],
+      trim: true,
+      match: [/^\d{4}$/, 'Postal code must be 4 digits']
     },
+    // GPS coordinates for map integration (optional)
     coordinates: {
       type: [Number], // [longitude, latitude]
-      index: '2dsphere'
+      index: '2dsphere',
+      validate: {
+        validator: function(v) {
+          if (!v || v.length === 0) return true;
+          return v.length === 2 &&
+                 v[0] >= -180 && v[0] <= 180 && // longitude
+                 v[1] >= -90 && v[1] <= 90;      // latitude
+        },
+        message: 'Coordinates must be [longitude, latitude] with valid ranges'
+      }
     }
   },
   businessLicense: {
@@ -214,9 +252,36 @@ const VendorSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Virtual for getting full address
+// Virtual for getting full address in English
 VendorSchema.virtual('fullAddress').get(function() {
-  return `${this.address.street}, ${this.address.city}, ${this.address.area} ${this.address.postalCode}`;
+  if (this.populated('address.division') && this.populated('address.district') && this.populated('address.upazila')) {
+    const parts = [this.address.street];
+    if (this.address.landmark) parts.push(this.address.landmark);
+    if (this.address.union) parts.push(this.address.union.name.en);
+    parts.push(this.address.upazila.name.en);
+    parts.push(this.address.district.name.en);
+    parts.push(this.address.division.name.en);
+    parts.push(this.address.postalCode);
+    return parts.join(', ');
+  }
+  // Fallback for unpopulated
+  return `${this.address.street}, ${this.address.postalCode}`;
+});
+
+// Virtual for getting full address in Bengali
+VendorSchema.virtual('fullAddressBn').get(function() {
+  if (this.populated('address.division') && this.populated('address.district') && this.populated('address.upazila')) {
+    const parts = [this.address.street];
+    if (this.address.landmark) parts.push(this.address.landmark);
+    if (this.address.union) parts.push(this.address.union.name.bn);
+    parts.push(this.address.upazila.name.bn);
+    parts.push(this.address.district.name.bn);
+    parts.push(this.address.division.name.bn);
+    parts.push(this.address.postalCode);
+    return parts.join(', ');
+  }
+  // Fallback for unpopulated
+  return `${this.address.street}, ${this.address.postalCode}`;
 });
 
 // Virtual populate for listings

@@ -31,24 +31,51 @@ const MarketSchema = new mongoose.Schema({
 
   // Location details
   location: {
+    // Hierarchical location references (required)
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: [true, 'Division is required'],
+      index: true
+    },
+    district: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'District',
+      required: [true, 'District is required'],
+      index: true
+    },
+    upazila: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Upazila',
+      required: [true, 'Upazila is required'],
+      index: true
+    },
+    union: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Union',
+      required: false // Optional - not all areas have unions
+    },
+    // Detailed address (free text)
     address: {
       type: String,
       required: [true, 'Market address is required'],
       trim: true,
       maxlength: [200, 'Address cannot be more than 200 characters']
     },
-    city: {
-      type: String,
-      required: [true, 'City is required'],
-      trim: true,
-      maxlength: [50, 'City name cannot be more than 50 characters'],
-      index: true
-    },
-    district: {
+    // Additional landmark or building info (optional)
+    landmark: {
       type: String,
       trim: true,
-      maxlength: [50, 'District name cannot be more than 50 characters']
+      maxlength: [100, 'Landmark cannot exceed 100 characters']
     },
+    // 4-digit postal code (validated against upazila/union)
+    postalCode: {
+      type: String,
+      required: [true, 'Postal code is required'],
+      trim: true,
+      match: [/^\d{4}$/, 'Postal code must be 4 digits']
+    },
+    // GPS coordinates for map integration (optional)
     coordinates: {
       type: [Number], // [longitude, latitude]
       index: '2dsphere',
