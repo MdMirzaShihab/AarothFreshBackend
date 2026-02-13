@@ -6,12 +6,12 @@ const AuditLogSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: function() {
-      return this.userRole !== 'system';
+      return this.userRole !== 'system' && this.userRole !== 'unknown';
     }
   },
   userRole: {
     type: String,
-    enum: ['admin', 'vendor', 'buyerOwner', 'buyerManager', 'system'],
+    enum: ['admin', 'vendor', 'buyerOwner', 'buyerManager', 'system', 'unknown'],
     required: [true, 'User role is required']
   },
   
@@ -44,7 +44,9 @@ const AuditLogSchema = new mongoose.Schema({
       // SLA and performance monitoring
       'sla_violation_detected', 'sla_monitoring_started', 'sla_monitoring_error', 'sla_metrics_updated', 'performance_report_generated',
       // Dashboard and performance
-      'performance_dashboard_accessed', 'dashboard_viewed'
+      'performance_dashboard_accessed', 'dashboard_viewed',
+      // Authentication tracking
+      'login_failed', 'profile_updated', 'password_changed'
     ]
   },
   
@@ -59,7 +61,9 @@ const AuditLogSchema = new mongoose.Schema({
     required: function() {
       // Entity ID is optional for system-level and aggregate entity types
       const optionalEntityIdTypes = ['System', 'AdminMetrics', 'SLAConfig', 'Inventory', 'Settings'];
-      return !optionalEntityIdTypes.includes(this.entityType);
+      // Entity ID is also optional for failed login attempts (user may not exist)
+      const optionalEntityIdActions = ['login_failed'];
+      return !optionalEntityIdTypes.includes(this.entityType) && !optionalEntityIdActions.includes(this.action);
     }
   },
   

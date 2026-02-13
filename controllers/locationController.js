@@ -549,3 +549,157 @@ exports.getLocationsByPostalCode = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * @route   GET /api/v1/locations/markets
+ * @desc    Get markets by location hierarchy
+ * @access  Public
+ */
+exports.getMarketsByLocation = async (req, res, next) => {
+  try {
+    const { division, district, upazila, union, active = 'true', lang = 'en', page = 1, limit = 20 } = req.query;
+    const Market = require('../models/Market');
+
+    const query = { isDeleted: { $ne: true } };
+
+    if (active === 'true') {
+      query.isActive = true;
+      query.isAvailable = true;
+    }
+
+    if (division) query['location.division'] = division;
+    if (district) query['location.district'] = district;
+    if (upazila) query['location.upazila'] = upazila;
+    if (union) query['location.union'] = union;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [markets, total] = await Promise.all([
+      Market.find(query)
+        .sort('name')
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('location.division', 'name code')
+        .populate('location.district', 'name code')
+        .populate('location.upazila', 'name code')
+        .populate('location.union', 'name code'),
+      Market.countDocuments(query)
+    ]);
+
+    const formattedMarkets = markets.map(market => ({
+      id: market._id,
+      name: market.name,
+      description: market.description,
+      slug: market.slug,
+      image: market.image,
+      location: {
+        division: market.location.division ? {
+          id: market.location.division._id,
+          name: lang === 'bn' ? market.location.division.name.bn : market.location.division.name.en,
+          code: market.location.division.code
+        } : null,
+        district: market.location.district ? {
+          id: market.location.district._id,
+          name: lang === 'bn' ? market.location.district.name.bn : market.location.district.name.en,
+          code: market.location.district.code
+        } : null,
+        upazila: market.location.upazila ? {
+          id: market.location.upazila._id,
+          name: lang === 'bn' ? market.location.upazila.name.bn : market.location.upazila.name.en,
+          code: market.location.upazila.code
+        } : null,
+        union: market.location.union ? {
+          id: market.location.union._id,
+          name: lang === 'bn' ? market.location.union.name.bn : market.location.union.name.en,
+          code: market.location.union.code
+        } : null,
+        address: market.location.address,
+        postalCode: market.location.postalCode
+      },
+      isActive: market.isActive,
+      isAvailable: market.isAvailable
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: formattedMarkets.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / parseInt(limit)),
+      data: formattedMarkets
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   GET /api/v1/locations/markets/:id
+ * @desc    Get single market with full location hierarchy
+ * @access  Public
+ */
+exports.getMarketDetail = async (req, res, next) => {
+  try {
+    const { lang = 'en' } = req.query;
+    const Market = require('../models/Market');
+
+    const market = await Market.findOne({
+      _id: req.params.id,
+      isDeleted: { $ne: true }
+    })
+      .populate('location.division', 'name code')
+      .populate('location.district', 'name code')
+      .populate('location.upazila', 'name code postalCodes')
+      .populate('location.union', 'name code type postalCode');
+
+    if (!market) {
+      return next(new ErrorResponse('Market not found', 404));
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        id: market._id,
+        name: market.name,
+        description: market.description,
+        slug: market.slug,
+        image: market.image,
+        location: {
+          division: market.location.division ? {
+            id: market.location.division._id,
+            name: lang === 'bn' ? market.location.division.name.bn : market.location.division.name.en,
+            code: market.location.division.code
+          } : null,
+          district: market.location.district ? {
+            id: market.location.district._id,
+            name: lang === 'bn' ? market.location.district.name.bn : market.location.district.name.en,
+            code: market.location.district.code
+          } : null,
+          upazila: market.location.upazila ? {
+            id: market.location.upazila._id,
+            name: lang === 'bn' ? market.location.upazila.name.bn : market.location.upazila.name.en,
+            code: market.location.upazila.code,
+            postalCodes: market.location.upazila.postalCodes
+          } : null,
+          union: market.location.union ? {
+            id: market.location.union._id,
+            name: lang === 'bn' ? market.location.union.name.bn : market.location.union.name.en,
+            code: market.location.union.code,
+            type: market.location.union.type,
+            postalCode: market.location.union.postalCode
+          } : null,
+          address: market.location.address,
+          landmark: market.location.landmark,
+          postalCode: market.location.postalCode,
+          coordinates: market.location.coordinates
+        },
+        isActive: market.isActive,
+        isAvailable: market.isAvailable,
+        createdAt: market.createdAt,
+        updatedAt: market.updatedAt
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -10,7 +10,9 @@ const {
   getUnions,
   getUnion,
   searchLocations,
-  getLocationsByPostalCode
+  getLocationsByPostalCode,
+  getMarketsByLocation,
+  getMarketDetail
 } = require('../controllers/locationController');
 
 // Public routes (no authentication required)
@@ -34,5 +36,9 @@ router.get('/unions/single/:id', getUnion);
 // Search and lookup
 router.get('/search', searchLocations);
 router.get('/postal-code/:postalCode', getLocationsByPostalCode);
+
+// Markets by location
+router.get('/markets', getMarketsByLocation);
+router.get('/markets/:id', getMarketDetail);
 
 module.exports = router;

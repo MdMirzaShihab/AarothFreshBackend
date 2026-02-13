@@ -1,33 +1,28 @@
 const express = require("express");
 const { body } = require('express-validator');
+// Domain-specific admin controllers (split from monolithic adminController.js)
 const {
-  createProduct,
-  updateProduct,
-  createCategory,
-  updateCategory,
-  getProducts,
-  getProduct,
-  getCategories,
-  getCategory,
-  toggleCategoryAvailability,
-  getCategoryUsageStats,
-  // Market Management
-  createMarket,
-  getMarkets,
-  getMarket,
-  updateMarket,
-  toggleMarketAvailability,
-  getMarketUsageStats,
-  safeDeleteMarket,
+  getDashboardOverview,
+} = require("../controllers/admin/adminAnalyticsController");
+
+const {
   getAllUsers,
   getUser,
   updateUser,
   deleteUser,
+} = require("../controllers/admin/adminUserController");
+
+const {
   getAllVendors,
   getVendor,
   updateVendor,
   createPlatformVendor,
   safeDeleteVendor,
+  deactivateVendor,
+  toggleVendorVerification,
+} = require("../controllers/admin/adminVendorController");
+
+const {
   getAllBuyers,
   getBuyer,
   getBuyerStats,
@@ -36,20 +31,29 @@ const {
   safeDeleteBuyer,
   transferBuyerOwnership,
   requestBuyerDocuments,
-  getDashboardOverview,
   createBuyerOwner,
   createBuyerManager,
-  // Business Entity Verification Management
-  toggleVendorVerification,
   toggleBuyerVerification,
-  // Safe Deletion Protection
+} = require("../controllers/admin/adminBuyerController");
+
+const {
+  createProduct,
+  updateProduct,
+  getProducts,
+  getProduct,
   safeDeleteProduct,
-  safeDeleteCategory,
-  deactivateVendor,
-  // Product Statistics and Bulk Operations
   getProductStats,
   bulkUpdateProducts,
-  // Comprehensive Listing Management
+  createCategory,
+  updateCategory,
+  getCategories,
+  getCategory,
+  toggleCategoryAvailability,
+  getCategoryUsageStats,
+  safeDeleteCategory,
+} = require("../controllers/admin/adminProductController");
+
+const {
   getAdminListings,
   getAdminListing,
   updateListingStatus,
@@ -57,7 +61,17 @@ const {
   updateListingFlag,
   softDeleteListing,
   bulkUpdateListings,
-} = require("../controllers/adminController");
+} = require("../controllers/admin/adminOrderController");
+
+const {
+  createMarket,
+  getMarkets,
+  getMarket,
+  updateMarket,
+  toggleMarketAvailability,
+  getMarketUsageStats,
+  safeDeleteMarket,
+} = require("../controllers/admin/adminMarketController");
 
 // Import analytics and settings controllers
 const {
@@ -121,10 +135,15 @@ const {
   marketAvailabilityValidation
 } = require("../middleware/validation");
 
+const adminLocationRoutes = require('./adminLocations');
+
 const router = express.Router();
 
 // Apply admin authorization to all routes
 router.use(protect, authorize("admin"));
+
+// Mount location sub-router
+router.use('/locations', adminLocationRoutes);
 
 // ================================
 // DASHBOARD & ANALYTICS MANAGEMENT

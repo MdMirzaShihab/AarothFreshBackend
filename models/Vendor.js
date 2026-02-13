@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const softDelete = require('../middleware/softDelete');
 
 const VendorSchema = new mongoose.Schema({
   businessName: {
@@ -340,5 +341,7 @@ VendorSchema.index({ performanceScore: -1 });
 VendorSchema.index({ statusUpdatedBy: 1, statusUpdatedAt: -1 });
 VendorSchema.index({ isPlatformOwned: 1, platformName: 1 });
 VendorSchema.index({ markets: 1 });
+
+VendorSchema.plugin(softDelete);
 
 module.exports = mongoose.model('Vendor', VendorSchema);

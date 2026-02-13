@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const softDelete = require('../middleware/softDelete');
 
 const MarketSchema = new mongoose.Schema({
   name: {
@@ -257,5 +258,12 @@ MarketSchema.index({ isAvailable: 1, isDeleted: 1 });
 MarketSchema.index({ adminStatus: 1 });
 MarketSchema.index({ flaggedBy: 1, flaggedAt: -1 });
 MarketSchema.index({ name: 'text', description: 'text', 'location.city': 'text' });
+
+MarketSchema.index({ 'location.division': 1, isDeleted: 1 });
+MarketSchema.index({ 'location.district': 1, isDeleted: 1 });
+MarketSchema.index({ 'location.upazila': 1, isDeleted: 1 });
+MarketSchema.index({ 'location.union': 1, isDeleted: 1 });
+
+MarketSchema.plugin(softDelete);
 
 module.exports = mongoose.model('Market', MarketSchema);

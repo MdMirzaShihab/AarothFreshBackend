@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const softDelete = require('../middleware/softDelete');
 
 const ProductCategorySchema = new mongoose.Schema({
   name: {
@@ -249,5 +250,7 @@ ProductCategorySchema.index({ isAvailable: 1, isDeleted: 1 });
 ProductCategorySchema.index({ adminStatus: 1 });
 ProductCategorySchema.index({ flaggedBy: 1, flaggedAt: -1 });
 ProductCategorySchema.index({ name: 'text', description: 'text' });
+
+ProductCategorySchema.plugin(softDelete);
 
 module.exports = mongoose.model('ProductCategory', ProductCategorySchema);

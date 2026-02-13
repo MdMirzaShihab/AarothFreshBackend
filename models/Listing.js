@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const softDelete = require('../middleware/softDelete');
 
 const ListingSchema = new mongoose.Schema({
   vendorId: {
@@ -631,6 +632,10 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
     inSeason,
     organic,
     grade,
+    division,
+    district,
+    upazila,
+    union,
     sortBy = 'createdAt',
     sortOrder = 'desc',
     page = 1,
@@ -683,6 +688,21 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
     query['availability.isInSeason'] = inSeason;
   }
 
+  // Location hierarchy filters (applied after market $lookup/$unwind)
+  const locationMatch = {};
+  if (division) {
+    locationMatch['market.location.division'] = new mongoose.Types.ObjectId(division);
+  }
+  if (district) {
+    locationMatch['market.location.district'] = new mongoose.Types.ObjectId(district);
+  }
+  if (upazila) {
+    locationMatch['market.location.upazila'] = new mongoose.Types.ObjectId(upazila);
+  }
+  if (union) {
+    locationMatch['market.location.union'] = new mongoose.Types.ObjectId(union);
+  }
+
   const skip = (numericPage - 1) * numericLimit;
 
   let aggregationPipeline = [
@@ -713,7 +733,9 @@ ListingSchema.statics.searchListings = async function(filters = {}) {
     { $unwind: '$product' },
     { $unwind: '$vendor' },
     { $unwind: { path: '$market', preserveNullAndEmptyArrays: true } },
-    { $match: query }
+    { $match: query },
+    // Location hierarchy filter (requires market to be unwound)
+    ...(Object.keys(locationMatch).length > 0 ? [{ $match: locationMatch }] : [])
   ];
 
   // Location-based filtering
@@ -752,6 +774,9 @@ ListingSchema.index({ isFlagged: 1, status: 1 });
 ListingSchema.index({ isDeleted: 1, status: 1 });
 ListingSchema.index({ moderatedBy: 1, lastStatusUpdate: -1 });
 ListingSchema.index({ marketId: 1, status: 1 }); // For market-based queries
+ListingSchema.index({ marketId: 1, status: 1, isDeleted: 1 }); // For location-filtered queries
 ListingSchema.index({ vendorId: 1, marketId: 1, status: 1 }); // For vendor-market listing queries
+
+ListingSchema.plugin(softDelete);
 
 module.exports = mongoose.model('Listing', ListingSchema);

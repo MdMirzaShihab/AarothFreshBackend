@@ -1,6 +1,8 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
 const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 const { errorHandler } = require('./middleware/error');
@@ -24,8 +26,14 @@ connectDB();
 
 const app = express();
 
+// Security middleware
+app.use(helmet());
+
 // Body parser middleware
 app.use(express.json());
+
+// Sanitize data - prevent NoSQL injection
+app.use(mongoSanitize());
 
 // Enable CORS with comprehensive configuration
 app.use(cors({

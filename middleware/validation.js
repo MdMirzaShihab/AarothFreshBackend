@@ -827,6 +827,242 @@ const vendorMarketValidation = [
   handleValidationErrors,
 ];
 
+/**
+ * Forgot password validation rules
+ */
+const forgotPasswordValidation = [
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+  handleValidationErrors,
+];
+
+/**
+ * Reset password validation rules
+ */
+const resetPasswordValidation = [
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters long")
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage(
+      "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+    ),
+  body("confirmPassword").custom((value, { req }) => {
+    if (value !== req.body.password) {
+      throw new Error("Password confirmation does not match");
+    }
+    return true;
+  }),
+  handleValidationErrors,
+];
+
+/**
+ * Division validation rules
+ */
+const divisionValidation = [
+  body('name.en')
+    .notEmpty()
+    .withMessage('Division name in English is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Division name must be between 2 and 50 characters'),
+
+  body('name.bn')
+    .notEmpty()
+    .withMessage('Division name in Bengali is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Division name must be between 2 and 50 characters'),
+
+  body('code')
+    .notEmpty()
+    .withMessage('Division code is required')
+    .trim()
+    .matches(/^DIV-\d{2}$/)
+    .withMessage('Division code must follow format: DIV-##'),
+
+  body('coordinates')
+    .optional()
+    .isArray()
+    .withMessage('Coordinates must be an array'),
+
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be a boolean'),
+
+  handleValidationErrors,
+];
+
+/**
+ * District validation rules
+ */
+const districtValidation = [
+  body('name.en')
+    .notEmpty()
+    .withMessage('District name in English is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('District name must be between 2 and 50 characters'),
+
+  body('name.bn')
+    .notEmpty()
+    .withMessage('District name in Bengali is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('District name must be between 2 and 50 characters'),
+
+  body('code')
+    .notEmpty()
+    .withMessage('District code is required')
+    .trim()
+    .matches(/^DIST-\d{2}$/)
+    .withMessage('District code must follow format: DIST-##'),
+
+  body('division')
+    .notEmpty()
+    .withMessage('Division is required')
+    .isMongoId()
+    .withMessage('Division must be a valid ID'),
+
+  body('coordinates')
+    .optional()
+    .isArray()
+    .withMessage('Coordinates must be an array'),
+
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be a boolean'),
+
+  handleValidationErrors,
+];
+
+/**
+ * Upazila validation rules
+ */
+const upazilaValidation = [
+  body('name.en')
+    .notEmpty()
+    .withMessage('Upazila name in English is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Upazila name must be between 2 and 50 characters'),
+
+  body('name.bn')
+    .notEmpty()
+    .withMessage('Upazila name in Bengali is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Upazila name must be between 2 and 50 characters'),
+
+  body('code')
+    .notEmpty()
+    .withMessage('Upazila code is required')
+    .trim()
+    .matches(/^UPZ-\d{3}$/)
+    .withMessage('Upazila code must follow format: UPZ-###'),
+
+  body('district')
+    .notEmpty()
+    .withMessage('District is required')
+    .isMongoId()
+    .withMessage('District must be a valid ID'),
+
+  body('division')
+    .notEmpty()
+    .withMessage('Division is required')
+    .isMongoId()
+    .withMessage('Division must be a valid ID'),
+
+  body('postalCodes')
+    .optional()
+    .isArray()
+    .withMessage('Postal codes must be an array'),
+
+  body('coordinates')
+    .optional()
+    .isArray()
+    .withMessage('Coordinates must be an array'),
+
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be a boolean'),
+
+  handleValidationErrors,
+];
+
+/**
+ * Union validation rules
+ */
+const unionValidation = [
+  body('name.en')
+    .notEmpty()
+    .withMessage('Union name in English is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Union name must be between 2 and 50 characters'),
+
+  body('name.bn')
+    .notEmpty()
+    .withMessage('Union name in Bengali is required')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Union name must be between 2 and 50 characters'),
+
+  body('code')
+    .notEmpty()
+    .withMessage('Union code is required')
+    .trim()
+    .matches(/^UN-\d{4}$/)
+    .withMessage('Union code must follow format: UN-####'),
+
+  body('type')
+    .notEmpty()
+    .withMessage('Union type is required')
+    .isIn(['union', 'ward', 'pourashava'])
+    .withMessage('Type must be one of: union, ward, pourashava'),
+
+  body('upazila')
+    .notEmpty()
+    .withMessage('Upazila is required')
+    .isMongoId()
+    .withMessage('Upazila must be a valid ID'),
+
+  body('district')
+    .notEmpty()
+    .withMessage('District is required')
+    .isMongoId()
+    .withMessage('District must be a valid ID'),
+
+  body('division')
+    .notEmpty()
+    .withMessage('Division is required')
+    .isMongoId()
+    .withMessage('Division must be a valid ID'),
+
+  body('postalCode')
+    .optional()
+    .trim()
+    .matches(/^\d{4}$/)
+    .withMessage('Postal code must be 4 digits'),
+
+  body('coordinates')
+    .optional()
+    .isArray()
+    .withMessage('Coordinates must be an array'),
+
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be a boolean'),
+
+  handleValidationErrors,
+];
+
 module.exports = {
   handleValidationErrors,
   registerValidation,
@@ -859,4 +1095,12 @@ module.exports = {
   vendorMarketValidation,
   // BD Address validation
   bdAddressValidation,
+  // Password reset validations
+  forgotPasswordValidation,
+  resetPasswordValidation,
+  // Location management validations
+  divisionValidation,
+  districtValidation,
+  upazilaValidation,
+  unionValidation,
 };

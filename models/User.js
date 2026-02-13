@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const softDelete = require('../middleware/softDelete');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -77,6 +78,12 @@ const UserSchema = new mongoose.Schema({
   },
   resetPasswordToken: String,
   resetPasswordExpire: Date,
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
+  emailVerificationToken: String,
+  emailVerificationExpire: Date,
   
   // Note: Approval workflow now handled at business entity level (Vendor/Restaurant)
   
@@ -151,6 +158,44 @@ UserSchema.methods.changedPasswordAfter = function(JWTTimestamp) {
   return false;
 };
 
+// Generate and hash password reset token
+UserSchema.methods.getResetPasswordToken = function() {
+  const crypto = require('crypto');
+
+  // Generate token
+  const resetToken = crypto.randomBytes(20).toString('hex');
+
+  // Hash token and set to resetPasswordToken field
+  this.resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  // Set expire to 10 minutes
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
+
+  return resetToken;
+};
+
+// Generate and hash email verification token
+UserSchema.methods.getEmailVerificationToken = function() {
+  const crypto = require('crypto');
+
+  // Generate token
+  const verificationToken = crypto.randomBytes(20).toString('hex');
+
+  // Hash token and set to emailVerificationToken field
+  this.emailVerificationToken = crypto
+    .createHash('sha256')
+    .update(verificationToken)
+    .digest('hex');
+
+  // Set expire to 24 hours
+  this.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000;
+
+  return verificationToken;
+};
+
 // Indexes for better query performance
 UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
@@ -159,5 +204,7 @@ UserSchema.index({ buyerId: 1 });
 // Removed approvalStatus index - approval now handled at business entity level
 UserSchema.index({ isDeleted: 1, isActive: 1 });
 UserSchema.index({ phone: 1 });
+
+UserSchema.plugin(softDelete);
 
 module.exports = mongoose.model('User', UserSchema);

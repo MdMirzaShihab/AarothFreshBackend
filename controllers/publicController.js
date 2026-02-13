@@ -205,6 +205,23 @@ exports.getPublicListings = async (req, res, next) => {
       query.marketId = req.query.marketId;
     }
 
+    // Location hierarchy filters - find markets matching location, then filter listings
+    if (req.query.division || req.query.district || req.query.upazila || req.query.union) {
+      const marketQuery = { isDeleted: { $ne: true } };
+      if (req.query.division) marketQuery['location.division'] = req.query.division;
+      if (req.query.district) marketQuery['location.district'] = req.query.district;
+      if (req.query.upazila) marketQuery['location.upazila'] = req.query.upazila;
+      if (req.query.union) marketQuery['location.union'] = req.query.union;
+
+      // If a specific marketId was also provided, validate it matches the location
+      if (query.marketId) {
+        marketQuery._id = query.marketId;
+      }
+
+      const matchingMarkets = await Market.find(marketQuery).select('_id').lean();
+      query.marketId = { $in: matchingMarkets.map(m => m._id) };
+    }
+
     // Filter by specific product
     if (req.query.productId && req.query.productId !== 'all') {
       query.productId = req.query.productId;

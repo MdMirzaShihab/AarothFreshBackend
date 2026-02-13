@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const softDelete = require('../middleware/softDelete');
 
 const BuyerSchema = new mongoose.Schema({
   name: {
@@ -342,5 +343,7 @@ BuyerSchema.index({ email: 1 });
 BuyerSchema.index({ isDeleted: 1, isActive: 1 });
 BuyerSchema.index({ statusUpdatedBy: 1, statusUpdatedAt: -1 });
 BuyerSchema.index({ buyerType: 1, isActive: 1 });
+
+BuyerSchema.plugin(softDelete);
 
 module.exports = mongoose.model('Buyer', BuyerSchema);

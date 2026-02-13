@@ -711,6 +711,54 @@ class NotificationService {
       console.error('Error sending escalation notification:', error);
     }
   }
+  /**
+   * Create approval/rejection notification for vendors and buyers
+   */
+  static async createApprovalNotification(userId, entityType, entityName, status, reason = null) {
+    try {
+      const titleMap = {
+        approved: `${entityType} Verification Approved`,
+        rejected: `${entityType} Verification Rejected`,
+        pending: `${entityType} Status Reset to Pending`
+      };
+
+      const messageMap = {
+        approved: `Your ${entityType.toLowerCase()} "${entityName}" has been verified and approved. You now have full access to platform features.`,
+        rejected: `Your ${entityType.toLowerCase()} "${entityName}" verification has been rejected.${reason ? ` Reason: ${reason}` : ''} Please review the feedback and resubmit.`,
+        pending: `Your ${entityType.toLowerCase()} "${entityName}" status has been reset to pending review.${reason ? ` Reason: ${reason}` : ''}`
+      };
+
+      const priorityMap = {
+        approved: 'high',
+        rejected: 'high',
+        pending: 'medium'
+      };
+
+      await this.createNotification({
+        recipientId: userId,
+        recipientType: entityType === 'Vendor' ? 'vendor' : 'buyer',
+        type: 'system',
+        title: titleMap[status] || `${entityType} Verification Update`,
+        message: messageMap[status] || `Your ${entityType.toLowerCase()} verification status has been updated to ${status}.`,
+        priority: priorityMap[status] || 'medium',
+        isActionRequired: status === 'rejected',
+        actionUrl: status === 'rejected' ? '/dashboard/profile' : '/dashboard',
+        actionText: status === 'rejected' ? 'Review Feedback' : 'Go to Dashboard',
+        relatedEntity: {
+          entityType,
+          entityId: null,
+          entityData: { status, reason }
+        },
+        metadata: {
+          verificationStatus: status,
+          reason
+        }
+      });
+    } catch (error) {
+      console.error('Error creating approval notification:', error);
+      // Don't throw - notification failure shouldn't block the approval process
+    }
+  }
 }
 
 module.exports = NotificationService;

@@ -9,7 +9,11 @@ const {
   createManager,
   getManagers,
   deactivateManager,
-  logout
+  logout,
+  forgotPassword,
+  resetPassword,
+  sendVerificationEmail,
+  verifyEmail
 } = require('../controllers/authController');
 const { protect, authorize } = require('../middleware/auth');
 const { uploadRegistrationLogo } = require('../middleware/upload');
@@ -18,13 +22,16 @@ const {
   loginValidation,
   updateProfileValidation,
   changePasswordValidation,
-  managerValidation
+  managerValidation,
+  forgotPasswordValidation,
+  resetPasswordValidation
 } = require('../middleware/validation');
+const { authLimiter, sensitiveOpLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
-router.post('/register', uploadRegistrationLogo('logo'), registerValidation, register);
-router.post('/login', loginValidation, login);
+router.post('/register', authLimiter, uploadRegistrationLogo('logo'), registerValidation, register);
+router.post('/login', authLimiter, loginValidation, login);
 router.post('/logout', protect, logout);
 router.get('/me', protect, getMe);
 router.get('/status', protect, getUserStatus);
@@ -33,5 +40,11 @@ router.put('/change-password', protect, changePasswordValidation, changePassword
 router.post('/create-manager', protect, authorize('buyerOwner', 'admin'), managerValidation, createManager);
 router.get('/managers', protect, authorize('buyerOwner', 'admin'), getManagers);
 router.put('/managers/:id/deactivate', protect, authorize('buyerOwner', 'admin'), deactivateManager);
+
+router.post('/forgot-password', authLimiter, forgotPasswordValidation, forgotPassword);
+router.put('/reset-password/:resetToken', sensitiveOpLimiter, resetPasswordValidation, resetPassword);
+
+router.post('/send-verification-email', sensitiveOpLimiter, protect, sendVerificationEmail);
+router.get('/verify-email/:token', verifyEmail);
 
 module.exports = router;

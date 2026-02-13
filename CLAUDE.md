@@ -25,10 +25,10 @@ This is a B2B marketplace REST API connecting local vegetable vendors with resta
 - **Database**: MongoDB with Mongoose ODM, connection configured in `config/db.js`
 
 ### Key Models & Relationships
-- **User**: Multi-role system (`admin`, `vendor`, `restaurantOwner`, `restaurantManager`)
+- **User**: Multi-role system (`admin`, `vendor`, `buyerOwner`, `buyerManager`)
   - Phone-based authentication (unique phone numbers with country codes)
-  - Role-based relationships to Vendor/Restaurant models
-- **Core entities**: Restaurant, Vendor, Product, ProductCategory, Listing, Order
+  - Role-based relationships to Vendor/Buyer models
+- **Core entities**: Buyer, Vendor, Product, ProductCategory, Listing, Order, Market
 
 ### Authentication & Authorization
 - JWT-based authentication with phone number login (not email)
@@ -52,7 +52,7 @@ This is a B2B marketplace REST API connecting local vegetable vendors with resta
 - Uses nodemon for development with AWS SDK files ignored
 - Environment variables required for JWT, database, email service, and Cloudinary
 - Phone number format: must include country code (e.g., +8801234567890)
-- Recent changes: Authentication moved from email to phone, user roles updated to restaurantOwner/restaurantManager
+- Recent changes: Authentication moved from email to phone, user roles updated to buyerOwner/buyerManager
 
 ## Error Handling
 Global error handler in `middleware/error.js` with standardized error responses and unhandled rejection/exception handling in server.js.

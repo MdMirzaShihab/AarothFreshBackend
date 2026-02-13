@@ -194,17 +194,63 @@ exports.login = async (req, res, next) => {
       const user = await User.findOne({ phone: String(phone) }).select('+password');
 
       if (!user) {
+        // Log failed login attempt - user not found
+        try {
+          const AuditLog = require('../models/AuditLog');
+          await AuditLog.logAction({
+            userId: null,
+            userRole: 'unknown',
+            action: 'login_failed',
+            entityType: 'User',
+            entityId: null,
+            description: 'Failed login attempt',
+            severity: 'medium',
+            impactLevel: 'minor',
+            status: 'failed',
+            metadata: {
+              phone: req.body.phone,
+              reason: 'user_not_found',
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent')
+            }
+          });
+        } catch (auditError) {
+          console.error('Audit log error:', auditError);
+        }
         return next(new ErrorResponse('Invalid credentials', 401));
       }
-  
+
       // Check if user is active
       if (!user.isActive) {
         return next(new ErrorResponse('Account has been deactivated', 401));
       }
-  
+
       // Check password
       const isMatch = await user.matchPassword(password);
       if (!isMatch) {
+        // Log failed login attempt - invalid password
+        try {
+          const AuditLog = require('../models/AuditLog');
+          await AuditLog.logAction({
+            userId: user._id,
+            userRole: user.role,
+            action: 'login_failed',
+            entityType: 'User',
+            entityId: user._id,
+            description: 'Failed login attempt',
+            severity: 'medium',
+            impactLevel: 'minor',
+            status: 'failed',
+            metadata: {
+              phone: req.body.phone,
+              reason: 'invalid_password',
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent')
+            }
+          });
+        } catch (auditError) {
+          console.error('Audit log error:', auditError);
+        }
         return next(new ErrorResponse('Invalid credentials', 401));
       }
   
@@ -439,6 +485,29 @@ exports.updateProfile = async (req, res, next) => {
       { new: true, runValidators: true }
     ).populate('vendorId').populate('buyerId');
 
+    // Audit log for profile update
+    try {
+      const AuditLog = require('../models/AuditLog');
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: 'profile_updated',
+        entityType: 'User',
+        entityId: req.user.id,
+        description: 'User updated their profile',
+        severity: 'low',
+        impactLevel: 'minor',
+        status: 'success',
+        metadata: {
+          updatedFields: Object.keys(updatedFields),
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent')
+        }
+      });
+    } catch (auditError) {
+      // Don't block response if audit logging fails
+    }
+
     res.status(200).json({
       success: true,
       data: user
@@ -475,6 +544,28 @@ exports.changePassword = async (req, res, next) => {
     // Update password
     user.password = newPassword;
     await user.save();
+
+    // Audit log for password change
+    try {
+      const AuditLog = require('../models/AuditLog');
+      await AuditLog.logAction({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action: 'password_changed',
+        entityType: 'User',
+        entityId: req.user.id,
+        description: 'User changed their password',
+        severity: 'high',
+        impactLevel: 'moderate',
+        status: 'success',
+        metadata: {
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent')
+        }
+      });
+    } catch (auditError) {
+      // Don't block response if audit logging fails
+    }
 
     res.status(200).json({
       success: true,
@@ -595,6 +686,105 @@ exports.deactivateManager = async (req, res, next) => {
 };
 
 /**
+ * @desc    Forgot password - send reset token via email
+ * @route   POST /api/v1/auth/forgot-password
+ * @access  Public
+ */
+exports.forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email: String(email).toLowerCase() });
+
+    if (!user) {
+      return next(new ErrorResponse('No user found with that email', 404));
+    }
+
+    // Get reset token
+    const resetToken = user.getResetPasswordToken();
+
+    await user.save({ validateBeforeSave: false });
+
+    // Create reset URL
+    const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:3001'}/reset-password/${resetToken}`;
+
+    const message = `
+      <h2>Password Reset Request</h2>
+      <p>You are receiving this email because you (or someone else) has requested a password reset.</p>
+      <p>Please click the link below to reset your password:</p>
+      <a href="${resetUrl}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Reset Password</a>
+      <p>If you did not request this, please ignore this email and your password will remain unchanged.</p>
+      <p>This link will expire in 10 minutes.</p>
+    `;
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Aaroth Fresh - Password Reset Request',
+        message
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Password reset email sent'
+      });
+    } catch (err) {
+      console.error('Email send error:', err);
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+
+      return next(new ErrorResponse('Email could not be sent', 500));
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Reset password using token
+ * @route   PUT /api/v1/auth/reset-password/:resetToken
+ * @access  Public
+ */
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const crypto = require('crypto');
+
+    // Get hashed token
+    const resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(req.params.resetToken)
+      .digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return next(new ErrorResponse('Invalid or expired reset token', 400));
+    }
+
+    // Set new password
+    user.password = req.body.password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+
+    // Generate new token for auto-login
+    const token = user.getSignedJwtToken();
+
+    res.status(200).json({
+      success: true,
+      token,
+      message: 'Password reset successful'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * @desc    Logout user (client-side token removal)
  * @route   POST /api/auth/logout
  * @access  Private
@@ -604,6 +794,102 @@ exports.logout = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Logged out successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Send email verification token
+ * @route   POST /api/v1/auth/send-verification-email
+ * @access  Private
+ */
+exports.sendVerificationEmail = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return next(new ErrorResponse('User not found', 404));
+    }
+
+    if (user.isEmailVerified) {
+      return next(new ErrorResponse('Email is already verified', 400));
+    }
+
+    // Get verification token
+    const verificationToken = user.getEmailVerificationToken();
+
+    await user.save({ validateBeforeSave: false });
+
+    // Create verification URL
+    const verificationUrl = `${process.env.CLIENT_URL || 'http://localhost:3001'}/verify-email/${verificationToken}`;
+
+    const message = `
+      <h2>Email Verification</h2>
+      <p>Please click the link below to verify your email address:</p>
+      <a href="${verificationUrl}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Verify Email</a>
+      <p>If you did not create an account, please ignore this email.</p>
+      <p>This link will expire in 24 hours.</p>
+    `;
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Aaroth Fresh - Email Verification',
+        message
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Verification email sent'
+      });
+    } catch (err) {
+      console.error('Email send error:', err);
+      user.emailVerificationToken = undefined;
+      user.emailVerificationExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+
+      return next(new ErrorResponse('Email could not be sent', 500));
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Verify email using token
+ * @route   GET /api/v1/auth/verify-email/:token
+ * @access  Public
+ */
+exports.verifyEmail = async (req, res, next) => {
+  try {
+    const crypto = require('crypto');
+
+    // Get hashed token
+    const emailVerificationToken = crypto
+      .createHash('sha256')
+      .update(req.params.token)
+      .digest('hex');
+
+    const user = await User.findOne({
+      emailVerificationToken,
+      emailVerificationExpire: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return next(new ErrorResponse('Invalid or expired verification token', 400));
+    }
+
+    // Set email as verified and clear token fields
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpire = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully'
     });
   } catch (error) {
     next(error);
